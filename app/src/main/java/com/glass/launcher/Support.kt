@@ -138,6 +138,12 @@ class Prefs(ctx: Context) {
     var gridAlign: Int get() = int("gridAlign", 0); set(v) = putInt("gridAlign", v)
     /** all tiles sit in one big glass bar (Apple TV look) */
     var dock: Boolean get() = bool("tDock", false); set(v) = putBool("tDock", v)
+    /** apps always in one row that scrolls left/right */
+    var singleRow: Boolean get() = bool("oneRow", true); set(v) = putBool("oneRow", v)
+    /** show the "+" tile (it is always shown while the home screen is empty) */
+    var showAddTile: Boolean get() = bool("addTile", false); set(v) = putBool("addTile", v)
+    /** status bar glass adapts to the brightness of the wallpaper behind it */
+    var statusAdaptive: Boolean get() = bool("sAdaptive", true); set(v) = putBool("sAdaptive", v)
 
     /** tile size in dp: (width, height) */
     fun tileDp(): Pair<Int, Int> {
@@ -388,6 +394,25 @@ object Bitmaps {
     }
 
     /** Scales and crops the picture to exactly fill w x h (like centerCrop). */
+    /** Average brightness 0..1 of a region (fractions of the picture). */
+    fun brightness(b: Bitmap, l: Float, t: Float, r: Float, btm: Float): Float {
+        val x0 = (b.width * l).toInt(); val x1 = (b.width * r).toInt().coerceAtMost(b.width)
+        val y0 = (b.height * t).toInt(); val y1 = (b.height * btm).toInt().coerceAtMost(b.height)
+        var sum = 0.0; var n = 0
+        val stepX = maxOf(1, (x1 - x0) / 40); val stepY = maxOf(1, (y1 - y0) / 20)
+        var y = y0
+        while (y < y1) {
+            var x = x0
+            while (x < x1) {
+                val c = b.getPixel(x, y)
+                sum += (0.299 * ((c shr 16) and 0xFF) + 0.587 * ((c shr 8) and 0xFF) + 0.114 * (c and 0xFF)) / 255.0
+                n++; x += stepX
+            }
+            y += stepY
+        }
+        return if (n == 0) 0.3f else (sum / n).toFloat()
+    }
+
     fun centerCrop(b: Bitmap, w: Int, h: Int): Bitmap {
         val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val scale = maxOf(w.toFloat() / b.width, h.toFloat() / b.height)

@@ -33,6 +33,7 @@ import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.recyclerview.widget.SimpleItemAnimator
 import java.io.File
@@ -59,6 +60,8 @@ class MainActivity : Activity() {
     private lateinit var grid: RecyclerView
     private lateinit var hint: TextView
     private lateinit var layoutManager: GridLayoutManager
+    private lateinit var rowManager: LinearLayoutManager
+    private var cols = 1
     private lateinit var adapter: AppAdapter
     private lateinit var menu: GlassMenu
 
@@ -120,7 +123,10 @@ class MainActivity : Activity() {
             settingsBtn.isFocusable = !open
             powerBtn.isFocusable = !open
             statusGroups().forEach { it.isFocusable = !open }
-            if (!open) focusTile(lastPos)
+            if (!open) {
+                focusTile(lastPos)
+                if (plusPeek) { handler.removeCallbacks(hidePlus); handler.postDelayed(hidePlus, 1500) }
+            }
         }
 
         for (b in listOf(profileBtn, settingsBtn, powerBtn)) {
@@ -138,7 +144,8 @@ class MainActivity : Activity() {
         statusPill.radiusDp = 24f
         adapter = AppAdapter(apps, prefs, ::onAppClick, ::onAppLongClick)
         layoutManager = GridLayoutManager(this, 1)
-        grid.layoutManager = layoutManager
+        rowManager = LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
+        grid.layoutManager = if (prefs.singleRow) rowManager else layoutManager
         grid.adapter = adapter
         (grid.itemAnimator as? SimpleItemAnimator)?.supportsChangeAnimations = false
         grid.addOnScrollListener(object : RecyclerView.OnScrollListener() {
@@ -176,7 +183,7 @@ class MainActivity : Activity() {
             handler.removeCallbacks(rotate)
             handler.postDelayed(rotate, prefs.wpInterval.coerceAtLeast(10) * 1000L)
         }
-        val every = 6 * 60 * 60 * 1000L
+        val every = 60 * 60 * 1000L
         if (prefs.updateUrl.isNotBlank() && System.currentTimeMillis() - prefs.lastUpdateCheck > every) {
             prefs.lastUpdateCheck = System.currentTimeMillis()
             checkUpdate(manual = false)
@@ -219,10 +226,7 @@ class MainActivity : Activity() {
 
     private fun applyLook() {
         dim.setBackgroundColor(Color.argb(prefs.dim * 255 / 100, 0, 0, 0))
-        statusPill.tint = prefs.glassAlpha / 100f
-        profileBtn.tint = prefs.glassAlpha / 100f
-        settingsBtn.tint = prefs.glassAlpha / 100f
-        powerBtn.tint = prefs.glassAlpha / 100f
+        adaptStatus()
         profileLetter.text = Profiles.name(this, prefs.profile).take(1).uppercase()
         (hint.layoutParams as FrameLayout.LayoutParams).gravity = when (prefs.gridPosition) {
             0 -> Gravity.TOP or Gravity.START
@@ -246,10 +250,18 @@ class MainActivity : Activity() {
         val avail = if (gridArea.width > 0) gridArea.width else resources.displayMetrics.widthPixels - (80 * d).toInt()
         val dockPad = if (prefs.dock) (14 * d).toInt() else 0
         val maxCols = maxOf(1, (avail - 2 * dockPad) / cell)
-        val cols = maxOf(1, minOf(maxCols, apps.size))
-        layoutManager.spanCount = cols
+        cols = maxOf(1, minOf(maxCols, apps.size))
         val glp = grid.layoutParams
-        glp.width = cols * cell
+        if (prefs.singleRow) {
+            if (grid.layoutManager !== rowManager) grid.layoutManager = rowManager
+            // one row: as wide as the apps, at most the screen; scrolls when there are more
+            glp.width = minOf(apps.size * cell, avail - 2 * dockPad).coerceAtLeast(cell)
+            cols = apps.size.coerceAtLeast(1)
+        } else {
+            if (grid.layoutManager !== layoutManager) grid.layoutManager = layoutManager
+            layoutManager.spanCount = cols
+            glp.width = cols * cell
+        }
         grid.layoutParams = glp
 
         dock.setPadding(dockPad, dockPad / 2, dockPad, dockPad / 2)
@@ -266,6 +278,7 @@ class MainActivity : Activity() {
         dock.invalidate()
         adapter.notifyDataSetChanged()
         if (gridArea.width == 0) gridArea.post { if (gridArea.width > 0) layoutGrid() }
+        dock.post { placeMovieInfo() }
     }
 
     private fun screenSize(): Pair<Int, Int> {
@@ -289,6 +302,7 @@ class MainActivity : Activity() {
                     Backdrop.h = h
                     wallpaper.setImageBitmap(shown)
                     showMovieInfo(movie)
+                    adaptStatus(shown)
                     invalidateGlass()
                 }
                 if (fade) {
@@ -299,6 +313,27 @@ class MainActivity : Activity() {
                 } else apply()
             }
         }.start()
+    }
+
+    private var lastShown: Bitmap? = null
+
+    /** Glass of the status bar and top buttons: own transparency, and adapts to the picture behind it. */
+    private fun adaptStatus(b: Bitmap? = lastShown) {
+        if (b != null) lastShown = b
+        val base = prefs.glassAlpha / 100f
+        var tint = base
+        var dark = 0f
+        if (prefs.statusAdaptive && lastShown != null) {
+            val lum = Bitmaps.brightness(lastShown!!, 0.35f, 0f, 1f, 0.16f)
+            // bright picture -> darker glass so white text stays readable; dark picture -> a bit lighter glass
+            dark = ((lum - 0.35f) * 1.1f).coerceIn(0f, 0.55f)
+            tint = (base + (0.35f - lum).coerceAtLeast(0f) * 0.25f).coerceIn(0f, 0.6f)
+        }
+        for (g in listOf(statusPill, profileBtn, settingsBtn, powerBtn)) {
+            g.tint = tint
+            g.darken = dark
+            g.invalidate()
+        }
     }
 
     private fun loadWallpaper() {
@@ -385,6 +420,19 @@ class MainActivity : Activity() {
                 }, fade = true, movie = m)
             }
         }
+    }
+
+    /** Keeps the film title/description above the app row, whatever the tile size. */
+    private fun placeMovieInfo() {
+        val info = findViewById<View>(R.id.movieInfo)
+        if (dock.height == 0 || root.height == 0) return
+        val loc = IntArray(2)
+        dock.getLocationInWindow(loc)
+        val d = resources.displayMetrics.density
+        val lp = info.layoutParams as FrameLayout.LayoutParams
+        lp.gravity = Gravity.BOTTOM or Gravity.START
+        lp.bottomMargin = (root.height - loc[1] + 20 * d).toInt().coerceAtLeast((40 * d).toInt())
+        info.layoutParams = lp
     }
 
     private fun showMovieInfo(m: Movie?) {
@@ -492,7 +540,9 @@ class MainActivity : Activity() {
             handler.post {
                 apps.clear()
                 apps.addAll(list)
-                apps.add(AppEntry(AppEntry.ADD, T.s("Add", "Dodaj", "Hinzufügen"), plus))
+                plusBitmap = plus
+                plusPeek = false
+                if (prefs.showAddTile || list.isEmpty()) apps.add(0, AppEntry(AppEntry.ADD, T.s("Add", "Dodaj", "Hinzufügen"), plus))
                 layoutGrid()
                 hint.visibility = if (list.isEmpty()) View.VISIBLE else View.GONE
                 if (firstLoad || list.isEmpty()) {
@@ -534,6 +584,24 @@ class MainActivity : Activity() {
         val e = apps[pos]
         if (e.isAdd) { showSettings(); return }
         val items = mutableListOf(
+            GlassMenu.Item(T.s("Icon look (all options)", "Izgled ikona (sve opcije)", "Symbol-Aussehen (alle Optionen)"), R.drawable.lc_layout_grid) { tilesMenu() },
+            GlassMenu.Item(T.s("Size", "Veličina", "Größe"), R.drawable.lc_columns_3, value = listOf("S", "M", "L", "XL")[prefs.tileSize.coerceIn(0, 3)]) {
+                choose(T.s("Size", "Veličina", "Größe"), R.drawable.lc_columns_3, listOf("S" to 0, "M" to 1, "L" to 2, "XL" to 3), prefs.tileSize) { prefs.tileSize = it; reloadApps() }
+            },
+            GlassMenu.Item(T.s("Spacing", "Razmak", "Abstand"), R.drawable.lc_columns_3, value = "${prefs.tileGap} dp") {
+                choose(T.s("Spacing", "Razmak", "Abstand"), R.drawable.lc_columns_3,
+                    listOf(0, 6, 12, 18, 24, 32, 40).map { "$it dp" to it }, prefs.tileGap) { prefs.tileGap = it; relayout() }
+            },
+            GlassMenu.Item(T.s("Row position", "Pozicija reda", "Position der Reihe"), R.drawable.lc_move) {
+                choose(T.s("Row position", "Pozicija reda", "Position der Reihe"), R.drawable.lc_move, listOf(
+                    T.s("Bottom left", "Dolje lijevo", "Unten links") to 20, T.s("Bottom center", "Dolje sredina", "Unten Mitte") to 21,
+                    T.s("Bottom right", "Dolje desno", "Unten rechts") to 22, T.s("Middle left", "Sredina lijevo", "Mitte links") to 10,
+                    T.s("Center", "Sredina", "Mitte") to 11, T.s("Top left", "Gore lijevo", "Oben links") to 0,
+                    T.s("Top center", "Gore sredina", "Oben Mitte") to 1), prefs.gridPosition * 10 + prefs.gridAlign) {
+                    prefs.gridPosition = it / 10; prefs.gridAlign = it % 10; applyLook()
+                }
+            },
+            GlassMenu.Item(T.s("Add apps", "Dodaj aplikacije", "Apps hinzufügen"), R.drawable.lc_plus) { showAddMenu() },
             GlassMenu.Item(T.s("Change icon – own picture", "Promijeni ikonu – vlastita slika", "Symbol ändern – eigenes Bild"), R.drawable.lc_image) {
                 pickImage { f -> f.copyTo(IconStore.file(this, e.pkg), true); reloadApps() }
             },
@@ -641,9 +709,45 @@ class MainActivity : Activity() {
         prefs.pinned = apps.filter { !it.isAdd }.map { it.pkg }
     }
 
+    // ------------------------------------------------------------------ hidden "+" (2x left on the first app)
+
+    private var plusBitmap: Bitmap? = null
+    private var plusPeek = false
+    private var lastLeftAtStart = 0L
+    private val hidePlus = Runnable { removePeekPlus() }
+
+    private fun focusedPos(): Int {
+        val v = grid.focusedChild ?: return RecyclerView.NO_POSITION
+        return grid.getChildAdapterPosition(v)
+    }
+
+    private fun revealPlus() {
+        if (apps.any { it.isAdd }) return
+        apps.add(0, AppEntry(AppEntry.ADD, T.s("Add", "Dodaj", "Hinzufügen"), plusBitmap))
+        plusPeek = true
+        layoutGrid()
+        lastPos = 0
+        focusTile(0)
+        handler.removeCallbacks(hidePlus)
+        handler.postDelayed(hidePlus, 3000)
+    }
+
+    private fun removePeekPlus() {
+        handler.removeCallbacks(hidePlus)
+        if (!plusPeek || menu.isOpen) return
+        val i = apps.indexOfFirst { it.isAdd }
+        plusPeek = false
+        if (i < 0) return
+        val wasFocused = focusedPos() == i
+        apps.removeAt(i)
+        layoutGrid()
+        if (wasFocused) focusTile(0)
+    }
+
     private fun moveBy(delta: Int) {
-        val last = apps.size - 2 // "+" stays at the end
-        val target = (movingPos + delta).coerceIn(0, maxOf(0, last))
+        val first = apps.indexOfFirst { !it.isAdd }.coerceAtLeast(0) // "+" stays at the start
+        val last = apps.indexOfLast { !it.isAdd }
+        val target = (movingPos + delta).coerceIn(first, maxOf(first, last))
         if (target == movingPos) return
         val item = apps.removeAt(movingPos)
         apps.add(target, item)
@@ -662,8 +766,20 @@ class MainActivity : Activity() {
             if (event.action == KeyEvent.ACTION_UP) menu.close()
             return true
         }
+        if (!menu.isOpen && movingPos < 0 && event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+            val pos = focusedPos()
+            val firstApp = apps.indexOfFirst { !it.isAdd }
+            if (k == KeyEvent.KEYCODE_DPAD_LEFT && pos != RecyclerView.NO_POSITION && pos == firstApp && !apps.any { it.isAdd }) {
+                val now = SystemClock.elapsedRealtime()
+                if (now - lastLeftAtStart < 1500) { lastLeftAtStart = 0; revealPlus(); return true }
+                lastLeftAtStart = now
+            } else if (plusPeek && (k == KeyEvent.KEYCODE_DPAD_RIGHT || k == KeyEvent.KEYCODE_DPAD_UP || k == KeyEvent.KEYCODE_DPAD_DOWN)) {
+                handler.removeCallbacks(hidePlus)
+                handler.postDelayed(hidePlus, 600)
+            }
+        }
         if (movingPos >= 0 && !menu.isOpen) {
-            val cols = layoutManager.spanCount
+            val cols = if (prefs.singleRow) 0 else layoutManager.spanCount
             val delta = when (k) {
                 KeyEvent.KEYCODE_DPAD_LEFT -> -1
                 KeyEvent.KEYCODE_DPAD_RIGHT -> 1
@@ -672,6 +788,8 @@ class MainActivity : Activity() {
                 else -> 0
             }
             val done = k == KeyEvent.KEYCODE_DPAD_CENTER || k == KeyEvent.KEYCODE_ENTER || k == KeyEvent.KEYCODE_BACK
+            // in one-row mode up/down do nothing while moving (the tile must not lose focus)
+            if (delta == 0 && (k == KeyEvent.KEYCODE_DPAD_UP || k == KeyEvent.KEYCODE_DPAD_DOWN)) return true
             if (delta != 0 || done) {
                 if (event.action == KeyEvent.ACTION_DOWN) {
                     if (done) finishMove() else moveBy(delta)
@@ -703,6 +821,7 @@ class MainActivity : Activity() {
     private fun showSettings() {
         val langName = T.languages.firstOrNull { it.first == T.lang }?.second ?: "English"
         menu.show(T.s("Settings", "Postavke", "Einstellungen"), R.drawable.lc_settings, listOf(
+            GlassMenu.Item(T.s("Add apps", "Dodaj aplikacije", "Apps hinzufügen"), R.drawable.lc_plus) { showAddMenu() },
             GlassMenu.Item(T.s("Android settings of the box", "Android postavke boxa", "Android-Einstellungen der Box"), R.drawable.lc_settings) {
                 safeStart(Intent(Settings.ACTION_SETTINGS))
             },
@@ -710,7 +829,7 @@ class MainActivity : Activity() {
             GlassMenu.Item(T.s("Profiles and Google account", "Profili i Google račun", "Profile und Google-Konto"), R.drawable.lc_user,
                 value = Profiles.name(this, prefs.profile)) { profileMenu() },
             GlassMenu.Item(T.s("Wallpaper", "Pozadina", "Hintergrund"), R.drawable.lc_wallpaper) { wallpaperMenu() },
-            GlassMenu.Item(T.s("Look", "Izgled", "Aussehen"), R.drawable.lc_layers) { lookMenu() },
+            GlassMenu.Item(T.s("Icons and tiles", "Ikone i pločice", "Symbole und Kacheln"), R.drawable.lc_layout_grid) { lookMenu() },
             GlassMenu.Item(T.s("Status bar", "Statusna traka", "Statusleiste"), R.drawable.lc_bell_ring) { statusMenu() },
             GlassMenu.Item(T.s("Clock", "Sat", "Uhr"), R.drawable.lc_clock) { clockMenu() },
             GlassMenu.Item(T.s("While watching (corner)", "Dok gledaš (u ćošku)", "Beim Schauen (Ecke)"), R.drawable.lc_tv) { overlayMenu() },
@@ -834,15 +953,7 @@ class MainActivity : Activity() {
             "Nutzt die TMDB-API, ist aber nicht von TMDB unterstützt oder zertifiziert."))
     }
 
-    private fun lookMenu() {
-        menu.show(T.s("Look", "Izgled", "Aussehen"), R.drawable.lc_layers, listOf(
-            GlassMenu.Item(T.s("Icons and tiles", "Ikone i pločice", "Symbole und Kacheln"), R.drawable.lc_layout_grid) { tilesMenu() },
-            GlassMenu.Item(T.s("Status bar glass", "Staklo statusne trake", "Glas der Statusleiste"), R.drawable.lc_layers, value = "${prefs.glassAlpha}%") {
-                choose(T.s("Status bar glass", "Staklo statusne trake", "Glas der Statusleiste"), R.drawable.lc_layers,
-                    listOf(0, 4, 10, 18, 28, 40).map { "$it%" to it }, prefs.glassAlpha) { prefs.glassAlpha = it; applyLook() }
-            },
-        ))
-    }
+    private fun lookMenu() = tilesMenu()
 
     private fun relayout() { layoutGrid(); invalidateGlass() }
 
@@ -904,6 +1015,10 @@ class MainActivity : Activity() {
                 choose(T.s("Focus zoom", "Fokus uvećanje", "Fokus-Zoom"), R.drawable.lc_eye,
                     listOf(0, 10, 20, 30, 40, 50).map { "+$it%" to it }, prefs.focusScale) { prefs.focusScale = it; relayout() }
             },
+            GlassMenu.Item(T.s("One row (scrolls left/right)", "Jedan red (skrola lijevo/desno)", "Eine Reihe (scrollt links/rechts)"),
+                R.drawable.lc_columns_3, checked = prefs.singleRow, toggle = true) { prefs.singleRow = it.checked; relayout() },
+            GlassMenu.Item(T.s("Show + tile", "Prikaži + pločicu", "+ Kachel anzeigen"), R.drawable.lc_plus,
+                checked = prefs.showAddTile, toggle = true) { prefs.showAddTile = it.checked; reloadApps() },
             GlassMenu.Item(T.s("Dock (glass bar behind the apps)", "Dock (staklena traka iza aplikacija)", "Dock (Glasleiste hinter den Apps)"),
                 R.drawable.lc_layers, checked = prefs.dock, toggle = true) { prefs.dock = it.checked; relayout() },
             GlassMenu.Item(T.s("App names", "Nazivi aplikacija", "App-Namen"), R.drawable.lc_type,
@@ -934,6 +1049,13 @@ class MainActivity : Activity() {
             GlassMenu.Item(text, icon, checked = get, toggle = true) { set(it.checked); applyLook() }
         menu.show(T.s("Status bar", "Statusna traka", "Statusleiste"), R.drawable.lc_bell_ring, listOf(
             t(T.s("Show status bar", "Prikaži statusnu traku", "Statusleiste anzeigen"), R.drawable.lc_eye, prefs.showStatusBar) { prefs.showStatusBar = it },
+            GlassMenu.Item(T.s("Status bar transparency", "Providnost statusne trake", "Transparenz der Statusleiste"), R.drawable.lc_layers,
+                value = "${prefs.glassAlpha}%") {
+                choose(T.s("Status bar transparency", "Providnost statusne trake", "Transparenz der Statusleiste"), R.drawable.lc_layers,
+                    (0..60 step 5).map { "$it%" to it }, prefs.glassAlpha) { prefs.glassAlpha = it; adaptStatus() }
+            },
+            t(T.s("Adaptive (follows the wallpaper)", "Adaptivno (prati pozadinu)", "Adaptiv (passt sich dem Hintergrund an)"),
+                R.drawable.lc_sun_dim, prefs.statusAdaptive) { prefs.statusAdaptive = it },
             t(T.s("Clock", "Sat", "Uhr"), R.drawable.lc_clock, prefs.showClock) { prefs.showClock = it },
             t(T.s("Date", "Datum", "Datum"), R.drawable.lc_type, prefs.showDate) { prefs.showDate = it },
             t(T.s("Weather", "Vrijeme", "Wetter"), R.drawable.lc_cloud_sun, prefs.showWeather) { prefs.showWeather = it; lastWeather = 0 },

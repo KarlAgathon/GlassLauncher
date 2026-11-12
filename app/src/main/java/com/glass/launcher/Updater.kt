@@ -100,13 +100,13 @@ object Updater {
         runCatching { nm.notify(77, n) }
     }
 
-    /** Checks for a new version every 6 hours, also when the launcher is not open. */
+    /** Checks for a new version every hour, also when the launcher is not open. */
     fun schedule(ctx: Context) {
         val am = ctx.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val pi = PendingIntent.getBroadcast(ctx, 2, Intent(ctx, UpdateCheckReceiver::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        am.setInexactRepeating(AlarmManager.ELAPSED_REALTIME, android.os.SystemClock.elapsedRealtime() + 15 * 60 * 1000L,
-            AlarmManager.INTERVAL_HOUR * 6, pi)
+        am.setInexactRepeating(AlarmManager.ELAPSED_REALTIME, android.os.SystemClock.elapsedRealtime() + 5 * 60 * 1000L,
+            AlarmManager.INTERVAL_HOUR, pi)
     }
 }
 
