@@ -513,7 +513,8 @@ class MainActivity : Activity() {
     private fun showMovieInfo(m: Movie?) {
         val info = findViewById<View>(R.id.movieInfo)
         val shade = findViewById<View>(R.id.movieShade)
-        val show = m != null && (prefs.wpMode == 2 || (prefs.wpMode == 3 && m.title.isNotBlank())) && prefs.showMovieInfo
+        // plugin pictures (SofaDrop …) already carry their own title in the picture: show only the picture
+        val show = m != null && prefs.wpMode == 2 && prefs.showMovieInfo
         info.visibility = if (show) View.VISIBLE else View.GONE
         shade.visibility = if (show) View.VISIBLE else View.GONE
         if (m == null || !show) return
