@@ -547,8 +547,31 @@ class MainActivity : Activity() {
         date.text = d.replaceFirstChar { it.uppercase() }
     }
 
+    @Volatile private var statusBusy = false
+
+    /**
+     * Reads Wi-Fi, Bluetooth, RAM and storage on a background thread: when the Bluetooth stack is busy
+     * (e.g. a big file transfer) these system calls can hang for seconds, and on the main thread
+     * that froze the remote.
+     */
     private fun updateStatus() {
-        val net = NetInfo.read(this)
+        if (statusBusy) return
+        statusBusy = true
+        val wantBt = prefs.showBluetooth; val wantRam = prefs.showRam; val wantDisk = prefs.showDisk
+        Thread {
+            try {
+                val net = NetInfo.read(this)
+                val bt = if (wantBt) runCatching { BtInfo.read(this) }.getOrNull() else null
+                val ram = if (wantRam) SysStats.ramPercent(this) else 0
+                val disk = if (wantDisk) SysStats.diskPercent() else 0
+                handler.post { statusBusy = false; if (!isFinishing && !isDestroyed) applyStatus(net, bt, ram, disk) }
+            } catch (e: Exception) {
+                statusBusy = false
+            }
+        }.start()
+    }
+
+    private fun applyStatus(net: NetState, btRead: BtState?, ramPct: Int, diskPct: Int) {
         val netBox = findViewById<View>(R.id.netBox)
         val netIcon = findViewById<ImageView>(R.id.netIcon)
         val ssid = findViewById<TextView>(R.id.ssidText)
@@ -567,7 +590,7 @@ class MainActivity : Activity() {
             if (net.vpn) Color.rgb(52, 212, 122) else Color.rgb(255, 80, 80))
 
         val btBox = findViewById<View>(R.id.btBox)
-        val bt = if (prefs.showBluetooth) BtInfo.read(this) else null
+        val bt = if (prefs.showBluetooth) btRead else null
         btBox.visibility = if (bt != null && bt.available) View.VISIBLE else View.GONE
         if (bt != null && bt.available) {
             val btIcon = findViewById<ImageView>(R.id.btIcon)
@@ -594,10 +617,10 @@ class MainActivity : Activity() {
         findViewById<View>(R.id.cpuBox).visibility = if (cpuShown) View.VISIBLE else View.GONE
         if (cpuShown) findViewById<TextView>(R.id.cpuText).text = cpu?.let { "$it%" } ?: "–"
         findViewById<View>(R.id.ramBox).visibility = if (prefs.showRam) View.VISIBLE else View.GONE
-        if (prefs.showRam) findViewById<TextView>(R.id.ramText).text = "${SysStats.ramPercent(this)}%"
+        if (prefs.showRam) findViewById<TextView>(R.id.ramText).text = "$ramPct%"
         findViewById<View>(R.id.diskBox).visibility = if (prefs.showDisk) View.VISIBLE else View.GONE
         if (prefs.showDisk) {
-            val dp = SysStats.diskPercent()
+            val dp = diskPct
             findViewById<TextView>(R.id.diskText).text = "$dp%"
             // nearly full storage turns the icon orange / red
             findViewById<ImageView>(R.id.diskIcon).let {
@@ -1015,12 +1038,12 @@ class MainActivity : Activity() {
             GlassMenu.Item("Private DNS", R.drawable.lc_shield_check, value = dnsLabel()) { dnsMenu() },
             GlassMenu.Item(T.s("Auto-start apps", "Auto-start aplikacije", "Autostart-Apps"), R.drawable.lc_rocket) { autostartMenu() },
             GlassMenu.Item(T.s("Backup and restore", "Backup i vraćanje", "Sichern und wiederherstellen"), R.drawable.lc_archive) { backupMenu() },
-            GlassMenu.Item(T.s("Update", "Ažuriranje", "Update"), R.drawable.lc_refresh_cw, value = "v" + Updater.currentName(this)) { updateMenu() },
-            GlassMenu.Item(T.s("App updates", "Ažuriranja aplikacija", "App-Updates"), R.drawable.lc_download,
-                value = AppUpdates.list(this).size.takeIf { it > 0 }?.toString()) { appUpdatesMenu() },
             GlassMenu.Item(T.s("File browser", "File browser", "Dateimanager"), R.drawable.lc_folder) {
                 startActivity(Intent(this, FileBrowserActivity::class.java))
             },
+            GlassMenu.Item(T.s("Update", "Ažuriranje", "Update"), R.drawable.lc_refresh_cw, value = "v" + Updater.currentName(this)) { updateMenu() },
+            GlassMenu.Item(T.s("App updates", "Ažuriranja aplikacija", "App-Updates"), R.drawable.lc_download,
+                value = AppUpdates.list(this).size.takeIf { it > 0 }?.toString()) { appUpdatesMenu() },
         ))
     }
 
