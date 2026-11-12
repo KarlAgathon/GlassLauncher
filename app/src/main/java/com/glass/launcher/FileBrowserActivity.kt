@@ -71,6 +71,7 @@ class FileBrowserActivity : Activity() {
     private lateinit var pathView: TextView
     private lateinit var empty: TextView
     private lateinit var dash: LinearLayout
+    private lateinit var selBar: LinearLayout
 
     private fun dp(v: Float) = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, resources.displayMetrics)
 
@@ -84,6 +85,10 @@ class FileBrowserActivity : Activity() {
         pathView = findViewById(R.id.path)
         empty = findViewById(R.id.empty)
         dash = findViewById(R.id.dash)
+        selBar = findViewById(R.id.selBar)
+        selBar.background = GradientDrawable().apply {
+            cornerRadius = dp(22f); setColor(Color.argb(150, 12, 14, 26)); setStroke(dp(1f).toInt(), Color.argb(90, 255, 255, 255))
+        }
         list = findViewById(R.id.list)
         list.layoutManager = LinearLayoutManager(this)
         list.adapter = adapter
@@ -184,7 +189,7 @@ class FileBrowserActivity : Activity() {
 
     private fun fileEntry(f: File, withPath: Boolean = false): Entry {
         val sel = f.absolutePath in selected
-        return Entry(f, (if (sel) "✓  " else "") + f.name, if (sel) R.drawable.lc_check else iconFor(f), infoFor(f, withPath))
+        return Entry(f, f.name, if (sel) R.drawable.lc_check else iconFor(f), infoFor(f, withPath))
     }
 
     /** action rows at the top of a list: selection, paste, sort */
@@ -222,8 +227,48 @@ class FileBrowserActivity : Activity() {
             else -> showFolder(dir!!)
         }
         adapter.notifyDataSetChanged()
+        updateSelBar()
         list.scrollToPosition(0)
         list.post { list.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus() }
+    }
+
+    /**
+     * Bar under the list while selecting: count + Delete, Move, Copy, Cut, Share, Rename, Properties
+     * (Restore / Delete for good in the recycle bin). Always on screen, press DOWN to reach it.
+     */
+    private fun updateSelBar() {
+        selBar.removeAllViews()
+        if (!selectMode || picking) { selBar.visibility = View.GONE; return }
+        selBar.visibility = View.VISIBLE
+        val d = resources.displayMetrics.density
+        selBar.addView(TextView(this).apply {
+            text = T.s("Selected: ", "Označeno: ", "Ausgewählt: ") + selected.size
+            setTextColor(Color.WHITE); setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f); typeface = Fonts.medium(this@FileBrowserActivity)
+            setPadding(dp(6f).toInt(), 0, dp(18f).toInt(), 0)
+        })
+        val files = selectedFiles()
+        val acts: List<Pair<String, () -> Unit>> = if (virtual == "trash") {
+            val items = Trash.list().filter { it.file.absolutePath in selected }
+            listOf(
+                T.s("Restore", "Vrati", "Wiederherstellen") to { runBusy({ items.count { Trash.restore(it) } }) { selectMode = false; selected.clear() } },
+                T.s("Delete for good", "Obriši trajno", "Endgültig löschen") to { confirmPurge(items) },
+            )
+        } else fileActions(files)
+        for ((label, act) in acts) {
+            val b = TextView(this).apply {
+                text = label
+                setTextColor(Color.WHITE); setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f); typeface = Fonts.regular(this@FileBrowserActivity)
+                setPadding(dp(14f).toInt(), dp(8f).toInt(), dp(14f).toInt(), dp(8f).toInt())
+                isFocusable = true; isClickable = true
+                alpha = if (files.isEmpty() && virtual != "trash") 0.45f else 1f
+                setOnFocusChangeListener { v, has -> v.background = if (has) GlassDrawable(d, 14, true) else null }
+                setOnClickListener {
+                    if (selected.isEmpty()) toast(T.s("Nothing selected – press OK on files", "Ništa nije označeno – pritisni OK na fajlove", "Nichts ausgewählt – OK auf Dateien drücken"))
+                    else act()
+                }
+            }
+            selBar.addView(b, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(4f).toInt() })
+        }
     }
 
     private fun showRoots() {
@@ -303,7 +348,7 @@ class FileBrowserActivity : Activity() {
         for (it in bin) {
             val sel = it.file.absolutePath in selected
             val size = if (it.file.isDirectory) "" else Formatter.formatShortFileSize(this, it.file.length()) + "  ·  "
-            entries.add(Entry(it.file, (if (sel) "✓  " else "") + it.name, if (sel) R.drawable.lc_check else iconFor(it.file),
+            entries.add(Entry(it.file, it.name, if (sel) R.drawable.lc_check else iconFor(it.file),
                 size + T.s("deleted ", "obrisano ", "gelöscht ") + df.format(Date(it.deletedAt)), trash = it))
         }
         empty.visibility = if (bin.isEmpty()) View.VISIBLE else View.GONE
@@ -454,6 +499,7 @@ class FileBrowserActivity : Activity() {
             else -> showFolder(dir!!)
         }
         adapter.notifyDataSetChanged()
+        updateSelBar()
     }
 
     private fun open(f: File) {
