@@ -130,6 +130,8 @@ class Prefs(ctx: Context) {
     var tileFrost: Boolean get() = bool("tFrost", false); set(v) = putBool("tFrost", v)
     /** 0 none, 1 thin line, 2 glass rim */
     var tileBorder: Int get() = int("tBorder", 0); set(v) = putInt("tBorder", v)
+    /** clean glass tiles: no white edges, thin white frame only on the selected one */
+    var tileClean: Boolean get() = bool("tClean", true); set(v) = putBool("tClean", v)
     /** corner radius in % of tile height: 0 = square corners */
     var tileCorner: Int get() = int("tCorner", 16); set(v) = putInt("tCorner", v)
     /** 0 S, 1 M, 2 L, 3 XL */

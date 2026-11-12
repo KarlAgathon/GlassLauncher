@@ -1220,6 +1220,8 @@ class MainActivity : Activity() {
             },
             GlassMenu.Item(T.s("Blur behind tiles", "Zamućenje iza pločica", "Unschärfe hinter Kacheln"), R.drawable.lc_layers,
                 checked = prefs.tileFrost, toggle = true) { prefs.tileFrost = it.checked; relayout() },
+            GlassMenu.Item(T.s("Clean glass (frame only on the selected one)", "Čisto staklo (okvir samo na odabranoj)", "Klares Glas (Rahmen nur bei Auswahl)"),
+                R.drawable.lc_layers, checked = prefs.tileClean, toggle = true) { prefs.tileClean = it.checked; relayout() },
             GlassMenu.Item(T.s("Border", "Okvir", "Rahmen"), R.drawable.lc_layout_grid, value = borders.first { it.second == prefs.tileBorder }.first) {
                 choose(T.s("Border", "Okvir", "Rahmen"), R.drawable.lc_layout_grid, borders, prefs.tileBorder) { prefs.tileBorder = it; relayout() }
             },

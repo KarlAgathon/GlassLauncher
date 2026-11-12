@@ -65,6 +65,7 @@ class AppAdapter(
         h.tile.liquid = !prefs.tileFrost && prefs.tileAlpha > 0
         h.tile.rimMode = prefs.tileBorder
         h.tile.plain = prefs.tileAlpha == 0 && prefs.tileBorder == 0
+        h.tile.clean = prefs.tileClean
         h.tile.refreshShape()
 
         // gap + room for the focus zoom

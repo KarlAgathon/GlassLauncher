@@ -58,6 +58,8 @@ class GlassFrame @JvmOverloads constructor(
     var radiusPx = -1f
     /** clear "liquid glass": no blur, the wallpaper stays sharp; light catches the edges */
     var liquid = false
+    /** clean glass: no white edges or shine; only the focused one gets a thin white frame */
+    var clean = false
     /** 0..1 how strongly the blurred wallpaper shows inside the glass */
     var backdropAlpha = 1f
     /** 0..1 solid dark filling (1 = glass not see-through at all) */
@@ -122,17 +124,31 @@ class GlassFrame @JvmOverloads constructor(
             canvas.drawRect(rect, fill)
         }
         fill.shader = null
-        fill.color = white(tint + if (focusedLook) 0.14f else 0f)
+        fill.color = white(tint + if (focusedLook) (if (clean) 0.05f else 0.14f) else 0f)
         canvas.drawRect(rect, fill)
         if (darken > 0f) {
             fill.color = Color.argb((darken * 255).toInt(), 0, 0, 0)
             canvas.drawRect(rect, fill)
         }
-        fill.color = Color.WHITE
-        fill.shader = LinearGradient(0f, 0f, 0f, h * 0.55f,
-            white(if (focusedLook) 0.30f else 0.16f), white(0f), Shader.TileMode.CLAMP)
-        canvas.drawRect(0f, 0f, w, h * 0.55f, fill)
+        if (!clean) {
+            fill.color = Color.WHITE
+            fill.shader = LinearGradient(0f, 0f, 0f, h * 0.55f,
+                white(if (focusedLook) 0.30f else 0.16f), white(0f), Shader.TileMode.CLAMP)
+            canvas.drawRect(0f, 0f, w, h * 0.55f, fill)
+        }
         canvas.restore()
+
+        if (clean && !accent) {
+            if (!focusedLook) return
+            val sw = 1.6f * density
+            rim.strokeWidth = sw
+            rim.shader = null
+            rim.color = white(0.92f)
+            rect.set(sw / 2f, sw / 2f, w - sw / 2f, h - sw / 2f)
+            canvas.drawRoundRect(rect, r, r, rim)
+            rim.color = Color.BLACK
+            return
+        }
 
         if (liquid && !focusedLook && !accent) {
             drawLiquidEdges(canvas, w, h, r)
