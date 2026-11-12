@@ -41,9 +41,20 @@ object Updater {
     }.getOrNull()
 
     /** Blocking download of the new APK. */
-    fun download(ctx: Context, info: Info): File {
+    /** Where the APK of [info] is kept once downloaded. */
+    fun apkFile(ctx: Context, info: Info): File {
         val dir = ctx.getExternalFilesDir(null) ?: ctx.cacheDir
-        val f = File(dir, "GlassLauncher-update.apk")
+        return File(dir, "LEAD-update-${info.code}.apk")
+    }
+
+    /** The already downloaded APK of [info], or null. */
+    fun ready(ctx: Context, info: Info): File? = apkFile(ctx, info).takeIf { it.isFile && it.length() > 100_000 }
+
+    /** Blocking download of the new APK (skipped when it is already there). Old update files are removed. */
+    fun download(ctx: Context, info: Info): File {
+        ready(ctx, info)?.let { return it }
+        val f = apkFile(ctx, info)
+        f.parentFile?.listFiles()?.forEach { if (it.name.startsWith("LEAD-update-") || it.name.startsWith("GlassLauncher-update")) it.delete() }
         Http.download(info.apk, f)
         return f
     }
@@ -143,7 +154,11 @@ class UpdateCheckReceiver : BroadcastReceiver() {
         val pending = goAsync()
         Thread {
             try {
-                Updater.check(app, url)?.let { Updater.notify(app, it) }
+                Updater.check(app, url)?.let { info ->
+                    // download right away, so one click later only asks "install?"
+                    runCatching { Updater.download(app, info) }
+                    Updater.notify(app, info)
+                }
             } finally {
                 pending.finish()
             }

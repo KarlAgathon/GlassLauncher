@@ -195,7 +195,11 @@ class MainActivity : Activity() {
             handler.removeCallbacks(rotate)
             handler.postDelayed(rotate, prefs.wpInterval.coerceAtLeast(10) * 1000L)
         }
+        resumed = true
         showUpdateChip(animate = false)
+        Updater.pending(this)?.let { p ->
+            if (p.code != promptedCode && Updater.ready(this, p) != null) handler.postDelayed({ if (resumed) installUpdate(p) }, 1200)
+        }
         val every = 60 * 60 * 1000L
         if (prefs.updateUrl.isNotBlank() && System.currentTimeMillis() - prefs.lastUpdateCheck > every) {
             prefs.lastUpdateCheck = System.currentTimeMillis()
@@ -205,6 +209,7 @@ class MainActivity : Activity() {
 
     override fun onPause() {
         super.onPause()
+        resumed = false
         HomeService.setHome(false)
         handler.removeCallbacks(ticker)
         handler.removeCallbacks(rotate)
@@ -1804,11 +1809,9 @@ class MainActivity : Activity() {
                     showUpdateChip(animate = false)
                     return@post
                 }
-                if (manual) {
-                    // "Check now" = install right away, no extra steps
-                    updateBtn.visibility = View.GONE
-                    installUpdate(info)
-                } else showUpdateChip(animate = true)
+                showUpdateChip(animate = !manual)
+                // found = download and ask "install?" straight away (once per version, so "No" is respected)
+                if (manual || promptedCode != info.code) installUpdate(info)
             }
         }.start()
     }
@@ -1860,15 +1863,26 @@ class MainActivity : Activity() {
 
     private var installing = false
 
+    /** version for which the "install?" question was already shown in this session */
+    private var promptedCode = 0L
+    private var resumed = false
+
     private fun installUpdate(info: Updater.Info) {
         if (installing) return
+        promptedCode = info.code
+        val ready = Updater.ready(this, info)
+        if (ready != null) { Updater.install(this, ready); return }
         installing = true
-        handler.postDelayed({ installing = false }, 60_000)
+        handler.postDelayed({ installing = false }, 120_000)
         toast(T.s("Downloading version ", "Preuzimam verziju ", "Lade Version ") + info.name + "…")
         Thread {
             try {
                 val f = Updater.download(this, info)
-                handler.post { installing = false; Updater.install(this, f) }
+                handler.post {
+                    installing = false
+                    // ask only while the home screen is on top; otherwise the chip / next return asks
+                    if (resumed) Updater.install(this, f) else promptedCode = 0L
+                }
             } catch (e: Exception) {
                 handler.post { installing = false; toast(T.s("Download failed", "Preuzimanje nije uspjelo", "Download fehlgeschlagen")) }
             }
