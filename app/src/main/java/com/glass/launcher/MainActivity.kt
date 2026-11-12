@@ -26,6 +26,7 @@ import android.text.InputType
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
+import android.util.TypedValue
 import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.FrameLayout
@@ -1488,19 +1489,35 @@ class MainActivity : Activity() {
      * Clock & date left (classic) or right: on the right they sit after the round buttons, right-aligned,
      * and the status bar moves to the left – so pictures with their own title on the left stay readable.
      */
+    private var clockSpacer: View? = null
+
+    /**
+     * Left: classic – big clock top left, status bar and buttons next to it.
+     * Right: status bar and buttons pushed to the right edge; under them, in the right corner,
+     * one line "20:55:12" (smaller clock) and one line "Thursday, 12. November".
+     */
     private fun placeClock() {
         val col = clock.parent as? LinearLayout ?: return
-        val row = col.parent as? LinearLayout ?: return
         val right = prefs.clockSide == 1
-        row.removeView(col)
-        if (right) row.addView(col) else row.addView(col, 0)
-        col.gravity = if (right) Gravity.END else Gravity.START
-        val lp = col.layoutParams as LinearLayout.LayoutParams
-        lp.marginStart = if (right) (20 * resources.displayMetrics.density).toInt() else 0
-        col.layoutParams = lp
+        val d = resources.displayMetrics.density
+        // find the top row (holds the status bar) and the column that holds the row
+        val row = statusPill.parent as? LinearLayout ?: return
+        val outer = row.parent as? LinearLayout ?: return
+        (col.parent as? ViewGroup)?.removeView(col)
+        clockSpacer?.let { (it.parent as? ViewGroup)?.removeView(it) }
+        if (right) {
+            val spacer = clockSpacer ?: View(this).also { clockSpacer = it }
+            row.addView(spacer, 0, LinearLayout.LayoutParams(0, 1, 1f))
+            outer.addView(col, outer.indexOfChild(row) + 1, LinearLayout.LayoutParams(-1, -2).apply { topMargin = (10 * d).toInt() })
+            col.gravity = Gravity.END
+            clock.setTextSize(TypedValue.COMPLEX_UNIT_SP, 40f)   // about 30 % smaller than on the left
+        } else {
+            row.addView(col, 0, LinearLayout.LayoutParams(0, -2, 1f))
+            col.gravity = Gravity.START
+            clock.setTextSize(TypedValue.COMPLEX_UNIT_SP, 58f)
+        }
         // the "new version" chip goes to the free side
         (updateBtn.layoutParams as? FrameLayout.LayoutParams)?.let { p ->
-            val d = resources.displayMetrics.density
             p.gravity = Gravity.TOP or if (right) Gravity.START else Gravity.END
             p.marginStart = if (right) (44 * d).toInt() else 0
             p.marginEnd = if (right) 0 else (36 * d).toInt()

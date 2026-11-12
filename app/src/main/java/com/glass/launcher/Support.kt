@@ -219,8 +219,9 @@ class Prefs(ctx: Context) {
     var showStatusBar: Boolean get() = bool("sBar", true); set(v) = putBool("sBar", v)
 
     /** 0 = like Android, 1 = 24h, 2 = 12h */
-    var clockFormat: Int get() = int("clockFmt", 0); set(v) = putInt("clockFmt", v)
-    var clockSeconds: Boolean get() = bool("clockSec", false); set(v) = putBool("clockSec", v)
+    /** 0 like Android, 1 24h (default), 2 12h */
+    var clockFormat: Int get() = int("clockFmt2", 1); set(v) = putInt("clockFmt2", v)
+    var clockSeconds: Boolean get() = bool("clockSec2", true); set(v) = putBool("clockSec2", v)
 
     /** small corner overlay while a film / other app is open (needs the accessibility service) */
     var overlayVpn: Boolean get() = bool("ovVpn", true); set(v) = putBool("ovVpn", v)
