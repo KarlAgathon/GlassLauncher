@@ -56,6 +56,8 @@ class GlassFrame @JvmOverloads constructor(
     var plain = false
     /** corner radius in px; when < 0 radiusDp is used */
     var radiusPx = -1f
+    /** clear "liquid glass": no blur, the wallpaper stays sharp; light catches the edges */
+    var liquid = false
 
     private val density = resources.displayMetrics.density
     private val path = Path()
@@ -122,6 +124,10 @@ class GlassFrame @JvmOverloads constructor(
         canvas.drawRect(0f, 0f, w, h * 0.55f, fill)
         canvas.restore()
 
+        if (liquid && !focusedLook && !accent) {
+            drawLiquidEdges(canvas, w, h, r)
+            if (rimMode == 0) return
+        }
         val mode = if ((focusedLook || accent) && rimMode == 0) 1 else rimMode
         if (mode == 0) return
         val sw = (if (focusedLook || accent) 2.5f else if (mode == 1) 1f else 1.2f) * density
@@ -137,5 +143,28 @@ class GlassFrame @JvmOverloads constructor(
         }
         rect.inset(sw / 2f, sw / 2f)
         canvas.drawRoundRect(rect, r, r, rim)
+    }
+
+    /**
+     * Edge light of clear glass: a bright rim top-left fading out in the middle,
+     * a weaker rim bottom-right (light bending through the thick edge) and a thin inner glow.
+     */
+    private fun drawLiquidEdges(canvas: Canvas, w: Float, h: Float, r: Float) {
+        val sw = 1.4f * density
+        rim.strokeWidth = sw
+        rim.shader = LinearGradient(0f, 0f, w, h,
+            intArrayOf(white(0.70f), white(0.10f), white(0.04f), white(0.38f)),
+            floatArrayOf(0f, 0.40f, 0.62f, 1f), Shader.TileMode.CLAMP)
+        rect.set(sw / 2f, sw / 2f, w - sw / 2f, h - sw / 2f)
+        canvas.drawRoundRect(rect, r, r, rim)
+        // soft inner glow just inside the rim (thick glass edge)
+        val gw = 5f * density
+        rim.strokeWidth = gw
+        rim.shader = LinearGradient(0f, 0f, w, h,
+            intArrayOf(white(0.16f), white(0f), white(0f), white(0.08f)),
+            floatArrayOf(0f, 0.35f, 0.70f, 1f), Shader.TileMode.CLAMP)
+        rect.set(sw + gw / 2f, sw + gw / 2f, w - sw - gw / 2f, h - sw - gw / 2f)
+        val ri = (r - sw - gw / 2f).coerceAtLeast(0f)
+        canvas.drawRoundRect(rect, ri, ri, rim)
     }
 }

@@ -60,7 +60,9 @@ class AppAdapter(
         h.tile.layoutParams = lp
         h.tile.radiusPx = hPx * prefs.tileCorner / 100f
         h.tile.tint = prefs.tileAlpha / 100f * 0.45f
-        h.tile.backdrop = prefs.tileAlpha > 0
+        // blur only when asked for; otherwise clear glass where the wallpaper stays sharp
+        h.tile.backdrop = prefs.tileFrost && prefs.tileAlpha > 0
+        h.tile.liquid = !prefs.tileFrost && prefs.tileAlpha > 0
         h.tile.rimMode = prefs.tileBorder
         h.tile.plain = prefs.tileAlpha == 0 && prefs.tileBorder == 0
         h.tile.refreshShape()

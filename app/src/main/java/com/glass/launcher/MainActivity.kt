@@ -993,8 +993,10 @@ class MainActivity : Activity() {
                 checked = prefs.logoNoBg, toggle = true) { prefs.logoNoBg = it.checked; reloadApps() },
             GlassMenu.Item(T.s("Tile background", "Providnost pozadine", "Kachelhintergrund"), R.drawable.lc_layers, value = pct(prefs.tileAlpha)) {
                 choose(T.s("Tile background", "Providnost pozadine", "Kachelhintergrund"), R.drawable.lc_layers,
-                    (0..100 step 10).map { pct(it) to it }, prefs.tileAlpha) { prefs.tileAlpha = it; relayout() }
+                    listOf(0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 25, 30, 40, 50, 70, 100).map { pct(it) to it }, prefs.tileAlpha) { prefs.tileAlpha = it; relayout() }
             },
+            GlassMenu.Item(T.s("Blur behind tiles", "Zamućenje iza pločica", "Unschärfe hinter Kacheln"), R.drawable.lc_layers,
+                checked = prefs.tileFrost, toggle = true) { prefs.tileFrost = it.checked; relayout() },
             GlassMenu.Item(T.s("Border", "Okvir", "Rahmen"), R.drawable.lc_layout_grid, value = borders.first { it.second == prefs.tileBorder }.first) {
                 choose(T.s("Border", "Okvir", "Rahmen"), R.drawable.lc_layout_grid, borders, prefs.tileBorder) { prefs.tileBorder = it; relayout() }
             },

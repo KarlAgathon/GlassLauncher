@@ -121,7 +121,9 @@ class Prefs(ctx: Context) {
     /** remove the flat background behind a logo/banner */
     var logoNoBg: Boolean get() = bool("tNoBg", true); set(v) = putBool("tNoBg", v)
     /** 0..100 tile background */
-    var tileAlpha: Int get() = int("tAlpha", 22); set(v) = putInt("tAlpha", v)
+    var tileAlpha: Int get() = int("tAlpha", 6); set(v) = putInt("tAlpha", v)
+    /** frosted (blurred) wallpaper inside tiles; off = clear liquid glass */
+    var tileFrost: Boolean get() = bool("tFrost", false); set(v) = putBool("tFrost", v)
     /** 0 none, 1 thin line, 2 glass rim */
     var tileBorder: Int get() = int("tBorder", 0); set(v) = putInt("tBorder", v)
     /** corner radius in % of tile height: 0 = square corners */
