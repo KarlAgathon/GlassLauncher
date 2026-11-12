@@ -160,9 +160,11 @@ class Prefs(ctx: Context) {
     }
 
     // ---- changing wallpaper
-    /** 0 one picture, 1 slideshow from a folder, 2 films & series (TMDB) */
+    /** 0 one picture, 1 slideshow from a folder, 2 films & series (TMDB), 3 wallpaper plugin */
     var wpMode: Int get() = int("wpMode", 0); set(v) = putInt("wpMode", v)
     var wpFolder: String get() = str("wpFolder", ""); set(v) = putStr("wpFolder", v)
+    /** wallpaper plugin (Projectivy plugins like SofaDrop): "package/serviceClass" */
+    var wpPlugin: String get() = str("wpPlugin", ""); set(v) = putStr("wpPlugin", v)
     /** seconds between pictures */
     var wpInterval: Int get() = int("wpInt", 60); set(v) = putInt("wpInt", v)
     var tmdbKey: String get() = str("tmdbKey", ""); set(v) = putStr("tmdbKey", v)

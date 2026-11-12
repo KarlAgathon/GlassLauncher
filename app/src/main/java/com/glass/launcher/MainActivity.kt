@@ -406,6 +406,29 @@ class MainActivity : Activity() {
                 }
                 handler.post(rotate)
             }
+            3 -> {
+                val p = Plugins.find(this, prefs.wpPlugin)
+                if (p == null) {
+                    toast(T.s("Wallpaper plugin not found", "Plugin za pozadinu nije pronađen", "Hintergrund-Plugin nicht gefunden"))
+                    prefs.wpMode = 0; loadWallpaper(); return
+                }
+                val cacheKey = "plugin:" + p.id
+                if (cacheKey == moviesKey && movies.isNotEmpty()) { handler.post(rotate); return }
+                Thread {
+                    val list = Plugins.movies(Plugins.fetch(this, p)).shuffled()
+                    handler.post {
+                        if (list.isEmpty()) {
+                            toast(T.s("The plugin sent no pictures – open its settings and try again",
+                                "Plugin nije poslao slike – otvori njegove postavke pa pokušaj ponovo",
+                                "Das Plugin hat keine Bilder geliefert – Einstellungen öffnen und erneut versuchen"))
+                            if (movies.isEmpty()) { prefs.wpMode = 0; loadWallpaper() }
+                            return@post
+                        }
+                        movies = list; moviesKey = cacheKey; slideIndex = 0
+                        handler.post(rotate)
+                    }
+                }.start()
+            }
             2 -> {
                 val key = prefs.tmdbKey.trim()
                 if (key.isBlank()) {
@@ -450,6 +473,16 @@ class MainActivity : Activity() {
                     Bitmaps.decodeScaled(tmp, w, h)
                 }, fade = true, movie = m)
             }
+            3 -> {
+                if (movies.isEmpty()) return
+                val m = movies[slideIndex++ % movies.size]
+                if (slideIndex % movies.size == 0) moviesKey = "" // ask the plugin again after one round
+                showPicture({
+                    val tmp = File(cacheDir, "plugin_bg.img")
+                    Plugins.download(this, m.image, tmp)
+                    Bitmaps.decodeScaled(tmp, w, h)
+                }, fade = true, movie = m)
+            }
         }
     }
 
@@ -469,7 +502,7 @@ class MainActivity : Activity() {
     private fun showMovieInfo(m: Movie?) {
         val info = findViewById<View>(R.id.movieInfo)
         val shade = findViewById<View>(R.id.movieShade)
-        val show = m != null && prefs.wpMode == 2 && prefs.showMovieInfo
+        val show = m != null && (prefs.wpMode == 2 || (prefs.wpMode == 3 && m.title.isNotBlank())) && prefs.showMovieInfo
         info.visibility = if (show) View.VISIBLE else View.GONE
         shade.visibility = if (show) View.VISIBLE else View.GONE
         if (m == null || !show) return
@@ -921,11 +954,43 @@ class MainActivity : Activity() {
         })
     }
 
+    /** Projectivy wallpaper plugins installed on the box (SofaDrop, Bing, Overflight …). */
+    private fun pluginMenu() {
+        val list = Plugins.list(this)
+        if (list.isEmpty()) {
+            menu.message(T.s("Wallpaper plugins", "Pluginovi za pozadinu", "Hintergrund-Plugins"), R.drawable.lc_rocket,
+                T.s("No wallpaper plugin is installed. Install one (e.g. SofaDrop) and come back.",
+                    "Nijedan plugin za pozadinu nije instaliran. Instaliraj ga (npr. SofaDrop) pa se vrati.",
+                    "Kein Hintergrund-Plugin installiert. Eines installieren (z. B. SofaDrop) und zurückkommen."))
+            return
+        }
+        val items = ArrayList<GlassMenu.Item>()
+        for (p in list) {
+            items.add(GlassMenu.Item(T.s("Use ", "Koristi ", "Verwenden: ") + p.name, R.drawable.lc_play,
+                checked = prefs.wpMode == 3 && prefs.wpPlugin == p.id) {
+                prefs.wpPlugin = p.id; prefs.wpMode = 3; moviesKey = ""
+                toast(T.s("Loading pictures from ", "Učitavam slike iz ", "Lade Bilder von ") + p.name + "…")
+                loadWallpaper()
+            })
+            items.add(GlassMenu.Item(p.name + " – " + T.s("settings", "postavke", "Einstellungen"), R.drawable.lc_settings) {
+                if (!Plugins.openSettings(this, p)) toast(T.s("This plugin has no settings", "Ovaj plugin nema postavke", "Dieses Plugin hat keine Einstellungen"))
+            })
+        }
+        if (prefs.wpMode == 3) items.add(GlassMenu.Item(T.s("Load new pictures now", "Učitaj nove slike sad", "Jetzt neue Bilder laden"), R.drawable.lc_refresh_cw) {
+            moviesKey = ""; loadWallpaper()
+        })
+        menu.show(T.s("Wallpaper plugins", "Pluginovi za pozadinu", "Hintergrund-Plugins"), R.drawable.lc_rocket, items,
+            T.s("Plugins made for Projectivy Launcher work here too. Set them up in their own settings.",
+                "Pluginovi napravljeni za Projectivy Launcher rade i ovdje. Podešavaju se u njihovim postavkama.",
+                "Plugins für Projectivy Launcher funktionieren auch hier. Eingestellt werden sie in ihren eigenen Einstellungen."))
+    }
+
     private fun wallpaperMenu() {
         val modes = listOf(
             T.s("One picture", "Jedna slika", "Ein Bild") to 0,
             T.s("Slideshow from a folder", "Slideshow iz foldera", "Diashow aus Ordner") to 1,
-            T.s("Films and series (changing)", "Filmovi i serije (mijenjaju se)", "Filme und Serien (wechselnd)") to 2)
+            T.s("Films and series (changing)", "Filmovi i serije (mijenjaju se)", "Filme und Serien (wechselnd)") to 2,
+            T.s("Plugin (e.g. SofaDrop)", "Plugin (npr. SofaDrop)", "Plugin (z. B. SofaDrop)") to 3)
         menu.show(T.s("Wallpaper", "Pozadina", "Hintergrund"), R.drawable.lc_wallpaper, listOf(
             GlassMenu.Item(T.s("Wallpaper type", "Vrsta pozadine", "Hintergrundart"), R.drawable.lc_layers,
                 value = modes.first { it.second == prefs.wpMode }.first) {
@@ -933,11 +998,14 @@ class MainActivity : Activity() {
                     when (m) {
                         1 -> if (prefs.wpFolder.isBlank()) pickFolder() else { prefs.wpMode = 1; loadWallpaper() }
                         2 -> if (prefs.tmdbKey.isBlank()) askTmdbKey(thenStart = true) else { prefs.wpMode = 2; loadWallpaper() }
+                        3 -> pluginMenu()
                         else -> { prefs.wpMode = 0; loadWallpaper() }
                     }
                 }
             },
             GlassMenu.Item(T.s("Films and series…", "Filmovi i serije…", "Filme und Serien…"), R.drawable.lc_tv) { moviesMenu() },
+            GlassMenu.Item(T.s("Wallpaper plugins…", "Pluginovi za pozadinu…", "Hintergrund-Plugins…"), R.drawable.lc_rocket,
+                value = Plugins.find(this, prefs.wpPlugin)?.name ?: "–") { pluginMenu() },
             GlassMenu.Item(T.s("Slideshow folder", "Folder za slideshow", "Diashow-Ordner"), R.drawable.lc_folder,
                 value = prefs.wpFolder.substringAfterLast('/').ifBlank { "–" }) { pickFolder() },
             GlassMenu.Item(T.s("Change every", "Mijenjaj svakih", "Wechseln alle"), R.drawable.lc_clock, value = intervalLabel(prefs.wpInterval)) {
