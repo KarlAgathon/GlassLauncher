@@ -1667,12 +1667,21 @@ class MainActivity : Activity() {
 
     private fun powerMenu() {
         menu.show(T.s("Power", "Napajanje", "Energie"), R.drawable.lc_power, listOf(
-            GlassMenu.Item(T.s("Sleep (standby)", "Spavanje (standby)", "Ruhemodus (Standby)"), R.drawable.lc_moon) { goSleep() },
-            GlassMenu.Item(T.s("Restart / turn off…", "Restart / ugasi…", "Neustart / ausschalten…"), R.drawable.lc_power) {
-                if (!HomeService.powerMenu()) needServiceFor()
-            },
-            GlassMenu.Item(T.s("Start screensaver", "Pokreni screensaver", "Bildschirmschoner starten"), R.drawable.lc_monitor) { startSaver() },
-        ))
+            GlassMenu.Item(T.s("Shut down", "Ugasi", "Ausschalten"), R.drawable.lc_power) { goSleep() },
+            GlassMenu.Item(T.s("Restart", "Restart", "Neustart"), R.drawable.lc_rotate_cw) { restartBox() },
+            GlassMenu.Item(T.s("Screensaver", "Screensaver", "Bildschirmschoner"), R.drawable.lc_monitor) { startSaver() },
+        ), T.s("Shut down = standby: the box switches off and turns the TV off too (HDMI-CEC). A full power-off doesn't exist on TV boxes.",
+            "Ugasi = standby: box se gasi i gasi i TV (HDMI-CEC). Potpuno isključenje ne postoji na TV boxovima.",
+            "Ausschalten = Standby: die Box geht aus und schaltet auch den Fernseher aus (HDMI-CEC). Ganz aus gibt es bei TV-Boxen nicht."))
+    }
+
+    /** Restart: directly if Android allows it, otherwise the system power menu (choose "Restart" there). */
+    private fun restartBox() {
+        val direct = runCatching { (getSystemService(Context.POWER_SERVICE) as android.os.PowerManager).reboot(null); true }.getOrDefault(false)
+        if (direct) return
+        if (HomeService.powerMenu()) {
+            toast(T.s("Choose \"Restart\"", "Izaberi \"Restart\"", "\"Neustart\" wählen"))
+        } else needServiceFor()
     }
 
     private fun goSleep() {

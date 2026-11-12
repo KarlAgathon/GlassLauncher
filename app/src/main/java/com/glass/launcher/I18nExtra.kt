@@ -5,6 +5,9 @@ object I18nExtra {
     val map: HashMap<String, Array<String>> = HashMap(512)
 
     init {
+        map["Shut down"] = arrayOf("Изключи", "Oprește", "Kapat", "إيقاف التشغيل")
+        map["Restart"] = arrayOf("Рестарт", "Repornire", "Yeniden başlat", "إعادة التشغيل")
+        map["Screensaver"] = arrayOf("Скрийнсейвър", "Screensaver", "Ekran koruyucu", "شاشة التوقف")
         map["Open"] = arrayOf("Отвори", "Deschide", "Aç", "فتح")
         map["Open folder"] = arrayOf("Отвори папката", "Deschide folderul", "Klasörü aç", "فتح المجلد")
         map["Untick"] = arrayOf("Премахни отметката", "Debifează", "İşareti kaldır", "إلغاء التحديد")
