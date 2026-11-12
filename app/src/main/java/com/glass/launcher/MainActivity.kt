@@ -147,7 +147,7 @@ class MainActivity : Activity() {
             val sc = if (has) 1.12f else 1f
             v.animate().scaleX(sc).scaleY(sc).setDuration(140).withEndAction { v.invalidate() }.start()
         }
-        updateBtn.setOnClickListener { Updater.pending(this)?.let { installUpdate(it) } ?: checkUpdate(manual = true) }
+        updateBtn.setOnClickListener { installPendingOrCheck() }
         profileBtn.setOnClickListener { profileMenu() }
         settingsBtn.setOnClickListener { showSettings() }
         powerBtn.setOnClickListener { powerMenu() }
@@ -182,7 +182,7 @@ class MainActivity : Activity() {
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), REQ_NOTIF)
         }
-        if (intent?.getBooleanExtra(EXTRA_SHOW_UPDATE, false) == true) handler.postDelayed({ checkUpdate(manual = true) }, 800)
+        if (intent?.getBooleanExtra(EXTRA_SHOW_UPDATE, false) == true) handler.postDelayed({ installPendingOrCheck() }, 800)
     }
 
     override fun onResume() {
@@ -222,7 +222,7 @@ class MainActivity : Activity() {
         menu.close()
         if (movingPos >= 0) finishMove()
         focusTile(0)
-        if (intent?.getBooleanExtra(EXTRA_SHOW_UPDATE, false) == true) handler.postDelayed({ checkUpdate(manual = true) }, 500)
+        if (intent?.getBooleanExtra(EXTRA_SHOW_UPDATE, false) == true) handler.postDelayed({ installPendingOrCheck() }, 500)
     }
 
     @Deprecated("Deprecated in Java")
@@ -1784,14 +1784,25 @@ class MainActivity : Activity() {
         }
     }
 
+    /** Notification, chip and "Install": one click – download and open the installer straight away. */
+    private fun installPendingOrCheck() {
+        val p = Updater.pending(this)
+        if (p != null && p.apk.isNotBlank()) installUpdate(p) else checkUpdate(manual = true)
+    }
+
+    private var installing = false
+
     private fun installUpdate(info: Updater.Info) {
+        if (installing) return
+        installing = true
+        handler.postDelayed({ installing = false }, 60_000)
         toast(T.s("Downloading version ", "Preuzimam verziju ", "Lade Version ") + info.name + "…")
         Thread {
             try {
                 val f = Updater.download(this, info)
-                handler.post { Updater.install(this, f) }
+                handler.post { installing = false; Updater.install(this, f) }
             } catch (e: Exception) {
-                handler.post { toast(T.s("Download failed", "Preuzimanje nije uspjelo", "Download fehlgeschlagen")) }
+                handler.post { installing = false; toast(T.s("Download failed", "Preuzimanje nije uspjelo", "Download fehlgeschlagen")) }
             }
         }.start()
     }
@@ -1902,7 +1913,7 @@ class MainActivity : Activity() {
                 tmp.copyTo(dest, true)
                 handler.post { done() }
             } catch (e: Exception) {
-                handler.post { toast(T.s("Download failed", "Preuzimanje nije uspjelo", "Download fehlgeschlagen")) }
+                handler.post { installing = false; toast(T.s("Download failed", "Preuzimanje nije uspjelo", "Download fehlgeschlagen")) }
             }
         }.start()
     }

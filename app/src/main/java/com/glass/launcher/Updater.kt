@@ -50,24 +50,26 @@ object Updater {
 
     /** Opens the Android installer for an APK file. */
     fun install(act: Activity, f: File) {
-        if (Build.VERSION.SDK_INT >= 26 && !act.packageManager.canRequestPackageInstalls()) {
-            Toast.makeText(act, T.s(
-                "Allow installing apps, then try again",
-                "Dozvoli instaliranje aplikacija pa pokušaj ponovo",
-                "Installieren von Apps erlauben und erneut versuchen"), Toast.LENGTH_LONG).show()
-            runCatching {
-                act.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${act.packageName}")))
-            }
-            return
-        }
+        // open the Android installer right away; if this app may not install yet,
+        // Android itself shows the "allow" switch on the way
         try {
             val uri = FileProvider.getUriForFile(act, "${act.packageName}.files", f)
             act.startActivity(Intent(Intent.ACTION_VIEW)
                 .setDataAndType(uri, "application/vnd.android.package-archive")
                 .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK))
         } catch (e: Exception) {
-            Toast.makeText(act, T.s("Can't open the installer", "Ne mogu otvoriti instalaciju", "Installer lässt sich nicht öffnen"),
-                Toast.LENGTH_LONG).show()
+            if (Build.VERSION.SDK_INT >= 26 && !act.packageManager.canRequestPackageInstalls()) {
+                Toast.makeText(act, T.s(
+                    "Allow installing apps, then try again",
+                    "Dozvoli instaliranje aplikacija pa pokušaj ponovo",
+                    "Installieren von Apps erlauben und erneut versuchen"), Toast.LENGTH_LONG).show()
+                runCatching {
+                    act.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${act.packageName}")))
+                }
+            } else {
+                Toast.makeText(act, T.s("Can't open the installer", "Ne mogu otvoriti instalaciju", "Installer lässt sich nicht öffnen"),
+                    Toast.LENGTH_LONG).show()
+            }
         }
     }
 
