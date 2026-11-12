@@ -282,12 +282,9 @@ class HomeService : AccessibilityService() {
             if (!Prefs(this).homeRedirect) return
             val now = System.currentTimeMillis()
             if (now - last < 800) return
-            // right after switching on, Google's launcher starts by itself: leave it alone for 2 minutes,
-            // otherwise the two launchers can push each other away (black screen)
-            if (android.os.SystemClock.elapsedRealtime() < 120_000L) return
-            // never fight: at most 3 jumps per minute
-            if (now - burstStart > 60_000L) { burstStart = now; burst = 0 }
-            if (++burst > 3) return
+            // never fight endlessly: more than 8 jumps within 20 s = something keeps pushing back, pause
+            if (now - burstStart > 20_000L) { burstStart = now; burst = 0 }
+            if (++burst > 8) return
             last = now
             runCatching {
                 startActivity(Intent(this, MainActivity::class.java)
@@ -329,6 +326,13 @@ class BootReceiver : BroadcastReceiver() {
         runCatching { Updater.schedule(app) }
         val pending = goAsync()
         val h = Handler(Looper.getMainLooper())
+        // Google TV always starts its own home screen: open LEAD once right after switching on
+        if (a != Intent.ACTION_LOCKED_BOOT_COMPLETED && Prefs(app).homeRedirect) h.postDelayed({
+            runCatching {
+                app.startActivity(Intent(app, MainActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED))
+            }
+        }, 2500)
         h.postDelayed({ Autostart.apply(app) }, 4000)
         h.postDelayed({ Autostart.apply(app); pending.finish() }, 8000)
     }
