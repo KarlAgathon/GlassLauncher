@@ -2108,8 +2108,8 @@ class MainActivity : Activity() {
             return
         }
         findViewById<TextView>(R.id.updateText).text =
-            if (info != null) T.s("New version ", "Nova verzija ", "Neue Version ") + info.name
-            else T.s("App updates: ", "Ažuriranja: ", "App-Updates: ") + apps
+            if (info != null) T.s("New Update Available", "Novo ažuriranje dostupno", "Neues Update verfügbar")
+            else T.s("App Updates Available", "Ažuriranja aplikacija dostupna", "App-Updates verfügbar") + " ($apps)"
         val wasHidden = updateBtn.visibility != View.VISIBLE
         updateBtn.visibility = View.VISIBLE
         if (animate || wasHidden) {
