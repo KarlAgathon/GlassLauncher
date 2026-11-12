@@ -58,6 +58,10 @@ class GlassFrame @JvmOverloads constructor(
     var radiusPx = -1f
     /** clear "liquid glass": no blur, the wallpaper stays sharp; light catches the edges */
     var liquid = false
+    /** 0..1 how strongly the blurred wallpaper shows inside the glass */
+    var backdropAlpha = 1f
+    /** 0..1 solid dark filling (1 = glass not see-through at all) */
+    var solid = 0f
 
     private val density = resources.displayMetrics.density
     private val path = Path()
@@ -109,7 +113,13 @@ class GlassFrame @JvmOverloads constructor(
             getLocationInWindow(loc)
             val s = if (scaleX > 0.01f) scaleX else 1f
             dst.set(-loc[0] / s, -loc[1] / s, (Backdrop.w - loc[0]) / s, (Backdrop.h - loc[1]) / s)
-            canvas.drawBitmap(bd, null, dst, bmpPaint)
+            bmpPaint.alpha = (backdropAlpha.coerceIn(0f, 1f) * 255).toInt()
+            if (bmpPaint.alpha > 0) canvas.drawBitmap(bd, null, dst, bmpPaint)
+        }
+        if (solid > 0f) {
+            fill.shader = null
+            fill.color = Color.argb((solid.coerceIn(0f, 1f) * 255).toInt(), 24, 30, 44)
+            canvas.drawRect(rect, fill)
         }
         fill.shader = null
         fill.color = white(tint + if (focusedLook) 0.14f else 0f)

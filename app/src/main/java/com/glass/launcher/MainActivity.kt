@@ -332,21 +332,36 @@ class MainActivity : Activity() {
     /** Glass of the status bar and top buttons: own transparency, and adapts to the picture behind it. */
     private fun adaptStatus(b: Bitmap? = lastShown) {
         if (b != null) lastShown = b
-        val base = prefs.glassAlpha / 100f
-        var tint = base
+        val top = listOf(statusPill, updateBtn, profileBtn, settingsBtn, powerBtn)
+        if (prefs.statusLikeTiles) {
+            // exactly the clear glass of the app tiles
+            for (g in top) {
+                g.backdrop = false; g.liquid = true; g.backdropAlpha = 0f; g.solid = 0f
+                g.tint = prefs.tileAlpha / 100f * 0.45f; g.darken = 0f; g.rimMode = 0
+                g.invalidate()
+            }
+            return
+        }
+        // o = how solid the glass is: 1 at 0 % see-through, 0 at 100 %
+        val o = 1f - prefs.statusClear.coerceIn(0, 100) / 100f
         var dark = 0f
         if (prefs.statusAdaptive && lastShown != null) {
             val lum = Bitmaps.brightness(lastShown!!, 0.35f, 0f, 1f, 0.16f)
-            // bright picture -> darker glass so white text stays readable; dark picture -> a bit lighter glass
-            dark = ((lum - 0.35f) * 1.1f).coerceIn(0f, 0.55f)
-            tint = (base + (0.35f - lum).coerceAtLeast(0f) * 0.25f).coerceIn(0f, 0.6f)
+            // bright picture -> darker glass so white text stays readable
+            dark = ((lum - 0.35f) * 1.1f).coerceIn(0f, 0.55f) * maxOf(o, 0.25f)
         }
-        for (g in listOf(statusPill, updateBtn, profileBtn, settingsBtn, powerBtn)) {
-            g.tint = tint
+        for (g in top) {
+            g.backdrop = o > 0.02f
+            g.backdropAlpha = o                       // blur fades away as it gets more see-through
+            g.solid = 0.88f * o * o                   // solid filling only near 0 %
+            g.liquid = o < 0.5f                       // clear end: light on the edges like the tiles
+            g.tint = 0.04f + 0.10f * o
             g.darken = dark
+            g.rimMode = if (o < 0.5f) 0 else 2
             g.invalidate()
         }
     }
+
 
     private fun loadWallpaper() {
         if (prefs.wpMode != 0) { startRotation(); return }
@@ -975,7 +990,7 @@ class MainActivity : Activity() {
 
     private fun lookMenu() = tilesMenu()
 
-    private fun relayout() { layoutGrid(); invalidateGlass() }
+    private fun relayout() { layoutGrid(); adaptStatus(); invalidateGlass() }
 
     private fun tilesMenu() {
         val presets = listOf(
@@ -1072,10 +1087,13 @@ class MainActivity : Activity() {
         menu.show(T.s("Status bar", "Statusna traka", "Statusleiste"), R.drawable.lc_bell_ring, listOf(
             t(T.s("Show status bar", "Prikaži statusnu traku", "Statusleiste anzeigen"), R.drawable.lc_eye, prefs.showStatusBar) { prefs.showStatusBar = it },
             GlassMenu.Item(T.s("Status bar transparency", "Providnost statusne trake", "Transparenz der Statusleiste"), R.drawable.lc_layers,
-                value = "${prefs.glassAlpha}%") {
-                choose(T.s("Status bar transparency", "Providnost statusne trake", "Transparenz der Statusleiste"), R.drawable.lc_layers,
-                    (0..60 step 5).map { "$it%" to it }, prefs.glassAlpha) { prefs.glassAlpha = it; adaptStatus() }
+                value = "${prefs.statusClear}%") {
+                choose(T.s("Status bar transparency (0 % = solid, 100 % = clear)", "Providnost statusne trake (0 % = puna, 100 % = providna)",
+                    "Transparenz der Statusleiste (0 % = deckend, 100 % = klar)"), R.drawable.lc_layers,
+                    (0..100 step 10).map { "$it%" to it }, prefs.statusClear) { prefs.statusClear = it; adaptStatus() }
             },
+            t(T.s("Same glass as the app tiles", "Isto staklo kao pločice", "Gleiches Glas wie die Kacheln"),
+                R.drawable.lc_layers, prefs.statusLikeTiles) { prefs.statusLikeTiles = it },
             t(T.s("Adaptive (follows the wallpaper)", "Adaptivno (prati pozadinu)", "Adaptiv (passt sich dem Hintergrund an)"),
                 R.drawable.lc_sun_dim, prefs.statusAdaptive) { prefs.statusAdaptive = it },
             t(T.s("Clock", "Sat", "Uhr"), R.drawable.lc_clock, prefs.showClock) { prefs.showClock = it },

@@ -104,6 +104,10 @@ class Prefs(ctx: Context) {
 
     /** 0..100 milkiness of the glass */
     var glassAlpha: Int get() = int("glassAlpha2", 10); set(v) = putInt("glassAlpha2", v)
+    /** 0..100 see-through of the top bar and its buttons: 0 = not see-through at all, 100 = clear glass */
+    var statusClear: Int get() = int("sClear", 60); set(v) = putInt("sClear", v)
+    /** top bar uses the same clear glass as the app tiles */
+    var statusLikeTiles: Boolean get() = bool("sLikeTiles", false); set(v) = putBool("sLikeTiles", v)
     /** 0..100 darkening of the wallpaper */
     var dim: Int get() = int("dim2", 10); set(v) = putInt("dim2", v)
     /** 0 original, 1 transparent (no background), 2 white glass */
