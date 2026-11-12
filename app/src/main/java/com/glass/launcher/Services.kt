@@ -114,7 +114,7 @@ class HomeService : AccessibilityService() {
         // key inside a thin round ring: red = VPN off, green = VPN on
         val ring = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
-            setColor(Color.argb(60, 0, 0, 0))
+            setColor(Color.TRANSPARENT)
             setStroke((1.5f * d).toInt().coerceAtLeast(2), Color.rgb(255, 80, 80))
         }
         val wrap = FrameLayout(this).apply { background = ring }
@@ -177,11 +177,14 @@ class HomeService : AccessibilityService() {
         } else {
             breath?.cancel()
             breath = null
-            w.alpha = 1f
+            w.alpha = KEY_ALPHA
         }
     }
 
     private var banner: View? = null
+
+    /** see-through key: visible, but does not disturb the film */
+    private val KEY_ALPHA = 0.45f
 
     /** A glass banner that slides in at the top of the screen for a few seconds (works over other apps). */
     fun showBanner(text: String) {
