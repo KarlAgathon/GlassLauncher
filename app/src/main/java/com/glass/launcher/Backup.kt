@@ -19,7 +19,7 @@ object Backup {
     fun folder(): File = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "GlassLauncher")
 
     /** Blocking. Returns the written file. */
-    fun create(ctx: Context): File {
+    fun create(ctx: Context, target: File? = null): File {
         val root = JSONObject()
         root.put("format", 1)
         root.put("created", System.currentTimeMillis())
@@ -54,11 +54,54 @@ object Backup {
         }
         root.put("files", files)
 
-        val dir = folder().apply { mkdirs() }
+        val dir = (target ?: folder()).apply { mkdirs() }
         val stamp = SimpleDateFormat("yyyy-MM-dd_HH-mm", Locale.US).format(Date())
-        val out = File(dir, "backup_$stamp.json")
+        val out = File(dir, if (target != null) "backup.json" else "backup_$stamp.json")
         out.writeText(root.toString())
         return out
+    }
+
+    /**
+     * Full backup: launcher settings + the installed apps themselves (their APK files), in
+     * Download/GlassLauncher/full_<date>/. On another box, "Restore" puts the settings back and
+     * installs the missing apps (Android asks "install?" for each one).
+     * App data inside the apps (logins, playlists …) can't be copied by any app without root.
+     */
+    fun createFull(ctx: Context, progress: (String) -> Unit): File {
+        val stamp = SimpleDateFormat("yyyy-MM-dd_HH-mm", Locale.US).format(Date())
+        val dir = File(folder(), "full_$stamp").apply { mkdirs() }
+        val apks = File(dir, "apks").apply { mkdirs() }
+        val pm = ctx.packageManager
+        val list = JSONArray()
+        // apps you installed yourself (not Android's own apps), without the launcher itself
+        val apps = pm.getInstalledApplications(0).filter {
+            it.packageName != ctx.packageName && (it.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) == 0
+        }.distinctBy { it.packageName }
+        for ((i, ai) in apps.withIndex()) {
+            val label = runCatching { pm.getApplicationLabel(ai).toString() }.getOrDefault(ai.packageName)
+            progress("${i + 1}/${apps.size}  $label")
+            val pd = File(apks, ai.packageName).apply { mkdirs() }
+            val files = listOf(ai.sourceDir) + (ai.splitSourceDirs?.toList() ?: emptyList())
+            var ok = true
+            for (src in files) ok = ok && runCatching { File(src).copyTo(File(pd, File(src).name), true); true }.getOrDefault(false)
+            if (!ok) { pd.deleteRecursively(); continue }
+            val ver = runCatching { pm.getPackageInfo(ai.packageName, 0).versionName }.getOrNull() ?: ""
+            list.put(JSONObject().put("pkg", ai.packageName).put("label", label).put("version", ver))
+        }
+        File(dir, "apps.json").writeText(list.toString(2))
+        progress(T.s("Settings…", "Postavke…", "Einstellungen…"))
+        return create(ctx, dir)
+    }
+
+    /** APK folders of a full backup that are not installed on this box: (package, its APK files). */
+    fun missingApps(ctx: Context, backupFile: File): List<Pair<String, List<File>>> {
+        val apks = File(backupFile.parentFile, "apks")
+        if (!apks.isDirectory) return emptyList()
+        return apks.listFiles()?.filter { it.isDirectory }?.mapNotNull { d ->
+            val installed = runCatching { ctx.packageManager.getPackageInfo(d.name, 0); true }.getOrDefault(false)
+            val files = d.listFiles()?.filter { it.extension == "apk" }?.sortedBy { if (it.name == "base.apk") 0 else 1 } ?: emptyList()
+            if (installed || files.isEmpty()) null else d.name to files
+        } ?: emptyList()
     }
 
     /** Blocking. Replaces all launcher data with the backup. */

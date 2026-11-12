@@ -1591,7 +1591,29 @@ class MainActivity : Activity() {
 
     private fun backupMenu() {
         menu.show(T.s("Backup and restore", "Backup i vraćanje", "Sichern und wiederherstellen"), R.drawable.lc_archive, listOf(
-            GlassMenu.Item(T.s("Make backup now", "Napravi backup sada", "Jetzt sichern"), R.drawable.lc_download) {
+            GlassMenu.Item(T.s("Full backup (settings + all apps)", "Pun backup (postavke + sve aplikacije)", "Vollständige Sicherung (Einstellungen + alle Apps)"),
+                R.drawable.lc_package) {
+                withWriteStorage {
+                    toast(T.s("Full backup started – this can take a few minutes", "Pun backup je počeo – može trajati nekoliko minuta",
+                        "Vollständige Sicherung läuft – kann einige Minuten dauern"))
+                    Thread {
+                        var last = 0L
+                        val r = runCatching { Backup.createFull(this) { step ->
+                            val now = System.currentTimeMillis()
+                            if (now - last > 2500) { last = now; handler.post { toast(T.s("Backup: ", "Backup: ", "Sicherung: ") + step) } }
+                        } }
+                        handler.post {
+                            r.onSuccess { f -> menu.message("Backup", R.drawable.lc_check, T.s("Full backup saved in:", "Pun backup sačuvan u:", "Vollständige Sicherung in:") +
+                                "\n" + (f.parentFile?.absolutePath ?: "") + "\n\n" +
+                                T.s("Copy this whole folder to a USB stick. On another box: Restore and choose backup.json in that folder – the apps get installed too.",
+                                    "Kopiraj cijeli ovaj folder na USB. Na drugom boxu: Vrati iz backupa i izaberi backup.json u tom folderu – instaliraju se i aplikacije.",
+                                    "Kopiere den ganzen Ordner auf einen USB-Stick. Auf einer anderen Box: Wiederherstellen und backup.json darin wählen – die Apps werden mitinstalliert.")) }
+                            r.onFailure { toast(T.s("Backup failed (enough space?)", "Backup nije uspio (ima li mjesta?)", "Sicherung fehlgeschlagen (genug Platz?)")) }
+                        }
+                    }.start()
+                }
+            },
+            GlassMenu.Item(T.s("Settings only backup", "Backup samo postavki", "Nur Einstellungen sichern"), R.drawable.lc_download) {
                 withWriteStorage {
                     Thread {
                         val r = runCatching { Backup.create(this) }
@@ -1612,15 +1634,22 @@ class MainActivity : Activity() {
                     .putExtra(FileBrowserActivity.EXTRA_PICK, "backup")
                     .putExtra(FileBrowserActivity.EXTRA_START, Backup.folder().absolutePath), REQ_BACKUP)
             },
-        ), T.s("Saves all profiles, apps, names, own icons, wallpapers and settings. Google logins and passwords are kept by Android itself (Google backup), no app can save them.",
-            "Čuva sve profile, aplikacije, nazive, vlastite ikone, pozadine i postavke. Google prijave i lozinke čuva sam Android (Google backup), nijedna aplikacija ih ne može sačuvati.",
-            "Sichert alle Profile, Apps, Namen, eigene Symbole, Hintergründe und Einstellungen. Google-Anmeldungen und Passwörter sichert Android selbst (Google-Backup), keine App kann das."))
+        ), T.s("Settings only: profiles, home screen apps, names, icons, wallpapers, settings (small file). Full: the same plus the installed apps themselves – on another box they get installed. Logins inside apps and passwords can't be saved by any app.",
+            "Samo postavke: profili, aplikacije na početnom ekranu, nazivi, ikone, pozadine, postavke (mali fajl). Pun: isto plus same instalirane aplikacije – na drugom boxu se instaliraju. Prijave unutar aplikacija i lozinke ne može sačuvati nijedna aplikacija.",
+            "Nur Einstellungen: Profile, Apps am Startbildschirm, Namen, Symbole, Hintergründe, Einstellungen (kleine Datei). Vollständig: dazu die installierten Apps selbst – auf einer anderen Box werden sie installiert. Anmeldungen in Apps und Passwörter kann keine App sichern."))
     }
 
     private fun restoreBackup(f: File) {
         Thread {
             val r = runCatching { Backup.restore(this, f) }
+            val missing = if (r.isSuccess) Backup.missingApps(this, f) else emptyList()
             handler.post {
+                if (r.isSuccess && missing.isNotEmpty()) {
+                    // full backup: install the apps that are not on this box yet, one after another
+                    toast(T.s("Restored – now installing ", "Vraćeno – sad instaliram ", "Wiederhergestellt – installiere jetzt ") + missing.size +
+                        T.s(" apps", " aplikacija", " Apps"))
+                    AppInstaller.start(this, missing)
+                }
                 if (r.isSuccess) { toast(T.s("Restored", "Vraćeno", "Wiederhergestellt")); recreate() }
                 else toast(T.s("This is not a valid backup", "Ovo nije ispravan backup", "Keine gültige Sicherung"))
             }
