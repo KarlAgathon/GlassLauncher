@@ -28,17 +28,33 @@ jobs:
           name: GlassLauncher-apk
           path: GlassLauncher.apk
 
-      # Push a tag like v2.0 -> GitHub release + update.json for the launcher's web update
-      - name: Make update.json
-        if: startsWith(github.ref, 'refs/tags/v')
+      # New versionName in app/build.gradle.kts on master -> automatic release v<versionName>
+      - name: Read version
+        id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           CODE=$(grep -oP 'versionCode = \K[0-9]+' app/build.gradle.kts)
           NAME=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
-          echo "{\"versionCode\": $CODE, \"versionName\": \"$NAME\", \"apk\": \"https://github.com/${{ github.repository }}/releases/latest/download/GlassLauncher.apk\", \"notes\": \"\"}" > update.json
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          if gh release view "v$NAME" --repo "${{ github.repository }}" > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Make update.json
+        if: steps.v.outputs.exists == 'false' && (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v'))
+        run: |
+          echo "{\"versionCode\": ${{ steps.v.outputs.code }}, \"versionName\": \"${{ steps.v.outputs.name }}\", \"apk\": \"https://github.com/${{ github.repository }}/releases/latest/download/GlassLauncher.apk\", \"notes\": \"\"}" > update.json
           cat update.json
       - uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: steps.v.outputs.exists == 'false' && (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v'))
         with:
+          tag_name: v${{ steps.v.outputs.name }}
+          name: Glass Launcher ${{ steps.v.outputs.name }}
+          target_commitish: ${{ github.sha }}
+          make_latest: "true"
           files: |
             GlassLauncher.apk
             update.json
