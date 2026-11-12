@@ -1,6 +1,11 @@
 package com.glass.launcher
 
 import android.app.Activity
+import android.app.AlarmManager
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -64,5 +69,61 @@ object Updater {
             Toast.makeText(act, T.s("Can't open the installer", "Ne mogu otvoriti instalaciju", "Installer lässt sich nicht öffnen"),
                 Toast.LENGTH_LONG).show()
         }
+    }
+
+    // ------------------------------------------------------------------ "new version" notification
+
+    private const val CHANNEL = "updates"
+
+    fun notify(ctx: Context, info: Info) {
+        val g = ctx.getSharedPreferences("glass_global", Context.MODE_PRIVATE)
+        if (g.getLong("notifiedCode", 0L) >= info.code) return
+        g.edit().putLong("notifiedCode", info.code).apply()
+        val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (Build.VERSION.SDK_INT >= 26) {
+            nm.createNotificationChannel(NotificationChannel(CHANNEL,
+                T.s("Updates", "Ažuriranja", "Updates"), NotificationManager.IMPORTANCE_HIGH))
+        }
+        val open = PendingIntent.getActivity(ctx, 1,
+            Intent(ctx, MainActivity::class.java).putExtra(MainActivity.EXTRA_SHOW_UPDATE, true)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        @Suppress("DEPRECATION")
+        val b = if (Build.VERSION.SDK_INT >= 26) android.app.Notification.Builder(ctx, CHANNEL)
+        else android.app.Notification.Builder(ctx).setPriority(android.app.Notification.PRIORITY_HIGH)
+        val n = b.setSmallIcon(R.drawable.lc_download)
+            .setContentTitle(T.s("New version available", "Nova verzija dostupna", "Neue Version verfügbar") + " – Glass Launcher " + info.name)
+            .setContentText(info.notes.ifBlank { T.s("Open to install", "Otvori za instalaciju", "Zum Installieren öffnen") })
+            .setContentIntent(open)
+            .setAutoCancel(true)
+            .build()
+        runCatching { nm.notify(77, n) }
+    }
+
+    /** Checks for a new version every 6 hours, also when the launcher is not open. */
+    fun schedule(ctx: Context) {
+        val am = ctx.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val pi = PendingIntent.getBroadcast(ctx, 2, Intent(ctx, UpdateCheckReceiver::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        am.setInexactRepeating(AlarmManager.ELAPSED_REALTIME, android.os.SystemClock.elapsedRealtime() + 15 * 60 * 1000L,
+            AlarmManager.INTERVAL_HOUR * 6, pi)
+    }
+}
+
+class UpdateCheckReceiver : BroadcastReceiver() {
+    override fun onReceive(ctx: Context, intent: Intent?) {
+        val app = ctx.applicationContext
+        val prefs = Prefs(app)
+        T.init(prefs.lang)
+        val url = prefs.updateUrl
+        if (url.isBlank()) return
+        val pending = goAsync()
+        Thread {
+            try {
+                Updater.check(app, url)?.let { Updater.notify(app, it) }
+            } finally {
+                pending.finish()
+            }
+        }.start()
     }
 }

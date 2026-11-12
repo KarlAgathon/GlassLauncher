@@ -111,7 +111,61 @@ class Prefs(ctx: Context) {
     var columns: Int get() = int("columns2", 7); set(v) = putInt("columns2", v)
     /** 0 top, 1 middle, 2 bottom */
     var gridPosition: Int get() = int("gridPos", 2); set(v) = putInt("gridPos", v)
-    var showLabels: Boolean get() = bool("labels", true); set(v) = putBool("labels", v)
+    var showLabels: Boolean get() = bool("labels3", false); set(v) = putBool("labels3", v)
+
+    // ---- tiles (v2.1)
+    /** 0 wide 16:9 (banner), 1 square */
+    var tileShape: Int get() = int("tShape", 0); set(v) = putInt("tShape", v)
+    /** 0 original colours, 1 white logos ("white snow") */
+    var logoWhite: Boolean get() = bool("tWhite", false); set(v) = putBool("tWhite", v)
+    /** remove the flat background behind a logo/banner */
+    var logoNoBg: Boolean get() = bool("tNoBg", true); set(v) = putBool("tNoBg", v)
+    /** 0..100 tile background */
+    var tileAlpha: Int get() = int("tAlpha", 22); set(v) = putInt("tAlpha", v)
+    /** 0 none, 1 thin line, 2 glass rim */
+    var tileBorder: Int get() = int("tBorder", 0); set(v) = putInt("tBorder", v)
+    /** corner radius in % of tile height: 0 = square corners */
+    var tileCorner: Int get() = int("tCorner", 16); set(v) = putInt("tCorner", v)
+    /** 0 S, 1 M, 2 L, 3 XL */
+    var tileSize: Int get() = int("tSize", 1); set(v) = putInt("tSize", v)
+    /** gap between tiles in dp */
+    var tileGap: Int get() = int("tGap", 12); set(v) = putInt("tGap", v)
+    /** 0 FIT, 1 STRETCH */
+    var logoFit: Int get() = int("tFit", 0); set(v) = putInt("tFit", v)
+    /** focused tile grows by this many % */
+    var focusScale: Int get() = int("tFocus", 30); set(v) = putInt("tFocus", v)
+    /** 0 left, 1 center, 2 right */
+    var gridAlign: Int get() = int("gridAlign", 0); set(v) = putInt("gridAlign", v)
+    /** all tiles sit in one big glass bar (Apple TV look) */
+    var dock: Boolean get() = bool("tDock", false); set(v) = putBool("tDock", v)
+
+    /** tile size in dp: (width, height) */
+    fun tileDp(): Pair<Int, Int> {
+        val wide = listOf(110 to 62, 132 to 74, 158 to 89, 188 to 106)
+        val sq = listOf(64, 80, 98, 118)
+        val i = tileSize.coerceIn(0, 3)
+        return if (tileShape == 0) wide[i] else sq[i] to sq[i]
+    }
+
+    // ---- changing wallpaper
+    /** 0 one picture, 1 slideshow from a folder, 2 films & series (TMDB) */
+    var wpMode: Int get() = int("wpMode", 0); set(v) = putInt("wpMode", v)
+    var wpFolder: String get() = str("wpFolder", ""); set(v) = putStr("wpFolder", v)
+    /** seconds between pictures */
+    var wpInterval: Int get() = int("wpInt", 60); set(v) = putInt("wpInt", v)
+    var tmdbKey: String get() = str("tmdbKey", ""); set(v) = putStr("tmdbKey", v)
+    /** "all", "movie" or "tv" */
+    var tmdbType: String get() = str("tmdbType", "all"); set(v) = putStr("tmdbType", v)
+    var showMovieInfo: Boolean get() = bool("movieInfo", true); set(v) = putBool("movieInfo", v)
+
+    fun applyPreset(p: Int) {
+        when (p) {
+            0 -> { tileShape = 0; logoWhite = false; logoNoBg = true; tileAlpha = 22; tileBorder = 0; dock = false; showLabels = false }
+            1 -> { tileShape = 0; logoWhite = true; logoNoBg = true; tileAlpha = 12; tileBorder = 1; dock = true; showLabels = false }
+            2 -> { tileShape = 0; logoWhite = true; logoNoBg = true; tileAlpha = 0; tileBorder = 0; dock = false; showLabels = false }
+            3 -> { tileShape = 1; logoWhite = false; logoNoBg = false; tileAlpha = 18; tileBorder = 2; dock = false; showLabels = true }
+        }
+    }
     var blurWallpaper: Boolean get() = bool("blur", false); set(v) = putBool("blur", v)
 
     var showClock: Boolean get() = bool("sClock", true); set(v) = putBool("sClock", v)
@@ -128,7 +182,7 @@ class Prefs(ctx: Context) {
     var lon: Float get() = sp.getFloat("lon", 9.9900f); set(v) = sp.edit().putFloat("lon", v).apply()
 
     /** URL of update.json (see README) */
-    var updateUrl: String get() = str("updateUrl", ""); set(v) = putStr("updateUrl", v)
+    var updateUrl: String get() = str("updateUrl", "https://github.com/KarlAgathon/GlassLauncher/releases/latest/download/update.json"); set(v) = putStr("updateUrl", v)
     var lastUpdateCheck: Long get() = sp.getLong("lastUpd", 0L); set(v) = sp.edit().putLong("lastUpd", v).apply()
 
     var blockedAutostart: Set<String>
@@ -203,17 +257,32 @@ object AppLoader {
     fun pinnedEntries(ctx: Context, prefs: Prefs): List<AppEntry> {
         val pm = ctx.packageManager
         val all = launchable(ctx)
-        val size = iconSize(ctx)
+        val d = ctx.resources.displayMetrics.density
+        val (tw, th) = prefs.tileDp()
+        val wPx = (tw * d).toInt()
+        val hPx = (th * d).toInt()
+        val size = maxOf(iconSize(ctx), (th * d * 1.4f).toInt())
         val style = prefs.iconStyle
+        val wide = prefs.tileShape == 0
         return prefs.pinned.mapNotNull { p ->
+            val own = IconStore.file(ctx, p).takeIf { it.exists() }?.let { Bitmaps.decodeScaled(it, wPx * 2, hPx * 2) }
             if (p == AppEntry.FILES) {
-                val icon = IconStore.load(ctx, p, size) ?: filesIcon(ctx, size)
-                return@mapNotNull AppEntry(p, prefs.label(p) ?: T.s("Files", "Fajlovi", "Dateien"), icon)
+                val name = prefs.label(p) ?: T.s("Files", "Fajlovi", "Dateien")
+                val icon = own ?: if (wide) {
+                    val art = TileArt.iconAndName(ctx, ctx.getDrawable(R.drawable.lc_folder)?.let { dr ->
+                        android.graphics.drawable.BitmapDrawable(ctx.resources, IconRender.tinted(dr, size, Color.rgb(255, 197, 61)))
+                    }, name, wPx, hPx, prefs)
+                    if (prefs.logoWhite) IconRender.whiten(art) else art
+                } else filesIcon(ctx, size)
+                return@mapNotNull AppEntry(p, name, icon)
             }
             val ri = all[p] ?: return@mapNotNull null
             val label = prefs.label(p) ?: ri.loadLabel(pm).toString()
-            val icon = IconStore.load(ctx, p, size)
-                ?: runCatching { IconRender.render(ri.loadIcon(pm), size, style) }.getOrNull()
+            val icon = own?.let { if (prefs.logoWhite) IconRender.whiten(it) else it }
+                ?: runCatching {
+                    if (wide) TileArt.wide(ctx, ri, label, null, wPx, hPx, prefs)
+                    else IconRender.render(ri.loadIcon(pm), size, if (prefs.logoWhite) 2 else style)
+                }.getOrNull()
             AppEntry(p, label, icon)
         }
     }
@@ -377,6 +446,85 @@ object Bitmaps {
     }
 }
 
+/** Builds the picture shown inside a tile (banner, logo, or icon + name). */
+object TileArt {
+    fun drawableToBitmap(d: Drawable, w: Int, h: Int): Bitmap {
+        val b = Bitmap.createBitmap(maxOf(1, w), maxOf(1, h), Bitmap.Config.ARGB_8888)
+        d.setBounds(0, 0, b.width, b.height)
+        d.draw(Canvas(b))
+        return b
+    }
+
+    /** Makes the flat background of a logo transparent (colour taken from the corners). */
+    fun removeBackground(src: Bitmap): Bitmap {
+        val w = src.width; val h = src.height
+        val px = IntArray(w * h)
+        src.getPixels(px, 0, w, 0, 0, w, h)
+        val corners = intArrayOf(px[0], px[w - 1], px[(h - 1) * w], px[h * w - 1])
+        if (corners.any { (it ushr 24) < 200 }) return src          // already transparent
+        val r0 = corners.map { (it shr 16) and 0xFF }.average()
+        val g0 = corners.map { (it shr 8) and 0xFF }.average()
+        val b0 = corners.map { it and 0xFF }.average()
+        val spread = corners.maxOf { Math.abs(((it shr 16) and 0xFF) - r0) + Math.abs(((it shr 8) and 0xFF) - g0) + Math.abs((it and 0xFF) - b0) }
+        if (spread > 60) return src                                    // not a flat background
+        for (i in px.indices) {
+            val c = px[i]
+            val d = Math.abs(((c shr 16) and 0xFF) - r0) + Math.abs(((c shr 8) and 0xFF) - g0) + Math.abs((c and 0xFF) - b0)
+            val a = ((d - 40) * 4).coerceIn(0.0, 255.0).toInt()
+            val na = (a * (c ushr 24)) / 255
+            px[i] = (na shl 24) or (c and 0xFFFFFF)
+        }
+        return Bitmap.createBitmap(px, w, h, Bitmap.Config.ARGB_8888)
+    }
+
+    /** Wide tile picture for an app. */
+    fun wide(ctx: Context, ri: ResolveInfo?, label: String, fallbackIcon: Drawable?, wPx: Int, hPx: Int, p: Prefs): Bitmap {
+        val pm = ctx.packageManager
+        val banner: Drawable? = ri?.let {
+            runCatching { it.activityInfo.loadBanner(pm) ?: it.activityInfo.applicationInfo.loadBanner(pm) }.getOrNull()
+        }
+        var out: Bitmap
+        if (banner != null) {
+            val iw = if (banner.intrinsicWidth > 0) banner.intrinsicWidth else 320
+            val ih = if (banner.intrinsicHeight > 0) banner.intrinsicHeight else 180
+            val scale = maxOf(1f, (wPx * 1.4f) / iw)
+            out = drawableToBitmap(banner, (iw * scale).toInt(), (ih * scale).toInt())
+            if (p.logoNoBg || p.logoWhite) out = removeBackground(out)
+        } else {
+            out = iconAndName(ctx, fallbackIcon ?: ri?.let { runCatching { it.loadIcon(pm) }.getOrNull() }, label, wPx, hPx, p)
+        }
+        return if (p.logoWhite) IconRender.whiten(out) else out
+    }
+
+    /** For apps without a TV banner: icon with the app name next to it. */
+    fun iconAndName(ctx: Context, icon: Drawable?, label: String, wPx: Int, hPx: Int, p: Prefs): Bitmap {
+        val W = (wPx * 1.4f).toInt()
+        val H = (hPx * 1.4f).toInt()
+        val b = Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888)
+        val c = Canvas(b)
+        val iconS = (H * 0.46f).toInt()
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            typeface = Fonts.medium(ctx)
+            textSize = H * 0.20f
+        }
+        var tw = paint.measureText(label)
+        val maxText = W * 0.92f - iconS - H * 0.08f
+        while (tw > maxText && paint.textSize > H * 0.11f) { paint.textSize *= 0.92f; tw = paint.measureText(label) }
+        val shown = if (tw > maxText) label.take(12) + "…" else label
+        tw = paint.measureText(shown)
+        val total = iconS + H * 0.08f + tw
+        val x0 = (W - total) / 2f
+        if (icon != null) {
+            val ib = IconRender.render(icon, iconS, p.iconStyle)
+            c.drawBitmap(ib, x0, (H - iconS) / 2f, Paint(Paint.FILTER_BITMAP_FLAG))
+        }
+        val fm = paint.fontMetrics
+        c.drawText(shown, x0 + iconS + H * 0.08f, H / 2f - (fm.ascent + fm.descent) / 2f, paint)
+        return b
+    }
+}
+
 object ImageScanner {
     private val exts = setOf("jpg", "jpeg", "png", "webp", "bmp")
 
@@ -465,6 +613,31 @@ object NetInfo {
     }
 }
 
+object NetDetails {
+    /** Lines like "IP: 192.168.1.50", "Signal: 78%". */
+    @Suppress("DEPRECATION")
+    fun lines(ctx: Context): List<String> {
+        val out = ArrayList<String>()
+        val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val net = cm.activeNetwork
+        val lp = net?.let { cm.getLinkProperties(it) }
+        lp?.linkAddresses?.map { it.address }?.filter { it is java.net.Inet4Address }?.forEach { out.add("IP: ${it.hostAddress}") }
+        lp?.routes?.firstOrNull { it.isDefaultRoute && it.gateway != null }?.gateway?.hostAddress?.let { out.add("Gateway: $it") }
+        lp?.dnsServers?.take(2)?.forEach { out.add("DNS: ${it.hostAddress}") }
+        val st = NetInfo.read(ctx)
+        if (st.wifi && !st.eth) {
+            runCatching {
+                val wm = ctx.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+                val info = wm.connectionInfo
+                val pct = WifiManager.calculateSignalLevel(info.rssi, 101)
+                out.add("Signal: $pct%  (${info.rssi} dBm)")
+                out.add("${T.s("Speed", "Brzina", "Geschwindigkeit")}: ${info.linkSpeed} Mbps")
+            }
+        }
+        return out
+    }
+}
+
 object SysStats {
     private var lastTotal = 0L
     private var lastIdle = 0L
@@ -521,7 +694,14 @@ object Http {
         return conn
     }
 
-    fun text(url: String): String = open(url).inputStream.bufferedReader().use { it.readText() }
+    fun text(url: String, headers: Map<String, String> = emptyMap()): String {
+        val c = URL(url).openConnection() as HttpURLConnection
+        c.connectTimeout = 15000; c.readTimeout = 30000
+        c.setRequestProperty("User-Agent", "Mozilla/5.0 GlassLauncher")
+        for ((k, v) in headers) c.setRequestProperty(k, v)
+        if (headers.isEmpty()) return open(url).inputStream.bufferedReader().use { it.readText() }
+        return c.inputStream.bufferedReader().use { it.readText() }
+    }
 
     /** Blocking download. Call off the main thread. */
     fun download(url: String, dest: File) {
@@ -541,6 +721,20 @@ object Weather {
         icon(cur.getInt("weather_code")) to "${Math.round(cur.getDouble("temperature_2m"))}°"
     }.getOrNull()
 
+    /** Next days: (day name, icon, "max° / min°"). Call off the main thread. */
+    fun forecast(lat: Float, lon: Float): List<Triple<String, Int, String>> = runCatching {
+        val j = JSONObject(Http.text("https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=5"))
+            .getJSONObject("daily")
+        val days = j.getJSONArray("time"); val codes = j.getJSONArray("weather_code")
+        val mx = j.getJSONArray("temperature_2m_max"); val mn = j.getJSONArray("temperature_2m_min")
+        val inFmt = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+        val outFmt = java.text.SimpleDateFormat("EEEE", T.locale)
+        (0 until days.length()).map { i ->
+            val name = outFmt.format(inFmt.parse(days.getString(i))!!).replaceFirstChar { it.uppercase() }
+            Triple(name, icon(codes.getInt(i)), "${Math.round(mx.getDouble(i))}° / ${Math.round(mn.getDouble(i))}°")
+        }
+    }.getOrDefault(emptyList())
+
     fun findCity(name: String): Triple<String, Float, Float>? = runCatching {
         val q = URLEncoder.encode(name, "UTF-8")
         val res = JSONObject(Http.text("https://geocoding-api.open-meteo.com/v1/search?name=$q&count=1"))
@@ -558,4 +752,33 @@ object Weather {
         in 95..99 -> R.drawable.lc_cloud_lightning
         else -> R.drawable.lc_cloud
     }
+}
+
+
+/* ================================================================ films & series wallpaper (TMDB) */
+
+data class Movie(val title: String, val year: String, val rating: String, val kind: String, val overview: String, val image: String)
+
+object Movies {
+    /** Trending films/series. key = TMDB API key (v3) or read-access token (v4). Call off the main thread. */
+    fun trending(key: String, type: String): List<Movie> = runCatching {
+        val lang = when (T.lang) { "bs" -> "bs-BA"; "de" -> "de-DE"; else -> "en-US" }
+        val t = if (type == "movie" || type == "tv") type else "all"
+        val v4 = key.length > 40
+        val url = "https://api.themoviedb.org/3/trending/$t/week?language=$lang" + if (v4) "" else "&api_key=$key"
+        val headers = if (v4) mapOf("Authorization" to "Bearer $key", "accept" to "application/json") else emptyMap()
+        val res = JSONObject(Http.text(url, headers)).getJSONArray("results")
+        (0 until res.length()).mapNotNull { i ->
+            val o = res.getJSONObject(i)
+            val bd = o.optString("backdrop_path", "")
+            if (bd.isBlank() || bd == "null") return@mapNotNull null
+            val isTv = o.optString("media_type") == "tv" || (t == "tv")
+            val title = o.optString(if (isTv) "name" else "title", o.optString("title", o.optString("name", "")))
+            val date = o.optString(if (isTv) "first_air_date" else "release_date", "")
+            val rating = o.optDouble("vote_average", 0.0)
+            Movie(title, date.take(4), if (rating > 0) String.format(java.util.Locale.US, "%.1f", rating) else "",
+                if (isTv) T.s("Series", "Serija", "Serie") else T.s("Movie", "Film", "Film"),
+                o.optString("overview", ""), "https://image.tmdb.org/t/p/w1280$bd")
+        }
+    }.getOrDefault(emptyList())
 }

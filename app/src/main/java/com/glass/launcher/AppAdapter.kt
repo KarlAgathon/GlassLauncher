@@ -4,7 +4,9 @@ import android.graphics.Color
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.FrameLayout
 import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 
@@ -44,16 +46,57 @@ class AppAdapter(
 
     override fun onBindViewHolder(h: VH, position: Int) {
         val e = items[position]
+        val ctx = h.itemView.context
+        val d = ctx.resources.displayMetrics.density
+        val (tw, th) = prefs.tileDp()
+        val wPx = (tw * d).toInt()
+        val hPx = (th * d).toInt()
+        val wide = prefs.tileShape == 0
+
+        // tile size and look
+        val lp = h.tile.layoutParams
+        lp.width = wPx
+        lp.height = hPx
+        h.tile.layoutParams = lp
+        h.tile.radiusPx = hPx * prefs.tileCorner / 100f
+        h.tile.tint = prefs.tileAlpha / 100f * 0.45f
+        h.tile.backdrop = prefs.tileAlpha > 0
+        h.tile.rimMode = prefs.tileBorder
+        h.tile.plain = prefs.tileAlpha == 0 && prefs.tileBorder == 0
+        h.tile.refreshShape()
+
+        // gap + room for the focus zoom
+        val gapPx = (prefs.tileGap * d).toInt()
+        val grow = (hPx * prefs.focusScale / 100f / 2f).toInt()
+        h.itemView.setPadding(gapPx / 2, grow + (4 * d).toInt(), gapPx / 2, grow)
+
+        // picture
         h.icon.setImageBitmap(e.icon)
-        // own icons, the "+" and the file browser fill the tile a bit less
-        val big = !e.isAdd && !e.isFiles
-        val s = (h.itemView.resources.displayMetrics.density * if (big) 58 else 44).toInt()
-        h.icon.layoutParams.width = s
-        h.icon.layoutParams.height = s
-        h.icon.requestLayout()
+        val ilp = h.icon.layoutParams as FrameLayout.LayoutParams
+        val stretch = prefs.logoFit == 1
+        if (wide) {
+            ilp.width = ViewGroup.LayoutParams.MATCH_PARENT
+            ilp.height = ViewGroup.LayoutParams.MATCH_PARENT
+            val pad = if (stretch) 0 else (hPx * 0.14f).toInt()
+            h.icon.setPadding(pad * 2, pad, pad * 2, pad)
+            h.icon.scaleType = if (stretch) ImageView.ScaleType.CENTER_CROP else ImageView.ScaleType.FIT_CENTER
+        } else {
+            val s = if (stretch) hPx else (hPx * if (e.isAdd || e.isFiles) 0.48f else 0.66f).toInt()
+            ilp.width = s
+            ilp.height = s
+            h.icon.setPadding(0, 0, 0, 0)
+            h.icon.scaleType = if (stretch) ImageView.ScaleType.CENTER_CROP else ImageView.ScaleType.FIT_CENTER
+        }
+        if (e.isAdd && wide) {
+            val pad = (hPx * 0.3f).toInt()
+            h.icon.setPadding(pad, pad, pad, pad)
+            h.icon.scaleType = ImageView.ScaleType.FIT_CENTER
+        }
+        h.icon.layoutParams = ilp
+
         h.label.text = e.label
-        h.label.visibility = if (prefs.showLabels) View.VISIBLE else View.INVISIBLE
-        h.tile.tint = prefs.glassAlpha / 100f
+        h.label.visibility = if (prefs.showLabels) View.VISIBLE else View.GONE
+        (h.label.layoutParams as LinearLayout.LayoutParams).width = wPx
         style(h, h.itemView.hasFocus())
     }
 
@@ -61,10 +104,12 @@ class AppAdapter(
         val moving = h.bindingAdapterPosition == movingPos && movingPos >= 0
         h.tile.focusedLook = focused
         h.tile.accent = moving
-        val s = if (focused || moving) 1.14f else 1f
-        h.tile.animate().scaleX(s).scaleY(s).setDuration(140).withEndAction { h.tile.invalidate() }.start()
+        val s = if (focused || moving) 1f + prefs.focusScale / 100f else 1f
+        h.tile.animate().scaleX(s).scaleY(s).setDuration(150).withEndAction { h.tile.invalidate() }.start()
+        h.tile.translationZ = if (focused) 10f else 0f
+        h.itemView.translationZ = if (focused) 10f else 0f
         h.label.typeface = if (focused) Fonts.medium(h.itemView.context) else Fonts.regular(h.itemView.context)
         h.label.setTextColor(if (focused) Color.WHITE else Color.argb(215, 255, 255, 255))
-        h.label.translationY = if (focused) 6f * h.itemView.resources.displayMetrics.density else 0f
+        h.label.translationY = if (focused) h.tile.height * prefs.focusScale / 200f else 0f
     }
 }

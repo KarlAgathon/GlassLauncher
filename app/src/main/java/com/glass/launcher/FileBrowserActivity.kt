@@ -36,7 +36,7 @@ class FileBrowserActivity : Activity() {
         private const val REQ_PERM = 21
     }
 
-    private class Entry(val file: File?, val name: String, val icon: Int, val info: String, val up: Boolean = false)
+    private class Entry(val file: File?, val name: String, val icon: Int, val info: String, val up: Boolean = false, val choose: Boolean = false)
 
     private val entries = ArrayList<Entry>()
     private var dir: File? = null
@@ -127,6 +127,7 @@ class FileBrowserActivity : Activity() {
             pathView.text = when (pickMode) {
                 "image" -> T.s("Choose a picture", "Izaberi sliku", "Bild auswählen")
                 "backup" -> T.s("Choose a backup (.json)", "Izaberi backup (.json)", "Backup wählen (.json)")
+                "folder" -> T.s("Open the folder and choose \"Use this folder\"", "Otvori folder i izaberi \"Koristi ovaj folder\"", "Ordner öffnen und \"Diesen Ordner verwenden\" wählen")
                 else -> ""
             }
             for ((i, r) in roots().withIndex()) {
@@ -137,11 +138,13 @@ class FileBrowserActivity : Activity() {
             title.text = if (isRoot(d)) T.s("Internal storage", "Interna memorija", "Interner Speicher") else d.name
             pathView.text = d.absolutePath
             entries.add(Entry(null, T.s("Back", "Nazad", "Zurück"), R.drawable.lc_arrow_up, "", up = true))
+            if (pickMode == "folder") entries.add(Entry(d, T.s("✓ Use this folder", "✓ Koristi ovaj folder", "✓ Diesen Ordner verwenden"), R.drawable.lc_check, "", choose = true))
             val files = (d.listFiles() ?: emptyArray())
                 .filter { !it.name.startsWith(".") }
                 .filter { f -> when (pickMode) {
                     "image" -> f.isDirectory || ImageScanner.isImage(f)
                     "backup" -> f.isDirectory || f.extension.lowercase() == "json"
+                    "folder" -> f.isDirectory || ImageScanner.isImage(f)
                     else -> true
                 } }
                 .sortedWith(compareBy<File>({ !it.isDirectory }, { it.name.lowercase() }))
@@ -178,6 +181,11 @@ class FileBrowserActivity : Activity() {
     private fun onEntry(e: Entry) {
         if (e.up) { goUp(); return }
         val f = e.file ?: return
+        if (e.choose) {
+            setResult(RESULT_OK, Intent().putExtra(EXTRA_PATH, f.absolutePath))
+            finish()
+            return
+        }
         if (f.isDirectory) { show(f); return }
         if (picking) {
             setResult(RESULT_OK, Intent().putExtra(EXTRA_PATH, f.absolutePath))

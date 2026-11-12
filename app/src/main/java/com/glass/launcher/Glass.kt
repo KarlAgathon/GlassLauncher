@@ -48,6 +48,14 @@ class GlassFrame @JvmOverloads constructor(
         set(v) { field = v; invalidate() }
     var accent = false
         set(v) { field = v; invalidate() }
+    /** 0 no border, 1 thin line, 2 glass rim */
+    var rimMode = 2
+    /** show the blurred wallpaper inside the glass */
+    var backdrop = true
+    /** draw nothing unless focused (white-snow look) */
+    var plain = false
+    /** corner radius in px; when < 0 radiusDp is used */
+    var radiusPx = -1f
 
     private val density = resources.displayMetrics.density
     private val path = Path()
@@ -58,7 +66,22 @@ class GlassFrame @JvmOverloads constructor(
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
     private val rim = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
 
-    init { setWillNotDraw(false) }
+    init {
+        setWillNotDraw(false)
+        outlineProvider = object : android.view.ViewOutlineProvider() {
+            override fun getOutline(view: android.view.View, outline: android.graphics.Outline) {
+                outline.setRoundRect(0, 0, view.width, view.height, currentRadius())
+            }
+        }
+        clipToOutline = true
+    }
+
+    private fun currentRadius(): Float {
+        val r = if (radiusPx >= 0f) radiusPx else radiusDp * density
+        return minOf(r, height / 2f, width / 2f).coerceAtLeast(0f)
+    }
+
+    fun refreshShape() { invalidateOutline(); invalidate() }
 
     private fun white(f: Float) = Color.argb((f.coerceIn(0f, 1f) * 255).toInt(), 255, 255, 255)
 
@@ -71,7 +94,8 @@ class GlassFrame @JvmOverloads constructor(
         val w = width.toFloat()
         val h = height.toFloat()
         if (w <= 0f || h <= 0f) return
-        val r = minOf(radiusDp * density, h / 2f, w / 2f)
+        if (plain && !focusedLook && !accent) return
+        val r = currentRadius()
         rect.set(0f, 0f, w, h)
         path.reset()
         path.addRoundRect(rect, r, r, Path.Direction.CW)
@@ -79,7 +103,7 @@ class GlassFrame @JvmOverloads constructor(
         canvas.save()
         canvas.clipPath(path)
         val bd = Backdrop.blurred
-        if (bd != null && Backdrop.w > 0) {
+        if (backdrop && bd != null && Backdrop.w > 0) {
             getLocationInWindow(loc)
             val s = if (scaleX > 0.01f) scaleX else 1f
             dst.set(-loc[0] / s, -loc[1] / s, (Backdrop.w - loc[0]) / s, (Backdrop.h - loc[1]) / s)
@@ -98,10 +122,14 @@ class GlassFrame @JvmOverloads constructor(
         canvas.drawRect(0f, 0f, w, h * 0.55f, fill)
         canvas.restore()
 
-        val sw = (if (focusedLook || accent) 2.5f else 1.2f) * density
+        val mode = if ((focusedLook || accent) && rimMode == 0) 1 else rimMode
+        if (mode == 0) return
+        val sw = (if (focusedLook || accent) 2.5f else if (mode == 1) 1f else 1.2f) * density
         rim.strokeWidth = sw
         val ra = if (focusedLook) 0.95f else 0.55f
-        rim.shader = if (accent) {
+        rim.shader = if (mode == 1 && !accent) {
+            LinearGradient(0f, 0f, 0f, h, white(if (focusedLook) 0.75f else 0.22f), white(if (focusedLook) 0.45f else 0.12f), Shader.TileMode.CLAMP)
+        } else if (accent) {
             LinearGradient(0f, 0f, w, h, Color.rgb(120, 220, 255), Color.argb(150, 120, 220, 255), Shader.TileMode.CLAMP)
         } else {
             LinearGradient(0f, 0f, w, h, intArrayOf(white(ra), white(ra * 0.25f), white(ra * 0.6f)),

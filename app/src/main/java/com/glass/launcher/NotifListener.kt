@@ -15,6 +15,9 @@ class NotifListener : NotificationListenerService() {
                 .getOrDefault(emptyList())
 
         val connected get() = instance != null
+
+        fun clear(sbn: StatusBarNotification) { runCatching { instance?.cancelNotification(sbn.key) } }
+        fun clearAll() { runCatching { instance?.cancelAllNotifications() } }
     }
 
     override fun onListenerConnected() { instance = this; onChange?.invoke() }

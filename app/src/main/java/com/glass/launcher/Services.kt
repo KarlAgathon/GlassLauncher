@@ -184,6 +184,7 @@ class BootReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent?) {
         val app = ctx.applicationContext
         Autostart.apply(app)
+        runCatching { Updater.schedule(app) }
         val pending = goAsync()
         val h = Handler(Looper.getMainLooper())
         h.postDelayed({ Autostart.apply(app) }, 4000)

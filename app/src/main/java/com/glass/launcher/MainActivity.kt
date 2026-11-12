@@ -48,6 +48,8 @@ class MainActivity : Activity() {
     private lateinit var clock: TextView
     private lateinit var date: TextView
     private lateinit var statusPill: GlassFrame
+    private lateinit var dock: GlassFrame
+    private lateinit var gridArea: FrameLayout
     private lateinit var profileBtn: GlassFrame
     private lateinit var settingsBtn: GlassFrame
     private lateinit var profileLetter: TextView
@@ -103,6 +105,8 @@ class MainActivity : Activity() {
         date = findViewById(R.id.date)
         statusPill = findViewById(R.id.statusPill)
         grid = findViewById(R.id.grid)
+        dock = findViewById(R.id.dock)
+        gridArea = findViewById(R.id.gridArea)
         hint = findViewById(R.id.hint)
         profileBtn = findViewById(R.id.profileBtn)
         settingsBtn = findViewById(R.id.settingsBtn)
@@ -115,6 +119,7 @@ class MainActivity : Activity() {
             profileBtn.isFocusable = !open
             settingsBtn.isFocusable = !open
             powerBtn.isFocusable = !open
+            statusGroups().forEach { it.isFocusable = !open }
             if (!open) focusTile(lastPos)
         }
 
@@ -132,7 +137,7 @@ class MainActivity : Activity() {
 
         statusPill.radiusDp = 24f
         adapter = AppAdapter(apps, prefs, ::onAppClick, ::onAppLongClick)
-        layoutManager = GridLayoutManager(this, prefs.columns)
+        layoutManager = GridLayoutManager(this, 1)
         grid.layoutManager = layoutManager
         grid.adapter = adapter
         (grid.itemAnimator as? SimpleItemAnimator)?.supportsChangeAnimations = false
@@ -154,6 +159,12 @@ class MainActivity : Activity() {
         applyLook()
         reloadApps()
         askLocationOnce()
+        setupStatusClicks()
+        runCatching { Updater.schedule(this) }
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), REQ_NOTIF)
+        }
+        if (intent?.getBooleanExtra(EXTRA_SHOW_UPDATE, false) == true) handler.postDelayed({ checkUpdate(manual = true) }, 800)
     }
 
     override fun onResume() {
@@ -161,8 +172,12 @@ class MainActivity : Activity() {
         lastInput = SystemClock.elapsedRealtime()
         handler.removeCallbacks(ticker)
         handler.post(ticker)
-        val day = 24 * 60 * 60 * 1000L
-        if (prefs.updateUrl.isNotBlank() && System.currentTimeMillis() - prefs.lastUpdateCheck > day) {
+        if (prefs.wpMode != 0 && !firstLoad) {
+            handler.removeCallbacks(rotate)
+            handler.postDelayed(rotate, prefs.wpInterval.coerceAtLeast(10) * 1000L)
+        }
+        val every = 6 * 60 * 60 * 1000L
+        if (prefs.updateUrl.isNotBlank() && System.currentTimeMillis() - prefs.lastUpdateCheck > every) {
             prefs.lastUpdateCheck = System.currentTimeMillis()
             checkUpdate(manual = false)
         }
@@ -171,6 +186,7 @@ class MainActivity : Activity() {
     override fun onPause() {
         super.onPause()
         handler.removeCallbacks(ticker)
+        handler.removeCallbacks(rotate)
     }
 
     override fun onDestroy() {
@@ -185,6 +201,7 @@ class MainActivity : Activity() {
         menu.close()
         if (movingPos >= 0) finishMove()
         focusTile(0)
+        if (intent?.getBooleanExtra(EXTRA_SHOW_UPDATE, false) == true) handler.postDelayed({ checkUpdate(manual = true) }, 500)
     }
 
     @Deprecated("Deprecated in Java")
@@ -207,19 +224,12 @@ class MainActivity : Activity() {
         settingsBtn.tint = prefs.glassAlpha / 100f
         powerBtn.tint = prefs.glassAlpha / 100f
         profileLetter.text = Profiles.name(this, prefs.profile).take(1).uppercase()
-        (grid.layoutParams as FrameLayout.LayoutParams).gravity = when (prefs.gridPosition) {
-            0 -> Gravity.TOP
-            1 -> Gravity.CENTER_VERTICAL
-            else -> Gravity.BOTTOM
-        }
         (hint.layoutParams as FrameLayout.LayoutParams).gravity = when (prefs.gridPosition) {
             0 -> Gravity.TOP or Gravity.START
             1 -> Gravity.CENTER_VERTICAL or Gravity.START
             else -> Gravity.BOTTOM or Gravity.START
         }
-        grid.requestLayout()
-        layoutManager.spanCount = prefs.columns
-        adapter.notifyDataSetChanged()
+        layoutGrid()
         clock.visibility = if (prefs.showClock) View.VISIBLE else View.GONE
         date.visibility = if (prefs.showDate) View.VISIBLE else View.GONE
         hint.text = T.s("Press OK to add your apps", "Pritisni OK da dodaš svoje aplikacije", "OK drücken, um deine Apps hinzuzufügen")
@@ -228,29 +238,168 @@ class MainActivity : Activity() {
         updateStatus()
     }
 
-    private fun loadWallpaper() {
-        val f = wallpaperFile
-        val blur = prefs.blurWallpaper
+    /** Size, columns, alignment and dock of the app row(s). */
+    private fun layoutGrid() {
+        val d = resources.displayMetrics.density
+        val (tw, _) = prefs.tileDp()
+        val cell = ((tw + prefs.tileGap) * d).toInt()
+        val avail = if (gridArea.width > 0) gridArea.width else resources.displayMetrics.widthPixels - (80 * d).toInt()
+        val dockPad = if (prefs.dock) (14 * d).toInt() else 0
+        val maxCols = maxOf(1, (avail - 2 * dockPad) / cell)
+        val cols = maxOf(1, minOf(maxCols, apps.size))
+        layoutManager.spanCount = cols
+        val glp = grid.layoutParams
+        glp.width = cols * cell
+        grid.layoutParams = glp
+
+        dock.setPadding(dockPad, dockPad / 2, dockPad, dockPad / 2)
+        dock.plain = !prefs.dock
+        dock.backdrop = prefs.dock
+        dock.tint = if (prefs.dock) 0.08f else 0f
+        dock.rimMode = if (prefs.dock) 1 else 0
+        dock.radiusDp = 26f
+        dock.clipToOutline = false
+        val vert = when (prefs.gridPosition) { 0 -> Gravity.TOP; 1 -> Gravity.CENTER_VERTICAL; else -> Gravity.BOTTOM }
+        val hor = when (prefs.gridAlign) { 1 -> Gravity.CENTER_HORIZONTAL; 2 -> Gravity.END; else -> Gravity.START }
+        (dock.layoutParams as FrameLayout.LayoutParams).gravity = vert or hor
+        dock.requestLayout()
+        dock.invalidate()
+        adapter.notifyDataSetChanged()
+        if (gridArea.width == 0) gridArea.post { if (gridArea.width > 0) layoutGrid() }
+    }
+
+    private fun screenSize(): Pair<Int, Int> {
         val dm = resources.displayMetrics
-        val w = if (root.width > 0) root.width else dm.widthPixels
-        val h = if (root.height > 0) root.height else dm.heightPixels
+        return (if (root.width > 0) root.width else dm.widthPixels) to (if (root.height > 0) root.height else dm.heightPixels)
+    }
+
+    /** Decodes a picture off the main thread and shows it (with soft fade when [fade]). */
+    private fun showPicture(load: () -> Bitmap?, fade: Boolean, movie: Movie? = null) {
+        val blur = prefs.blurWallpaper
+        val (w, h) = screenSize()
         Thread {
-            val src: Bitmap? = runCatching {
-                if (f.exists()) Bitmaps.decodeScaled(f, w, h)
-                else BitmapFactory.decodeResource(resources, R.drawable.wallpaper_default)
-            }.getOrNull()
-            if (src == null) return@Thread
+            val src = runCatching { load() }.getOrNull() ?: return@Thread
             val crop = Bitmaps.centerCrop(src, w, h)
             val frosted = Bitmaps.frosted(crop)
             val shown = if (blur) Bitmaps.softBlur(crop) else crop
             handler.post {
-                Backdrop.blurred = frosted
-                Backdrop.w = w
-                Backdrop.h = h
-                wallpaper.setImageBitmap(shown)
-                invalidateGlass()
+                val apply = {
+                    Backdrop.blurred = frosted
+                    Backdrop.w = w
+                    Backdrop.h = h
+                    wallpaper.setImageBitmap(shown)
+                    showMovieInfo(movie)
+                    invalidateGlass()
+                }
+                if (fade) {
+                    wallpaper.animate().alpha(0.15f).setDuration(450).withEndAction {
+                        apply()
+                        wallpaper.animate().alpha(1f).setDuration(650).start()
+                    }.start()
+                } else apply()
             }
         }.start()
+    }
+
+    private fun loadWallpaper() {
+        if (prefs.wpMode != 0) { startRotation(); return }
+        stopRotation()
+        val f = wallpaperFile
+        val (w, h) = screenSize()
+        showPicture({
+            if (f.exists()) Bitmaps.decodeScaled(f, w, h)
+            else BitmapFactory.decodeResource(resources, R.drawable.wallpaper_default)
+        }, fade = false)
+    }
+
+    // ------------------------------------------------------------------ changing wallpaper
+
+    private var movies: List<Movie> = emptyList()
+    private var moviesKey = ""
+    private var slideFiles: List<File> = emptyList()
+    private var slideIndex = 0
+    private val rotate = object : Runnable {
+        override fun run() {
+            nextSlide()
+            handler.postDelayed(this, prefs.wpInterval.coerceAtLeast(10) * 1000L)
+        }
+    }
+
+    private fun stopRotation() {
+        handler.removeCallbacks(rotate)
+        showMovieInfo(null)
+    }
+
+    private fun startRotation() {
+        handler.removeCallbacks(rotate)
+        when (prefs.wpMode) {
+            1 -> {
+                val dir = File(prefs.wpFolder)
+                slideFiles = (dir.listFiles() ?: emptyArray()).filter { it.isFile && ImageScanner.isImage(it) }.shuffled()
+                if (slideFiles.isEmpty()) {
+                    toast(T.s("No pictures in the chosen folder", "Nema slika u izabranom folderu", "Keine Bilder im gewählten Ordner"))
+                    prefs.wpMode = 0; loadWallpaper(); return
+                }
+                handler.post(rotate)
+            }
+            2 -> {
+                val key = prefs.tmdbKey.trim()
+                if (key.isBlank()) {
+                    toast(T.s("Enter your TMDB key first", "Prvo upiši TMDB ključ", "Zuerst den TMDB-Schlüssel eintragen"))
+                    prefs.wpMode = 0; loadWallpaper(); return
+                }
+                val cacheKey = key + prefs.tmdbType + T.lang
+                if (cacheKey == moviesKey && movies.isNotEmpty()) { handler.post(rotate); return }
+                Thread {
+                    val list = Movies.trending(key, prefs.tmdbType).shuffled()
+                    handler.post {
+                        if (list.isEmpty()) {
+                            toast(T.s("Couldn't load films (key or internet?)", "Filmovi se ne mogu učitati (ključ ili internet?)", "Filme nicht ladbar (Schlüssel oder Internet?)"))
+                            if (movies.isEmpty()) { prefs.wpMode = 0; loadWallpaper() }
+                            return@post
+                        }
+                        movies = list; moviesKey = cacheKey; slideIndex = 0
+                        handler.post(rotate)
+                    }
+                }.start()
+            }
+        }
+    }
+
+    private fun nextSlide() {
+        val (w, h) = screenSize()
+        when (prefs.wpMode) {
+            1 -> {
+                if (slideFiles.isEmpty()) return
+                val f = slideFiles[slideIndex++ % slideFiles.size]
+                showPicture({ Bitmaps.decodeScaled(f, w, h) }, fade = true)
+            }
+            2 -> {
+                if (movies.isEmpty()) return
+                val m = movies[slideIndex++ % movies.size]
+                if (slideIndex % movies.size == 0) moviesKey = "" // refresh the list now and then
+                showPicture({
+                    val tmp = File(cacheDir, "movie_bg.jpg")
+                    Http.download(m.image, tmp)
+                    Bitmaps.decodeScaled(tmp, w, h)
+                }, fade = true, movie = m)
+            }
+        }
+    }
+
+    private fun showMovieInfo(m: Movie?) {
+        val info = findViewById<View>(R.id.movieInfo)
+        val shade = findViewById<View>(R.id.movieShade)
+        val show = m != null && prefs.wpMode == 2 && prefs.showMovieInfo
+        info.visibility = if (show) View.VISIBLE else View.GONE
+        shade.visibility = if (show) View.VISIBLE else View.GONE
+        if (m == null || !show) return
+        findViewById<TextView>(R.id.movieTitle).text = m.title
+        findViewById<TextView>(R.id.movieMeta).text =
+            listOf(if (m.rating.isNotEmpty()) "★ ${m.rating}" else "", m.year, m.kind).filter { it.isNotEmpty() }.joinToString("   ·   ")
+        findViewById<TextView>(R.id.movieOverview).text = m.overview
+        info.alpha = 0f
+        info.animate().alpha(1f).setDuration(600).start()
     }
 
     // ================================================================== status bar
@@ -344,7 +493,7 @@ class MainActivity : Activity() {
                 apps.clear()
                 apps.addAll(list)
                 apps.add(AppEntry(AppEntry.ADD, T.s("Add", "Dodaj", "Hinzufügen"), plus))
-                adapter.notifyDataSetChanged()
+                layoutGrid()
                 hint.visibility = if (list.isEmpty()) View.VISIBLE else View.GONE
                 if (firstLoad || list.isEmpty()) {
                     firstLoad = false
@@ -514,7 +663,7 @@ class MainActivity : Activity() {
             return true
         }
         if (movingPos >= 0 && !menu.isOpen) {
-            val cols = prefs.columns
+            val cols = layoutManager.spanCount
             val delta = when (k) {
                 KeyEvent.KEYCODE_DPAD_LEFT -> -1
                 KeyEvent.KEYCODE_DPAD_RIGHT -> 1
@@ -566,7 +715,7 @@ class MainActivity : Activity() {
             GlassMenu.Item(T.s("Clock", "Sat", "Uhr"), R.drawable.lc_clock) { clockMenu() },
             GlassMenu.Item(T.s("While watching (corner)", "Dok gledaš (u ćošku)", "Beim Schauen (Ecke)"), R.drawable.lc_tv) { overlayMenu() },
             GlassMenu.Item(T.s("Weather city", "Grad za vrijeme", "Wetter-Stadt"), R.drawable.lc_map_pin, value = prefs.city) { setCity() },
-            GlassMenu.Item(T.s("Notifications", "Obavještenja", "Benachrichtigungen"), R.drawable.lc_bell) { showNotifications() },
+            GlassMenu.Item(T.s("Notifications", "Obavještenja", "Benachrichtigungen"), R.drawable.lc_bell) { notificationsPanel() },
             GlassMenu.Item(T.s("Default launcher (replace current)", "Zadani launcher (zamijeni trenutni)", "Standard-Launcher (aktuellen ersetzen)"), R.drawable.lc_house) { defaultLauncherMenu() },
             GlassMenu.Item(T.s("Screensaver and idle", "Screensaver i mirovanje", "Bildschirmschoner und Leerlauf"), R.drawable.lc_monitor) { screensaverMenu() },
             GlassMenu.Item(T.s("Power", "Napajanje", "Energie"), R.drawable.lc_power) { powerMenu() },
@@ -598,15 +747,38 @@ class MainActivity : Activity() {
     }
 
     private fun wallpaperMenu() {
+        val modes = listOf(
+            T.s("One picture", "Jedna slika", "Ein Bild") to 0,
+            T.s("Slideshow from a folder", "Slideshow iz foldera", "Diashow aus Ordner") to 1,
+            T.s("Films and series (changing)", "Filmovi i serije (mijenjaju se)", "Filme und Serien (wechselnd)") to 2)
         menu.show(T.s("Wallpaper", "Pozadina", "Hintergrund"), R.drawable.lc_wallpaper, listOf(
-            GlassMenu.Item(T.s("Choose a picture", "Izaberi sliku", "Bild auswählen"), R.drawable.lc_image) { pickImage { setWallpaper(it) } },
+            GlassMenu.Item(T.s("Wallpaper type", "Vrsta pozadine", "Hintergrundart"), R.drawable.lc_layers,
+                value = modes.first { it.second == prefs.wpMode }.first) {
+                choose(T.s("Wallpaper type", "Vrsta pozadine", "Hintergrundart"), R.drawable.lc_layers, modes, prefs.wpMode) { m ->
+                    when (m) {
+                        1 -> if (prefs.wpFolder.isBlank()) pickFolder() else { prefs.wpMode = 1; loadWallpaper() }
+                        2 -> if (prefs.tmdbKey.isBlank()) askTmdbKey(thenStart = true) else { prefs.wpMode = 2; loadWallpaper() }
+                        else -> { prefs.wpMode = 0; loadWallpaper() }
+                    }
+                }
+            },
+            GlassMenu.Item(T.s("Films and series…", "Filmovi i serije…", "Filme und Serien…"), R.drawable.lc_tv) { moviesMenu() },
+            GlassMenu.Item(T.s("Slideshow folder", "Folder za slideshow", "Diashow-Ordner"), R.drawable.lc_folder,
+                value = prefs.wpFolder.substringAfterLast('/').ifBlank { "–" }) { pickFolder() },
+            GlassMenu.Item(T.s("Change every", "Mijenjaj svakih", "Wechseln alle"), R.drawable.lc_clock, value = intervalLabel(prefs.wpInterval)) {
+                choose(T.s("Change every", "Mijenjaj svakih", "Wechseln alle"), R.drawable.lc_clock,
+                    listOf(15, 30, 60, 120, 300, 900, 1800).map { intervalLabel(it) to it }, prefs.wpInterval) {
+                    prefs.wpInterval = it; if (prefs.wpMode != 0) startRotation()
+                }
+            },
+            GlassMenu.Item(T.s("Choose a picture", "Izaberi sliku", "Bild auswählen"), R.drawable.lc_image) { pickImage { prefs.wpMode = 0; setWallpaper(it) } },
             GlassMenu.Item(T.s("From the internet (URL)", "S interneta (link)", "Aus dem Internet (URL)"), R.drawable.lc_link) {
                 askText(T.s("Wallpaper image URL", "Link slike za pozadinu", "Bild-URL für den Hintergrund"), "https://") { url ->
-                    download(url, wallpaperFile) { applyLook() }
+                    download(url, wallpaperFile) { prefs.wpMode = 0; applyLook() }
                 }
             },
             GlassMenu.Item(T.s("Samurai (default)", "Samuraj (zadana)", "Samurai (Standard)"), R.drawable.lc_rotate_ccw) {
-                wallpaperFile.delete(); applyLook()
+                wallpaperFile.delete(); prefs.wpMode = 0; applyLook()
             },
             GlassMenu.Item(T.s("Blur wallpaper", "Zamuti pozadinu", "Hintergrund weichzeichnen"), R.drawable.lc_eye,
                 checked = prefs.blurWallpaper, toggle = true) { prefs.blurWallpaper = it.checked; loadWallpaper() },
@@ -619,36 +791,141 @@ class MainActivity : Activity() {
         ))
     }
 
-    private fun lookMenu() {
-        menu.show(T.s("Look", "Izgled", "Aussehen"), R.drawable.lc_layers, listOf(
-            GlassMenu.Item(T.s("Glass", "Staklo", "Glas"), R.drawable.lc_layers, value = "${prefs.glassAlpha}%") {
-                choose(T.s("Glass", "Staklo", "Glas"), R.drawable.lc_layers, listOf(
-                    T.s("Crystal clear", "Kristalno providno", "Kristallklar") to 4,
-                    T.s("Clear", "Providno", "Klar") to 10,
-                    T.s("Frosted", "Mat", "Milchglas") to 18,
-                    T.s("Milky", "Mliječno", "Milchig") to 28), prefs.glassAlpha) {
-                    prefs.glassAlpha = it; applyLook()
+    private fun intervalLabel(sec: Int) = if (sec < 60) "$sec s" else "${sec / 60} min"
+
+    private fun pickFolder() {
+        pendingPick = { f -> prefs.wpFolder = f.absolutePath; prefs.wpMode = 1; loadWallpaper() }
+        @Suppress("DEPRECATION")
+        startActivityForResult(Intent(this, FileBrowserActivity::class.java)
+            .putExtra(FileBrowserActivity.EXTRA_PICK, "folder"), REQ_FILES)
+    }
+
+    private fun askTmdbKey(thenStart: Boolean) {
+        menu.show("TMDB", R.drawable.lc_tv, listOf(
+            GlassMenu.Item(T.s("Enter TMDB key", "Upiši TMDB ključ", "TMDB-Schlüssel eingeben"), R.drawable.lc_key_round) {
+                askText(T.s("TMDB API key", "TMDB API ključ", "TMDB-API-Schlüssel"), prefs.tmdbKey) { k ->
+                    prefs.tmdbKey = k.trim()
+                    if (thenStart && k.isNotBlank()) { prefs.wpMode = 2; moviesKey = ""; loadWallpaper() }
                 }
             },
-            GlassMenu.Item(T.s("Icon style", "Stil ikona", "Symbolstil"), R.drawable.lc_image) {
+        ), T.s("Film pictures come from TheMovieDB (free). Make an account on themoviedb.org → Settings → API, copy the \"API Key\" and enter it here once.",
+            "Slike filmova dolaze s TheMovieDB (besplatno). Napravi račun na themoviedb.org → Settings → API, kopiraj \"API Key\" i upiši ga ovdje jednom.",
+            "Filmbilder kommen von TheMovieDB (kostenlos). Konto auf themoviedb.org anlegen → Settings → API, den \"API Key\" kopieren und hier einmal eintragen."))
+    }
+
+    private fun moviesMenu() {
+        val types = listOf(T.s("Films and series", "Filmovi i serije", "Filme und Serien") to "all",
+            T.s("Only films", "Samo filmovi", "Nur Filme") to "movie", T.s("Only series", "Samo serije", "Nur Serien") to "tv")
+        menu.show(T.s("Films and series", "Filmovi i serije", "Filme und Serien"), R.drawable.lc_tv, listOf(
+            GlassMenu.Item(T.s("Switch on", "Uključi", "Einschalten"), R.drawable.lc_play, checked = prefs.wpMode == 2) {
+                if (prefs.tmdbKey.isBlank()) askTmdbKey(thenStart = true) else { prefs.wpMode = 2; moviesKey = ""; loadWallpaper() }
+            },
+            GlassMenu.Item(T.s("Show", "Prikazuj", "Anzeigen"), R.drawable.lc_tv, value = types.first { it.second == prefs.tmdbType }.first) {
+                menu.show(T.s("Show", "Prikazuj", "Anzeigen"), R.drawable.lc_tv, types.map { (n, v) ->
+                    GlassMenu.Item(n, checked = v == prefs.tmdbType) { prefs.tmdbType = v; moviesKey = ""; if (prefs.wpMode == 2) loadWallpaper() }
+                })
+            },
+            GlassMenu.Item(T.s("Title and description", "Naziv i opis", "Titel und Beschreibung"), R.drawable.lc_type,
+                checked = prefs.showMovieInfo, toggle = true) { prefs.showMovieInfo = it.checked; if (!it.checked) showMovieInfo(null) },
+            GlassMenu.Item(T.s("TMDB key", "TMDB ključ", "TMDB-Schlüssel"), R.drawable.lc_key_round,
+                value = if (prefs.tmdbKey.isBlank()) "–" else "••••" + prefs.tmdbKey.takeLast(4)) { askTmdbKey(thenStart = false) },
+        ), T.s("This product uses the TMDB API but is not endorsed or certified by TMDB.",
+            "Koristi TMDB API, ali nije odobren ni certificiran od strane TMDB-a.",
+            "Nutzt die TMDB-API, ist aber nicht von TMDB unterstützt oder zertifiziert."))
+    }
+
+    private fun lookMenu() {
+        menu.show(T.s("Look", "Izgled", "Aussehen"), R.drawable.lc_layers, listOf(
+            GlassMenu.Item(T.s("Icons and tiles", "Ikone i pločice", "Symbole und Kacheln"), R.drawable.lc_layout_grid) { tilesMenu() },
+            GlassMenu.Item(T.s("Status bar glass", "Staklo statusne trake", "Glas der Statusleiste"), R.drawable.lc_layers, value = "${prefs.glassAlpha}%") {
+                choose(T.s("Status bar glass", "Staklo statusne trake", "Glas der Statusleiste"), R.drawable.lc_layers,
+                    listOf(0, 4, 10, 18, 28, 40).map { "$it%" to it }, prefs.glassAlpha) { prefs.glassAlpha = it; applyLook() }
+            },
+        ))
+    }
+
+    private fun relayout() { layoutGrid(); invalidateGlass() }
+
+    private fun tilesMenu() {
+        val presets = listOf(
+            T.s("Banner (wide logos)", "Banner (široki logo)", "Banner (breite Logos)") to 0,
+            T.s("Dock (Apple look)", "Dock (Apple izgled)", "Dock (Apple-Look)") to 1,
+            "White Snow" to 2,
+            T.s("Classic (square)", "Klasično (kvadrat)", "Klassisch (Quadrat)") to 3)
+        val borders = listOf(T.s("No border", "Bez okvira", "Kein Rahmen") to 0,
+            T.s("Thin line", "Tanka linija", "Dünne Linie") to 1, T.s("Glass rim", "Stakleni rub", "Glasrand") to 2)
+        val sizes = listOf("S" to 0, "M" to 1, "L" to 2, "XL" to 3)
+        fun pct(v: Int) = "$v%"
+        menu.show(T.s("Icons and tiles", "Ikone i pločice", "Symbole und Kacheln"), R.drawable.lc_layout_grid, listOf(
+            GlassMenu.Item(T.s("Ready-made style", "Gotov stil", "Fertiger Stil"), R.drawable.lc_layers) {
+                choose(T.s("Ready-made style", "Gotov stil", "Fertiger Stil"), R.drawable.lc_layers, presets, -1) {
+                    prefs.applyPreset(it); reloadApps(); applyLook()
+                }
+            },
+            GlassMenu.Item(T.s("Tile shape", "Oblik pločice", "Kachelform"), R.drawable.lc_columns_3,
+                value = if (prefs.tileShape == 0) T.s("Wide", "Široka", "Breit") else T.s("Square", "Kvadrat", "Quadrat")) {
+                choose(T.s("Tile shape", "Oblik pločice", "Kachelform"), R.drawable.lc_columns_3, listOf(
+                    T.s("Wide 16:9 (banner)", "Široka 16:9 (banner)", "Breit 16:9 (Banner)") to 0,
+                    T.s("Square", "Kvadrat", "Quadrat") to 1), prefs.tileShape) { prefs.tileShape = it; reloadApps() }
+            },
+            GlassMenu.Item(T.s("White logos (White Snow)", "Bijeli logotipi (White Snow)", "Weiße Logos (White Snow)"), R.drawable.lc_image,
+                checked = prefs.logoWhite, toggle = true) { prefs.logoWhite = it.checked; reloadApps() },
+            GlassMenu.Item(T.s("Remove logo background", "Ukloni pozadinu logotipa", "Logo-Hintergrund entfernen"), R.drawable.lc_eye,
+                checked = prefs.logoNoBg, toggle = true) { prefs.logoNoBg = it.checked; reloadApps() },
+            GlassMenu.Item(T.s("Tile background", "Providnost pozadine", "Kachelhintergrund"), R.drawable.lc_layers, value = pct(prefs.tileAlpha)) {
+                choose(T.s("Tile background", "Providnost pozadine", "Kachelhintergrund"), R.drawable.lc_layers,
+                    (0..100 step 10).map { pct(it) to it }, prefs.tileAlpha) { prefs.tileAlpha = it; relayout() }
+            },
+            GlassMenu.Item(T.s("Border", "Okvir", "Rahmen"), R.drawable.lc_layout_grid, value = borders.first { it.second == prefs.tileBorder }.first) {
+                choose(T.s("Border", "Okvir", "Rahmen"), R.drawable.lc_layout_grid, borders, prefs.tileBorder) { prefs.tileBorder = it; relayout() }
+            },
+            GlassMenu.Item(T.s("Corners", "Uglovi", "Ecken"), R.drawable.lc_layout_grid, value = pct(prefs.tileCorner)) {
+                choose(T.s("Corners", "Uglovi", "Ecken"), R.drawable.lc_layout_grid, listOf(
+                    T.s("Square", "Kvadratni", "Eckig") to 0, T.s("Slightly round", "Blago zaobljeni", "Leicht rund") to 8,
+                    T.s("Round", "Zaobljeni", "Rund") to 16, T.s("Very round", "Jako zaobljeni", "Sehr rund") to 28,
+                    T.s("Capsule", "Kapsula", "Kapsel") to 50), prefs.tileCorner) { prefs.tileCorner = it; relayout() }
+            },
+            GlassMenu.Item(T.s("Size", "Veličina", "Größe"), R.drawable.lc_columns_3, value = sizes[prefs.tileSize.coerceIn(0, 3)].first) {
+                choose(T.s("Size", "Veličina", "Größe"), R.drawable.lc_columns_3, sizes, prefs.tileSize) { prefs.tileSize = it; reloadApps() }
+            },
+            GlassMenu.Item(T.s("Spacing", "Razmak", "Abstand"), R.drawable.lc_columns_3, value = "${prefs.tileGap} dp") {
+                choose(T.s("Spacing", "Razmak", "Abstand"), R.drawable.lc_columns_3,
+                    listOf(0, 6, 12, 18, 24, 32, 40).map { "$it dp" to it }, prefs.tileGap) { prefs.tileGap = it; relayout() }
+            },
+            GlassMenu.Item(T.s("Logo in tile", "Logo u pločici", "Logo in der Kachel"), R.drawable.lc_image,
+                value = if (prefs.logoFit == 0) "FIT" else "STRETCH") {
+                choose(T.s("Logo in tile", "Logo u pločici", "Logo in der Kachel"), R.drawable.lc_image, listOf(
+                    T.s("FIT – whole logo visible", "FIT – vidi se cijeli logo", "FIT – ganzes Logo") to 0,
+                    T.s("STRETCH – fills the tile", "STRETCH – popuni pločicu", "STRETCH – füllt die Kachel") to 1), prefs.logoFit) {
+                    prefs.logoFit = it; relayout()
+                }
+            },
+            GlassMenu.Item(T.s("Focus zoom", "Fokus uvećanje", "Fokus-Zoom"), R.drawable.lc_eye, value = "+${prefs.focusScale}%") {
+                choose(T.s("Focus zoom", "Fokus uvećanje", "Fokus-Zoom"), R.drawable.lc_eye,
+                    listOf(0, 10, 20, 30, 40, 50).map { "+$it%" to it }, prefs.focusScale) { prefs.focusScale = it; relayout() }
+            },
+            GlassMenu.Item(T.s("Dock (glass bar behind the apps)", "Dock (staklena traka iza aplikacija)", "Dock (Glasleiste hinter den Apps)"),
+                R.drawable.lc_layers, checked = prefs.dock, toggle = true) { prefs.dock = it.checked; relayout() },
+            GlassMenu.Item(T.s("App names", "Nazivi aplikacija", "App-Namen"), R.drawable.lc_type,
+                checked = prefs.showLabels, toggle = true) { prefs.showLabels = it.checked; relayout() },
+            GlassMenu.Item(T.s("Icon style (apps without banner)", "Stil ikone (aplikacije bez bannera)", "Symbolstil (Apps ohne Banner)"), R.drawable.lc_image) {
                 choose(T.s("Icon style", "Stil ikona", "Symbolstil"), R.drawable.lc_image, listOf(
                     T.s("Original", "Original", "Original") to 0,
                     T.s("Transparent (no background)", "Providne (bez pozadine)", "Transparent (ohne Hintergrund)") to 1,
-                    T.s("White glass", "Bijelo staklo", "Weißes Glas") to 2), prefs.iconStyle) {
-                    prefs.iconStyle = it; reloadApps()
-                }
+                    T.s("White glass", "Bijelo staklo", "Weißes Glas") to 2), prefs.iconStyle) { prefs.iconStyle = it; reloadApps() }
             },
-            GlassMenu.Item(T.s("Columns", "Broj kolona", "Spalten"), R.drawable.lc_columns_3, value = prefs.columns.toString()) {
-                choose(T.s("Columns", "Broj kolona", "Spalten"), R.drawable.lc_columns_3,
-                    (5..9).map { it.toString() to it }, prefs.columns) { prefs.columns = it; applyLook() }
-            },
-            GlassMenu.Item(T.s("Apps position", "Pozicija aplikacija", "Position der Apps"), R.drawable.lc_layout_grid) {
-                choose(T.s("Apps position", "Pozicija aplikacija", "Position der Apps"), R.drawable.lc_layout_grid, listOf(
+            GlassMenu.Item(T.s("Position – up / down", "Pozicija – gore / dole", "Position – oben / unten"), R.drawable.lc_move,
+                value = listOf(T.s("Top", "Gore", "Oben"), T.s("Middle", "Sredina", "Mitte"), T.s("Bottom", "Dolje", "Unten"))[prefs.gridPosition.coerceIn(0, 2)]) {
+                choose(T.s("Position", "Pozicija", "Position"), R.drawable.lc_move, listOf(
                     T.s("Top", "Gore", "Oben") to 0, T.s("Middle", "Sredina", "Mitte") to 1, T.s("Bottom", "Dolje", "Unten") to 2),
                     prefs.gridPosition) { prefs.gridPosition = it; applyLook() }
             },
-            GlassMenu.Item(T.s("App names", "Nazivi aplikacija", "App-Namen"), R.drawable.lc_type,
-                checked = prefs.showLabels, toggle = true) { prefs.showLabels = it.checked; applyLook() },
+            GlassMenu.Item(T.s("Position – left / right", "Pozicija – lijevo / desno", "Position – links / rechts"), R.drawable.lc_move,
+                value = listOf(T.s("Left", "Lijevo", "Links"), T.s("Center", "Sredina", "Mitte"), T.s("Right", "Desno", "Rechts"))[prefs.gridAlign.coerceIn(0, 2)]) {
+                choose(T.s("Position", "Pozicija", "Position"), R.drawable.lc_move, listOf(
+                    T.s("Left", "Lijevo", "Links") to 0, T.s("Center", "Sredina", "Mitte") to 1, T.s("Right", "Desno", "Rechts") to 2),
+                    prefs.gridAlign) { prefs.gridAlign = it; relayout() }
+            },
         ))
     }
 
@@ -1085,6 +1362,114 @@ class MainActivity : Activity() {
         if (act == 1) startSaver() else goSleep()
     }
 
+    // ================================================================== clickable status bar
+
+    private fun statusGroups(): List<View> =
+        listOf(R.id.weatherBox, R.id.netBox, R.id.vpnBox, R.id.notifBox).map { findViewById<View>(it) }
+
+    private fun setupStatusClicks() {
+        val d = resources.displayMetrics.density
+        val pad = (6 * d).toInt()
+        val actions = mapOf<Int, () -> Unit>(
+            R.id.weatherBox to { weatherPanel() },
+            R.id.netBox to { networkPanel() },
+            R.id.vpnBox to { vpnPanel() },
+            R.id.notifBox to { notificationsPanel() },
+        )
+        for ((id, act) in actions) {
+            val v = findViewById<View>(id)
+            v.isFocusable = true
+            v.isClickable = true
+            v.setPadding(pad, pad / 2, pad, pad / 2)
+            if (Build.VERSION.SDK_INT >= 26) v.defaultFocusHighlightEnabled = false
+            v.setOnFocusChangeListener { view, has -> view.background = if (has) GlassDrawable(d, 14, true, 12f) else null }
+            v.setOnClickListener { act() }
+        }
+    }
+
+    private fun weatherPanel() {
+        val title = T.s("Weather", "Vrijeme", "Wetter") + " – " + prefs.city
+        toast(T.s("Loading…", "Učitavam…", "Lade…"))
+        Thread {
+            val days = Weather.forecast(prefs.lat, prefs.lon)
+            handler.post {
+                val items = days.map { (day, icon, temps) -> GlassMenu.Item(day, icon, value = temps) } +
+                    GlassMenu.Item(T.s("Change city", "Promijeni grad", "Stadt ändern"), R.drawable.lc_map_pin) { setCity() } +
+                    GlassMenu.Item(T.s("Refresh", "Osvježi", "Aktualisieren"), R.drawable.lc_refresh_cw) { lastWeather = 0; updateWeather() }
+                menu.show(title, R.drawable.lc_cloud_sun, items,
+                    if (days.isEmpty()) T.s("No forecast right now (internet?)", "Prognoza trenutno nije dostupna (internet?)", "Keine Vorhersage (Internet?)") else null)
+            }
+        }.start()
+    }
+
+    private fun networkPanel() {
+        val st = NetInfo.read(this)
+        val head = when {
+            st.eth -> "LAN (Ethernet)"
+            st.wifi -> "Wi-Fi" + (st.ssid?.let { " – $it" } ?: "")
+            else -> T.s("Not connected", "Nije povezano", "Nicht verbunden")
+        }
+        val info = (listOf(head) + NetDetails.lines(this)).joinToString("\n")
+        menu.show(T.s("Network", "Mreža", "Netzwerk"), if (st.eth) R.drawable.lc_ethernet_port else R.drawable.lc_wifi, listOf(
+            GlassMenu.Item(T.s("Wi-Fi settings", "Wi-Fi postavke", "WLAN-Einstellungen"), R.drawable.lc_wifi) { safeStart(Intent(Settings.ACTION_WIFI_SETTINGS)) },
+            GlassMenu.Item(T.s("Network settings", "Mrežne postavke", "Netzwerkeinstellungen"), R.drawable.lc_ethernet_port) {
+                try { startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS)) } catch (e: Exception) { safeStart(Intent(Settings.ACTION_SETTINGS)) }
+            },
+            GlassMenu.Item("Private DNS", R.drawable.lc_shield_check, value = dnsLabel()) { dnsMenu() },
+        ), info)
+    }
+
+    private fun vpnPanel() {
+        val on = NetInfo.read(this).vpn
+        val pm = packageManager
+        val vpnApps = pm.queryIntentServices(Intent("android.net.VpnService"), 0)
+            .map { it.serviceInfo.packageName }.distinct()
+            .filter { it != packageName && (pm.getLeanbackLaunchIntentForPackage(it) ?: pm.getLaunchIntentForPackage(it)) != null }
+        val items = vpnApps.map { p ->
+            val label = runCatching { pm.getApplicationLabel(pm.getApplicationInfo(p, 0)).toString() }.getOrDefault(p)
+            val icon = runCatching { pm.getApplicationIcon(p) }.getOrNull()
+            GlassMenu.Item(T.s("Open ", "Otvori ", "Öffnen: ") + label, drawable = icon) { launch(p, label) }
+        } + GlassMenu.Item(T.s("VPN settings (Android)", "VPN postavke (Android)", "VPN-Einstellungen (Android)"), R.drawable.lc_settings) {
+            try { startActivity(Intent("android.settings.VPN_SETTINGS")) } catch (e: Exception) { safeStart(Intent(Settings.ACTION_SETTINGS)) }
+        }
+        menu.show("VPN", R.drawable.lc_key_round, items,
+            if (on) T.s("VPN is ON – connection is protected.", "VPN je UKLJUČEN – veza je zaštićena.", "VPN ist AN – Verbindung geschützt.")
+            else T.s("VPN is OFF.", "VPN je ISKLJUČEN.", "VPN ist AUS."))
+    }
+
+    private fun notificationsPanel() {
+        if (!NotifListener.connected) {
+            menu.show(T.s("Notifications", "Obavještenja", "Benachrichtigungen"), R.drawable.lc_bell, listOf(
+                GlassMenu.Item(T.s("Allow notification access", "Dozvoli pristup obavještenjima", "Benachrichtigungszugriff erlauben"), R.drawable.lc_check) { notificationAccess() },
+            ), T.s("Glass Launcher needs permission to show and clear notifications.",
+                "Glass Launcher treba dozvolu da prikazuje i briše obavještenja.",
+                "Glass Launcher braucht die Erlaubnis, Benachrichtigungen anzuzeigen und zu löschen."))
+            return
+        }
+        val list = NotifListener.current()
+        if (list.isEmpty()) { toast(T.s("No notifications", "Nema obavještenja", "Keine Benachrichtigungen")); return }
+        val pm = packageManager
+        val items = mutableListOf(GlassMenu.Item(T.s("Clear all", "Obriši sve", "Alle löschen"), R.drawable.lc_trash_2) {
+            NotifListener.clearAll(); handler.postDelayed({ updateStatus() }, 400)
+        })
+        for (sbn in list) {
+            val ex = sbn.notification.extras
+            val app = runCatching { pm.getApplicationLabel(pm.getApplicationInfo(sbn.packageName, 0)).toString() }.getOrDefault(sbn.packageName)
+            val title = ex.getCharSequence(Notification.EXTRA_TITLE)?.toString() ?: app
+            val txt = ex.getCharSequence(Notification.EXTRA_TEXT)?.toString()
+            items.add(GlassMenu.Item(if (txt != null) "$title – $txt" else title,
+                drawable = runCatching { pm.getApplicationIcon(sbn.packageName) }.getOrNull()) {
+                menu.show(title, R.drawable.lc_bell, listOf(
+                    GlassMenu.Item(T.s("Open", "Otvori", "Öffnen"), R.drawable.lc_play) { runCatching { sbn.notification.contentIntent?.send() } },
+                    GlassMenu.Item(T.s("Clear", "Obriši", "Löschen"), R.drawable.lc_x) {
+                        NotifListener.clear(sbn); handler.postDelayed({ updateStatus(); notificationsPanel() }, 300)
+                    },
+                ), txt)
+            })
+        }
+        menu.show(T.s("Notifications", "Obavještenja", "Benachrichtigungen") + " (${list.size})", R.drawable.lc_bell, items)
+    }
+
     // ------------------------------------------------------------------ update
 
     private fun updateMenu() {
@@ -1109,6 +1494,7 @@ class MainActivity : Activity() {
         if (manual) toast(T.s("Checking…", "Provjeravam…", "Prüfe…"))
         Thread {
             val info = Updater.check(this, url)
+            if (info != null && !manual) Updater.notify(this, info)
             handler.post {
                 if (info == null) {
                     if (manual) toast(T.s("You have the latest version", "Imaš najnoviju verziju", "Du hast die neueste Version"))
@@ -1275,5 +1661,7 @@ class MainActivity : Activity() {
         private const val REQ_LOC = 14
         private const val REQ_ACCOUNT = 15
         private const val REQ_BACKUP = 16
+        private const val REQ_NOTIF = 17
+        const val EXTRA_SHOW_UPDATE = "show_update"
     }
 }

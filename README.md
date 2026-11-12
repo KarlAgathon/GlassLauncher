@@ -1,4 +1,4 @@
-# Glass Launcher 2.0
+# Glass Launcher 2.1
 
 Open-source launcher za Android TV (Mi Box) sa zamućenim staklenim pločicama, samuraj pozadinom i bez reklama.
 Interfejs je na engleskom, bosanskom i njemačkom.
@@ -19,6 +19,12 @@ Interfejs je na engleskom, bosanskom i njemačkom.
 - **Private DNS** (AdGuard, Cloudflare, Google, Quad9 ili vlastiti server).
 - **Blokiranje auto-starta** aplikacija nakon paljenja boxa.
 - **Update preko interneta.**
+
+## Novo u 2.1
+- Pločice: Banner (široki logo), Dock (Apple izgled), White Snow, Klasično, uz providnost od 0 do 100 %, okvir, uglove, veličine S/M/L/XL, razmak, FIT/STRETCH, fokus uvećanje i poziciju gore/dole/lijevo/desno.
+- Klikabilna statusna traka: vrijeme (prognoza za 5 dana), Wi-Fi/LAN (IP adresa, signal), VPN (otvara VPN aplikaciju), obavještenja (otvori, obriši, obriši sve).
+- Pozadina se može mijenjati: slideshow iz foldera ili filmovi i serije s TMDB-a, s nazivom, ocjenom i opisom.
+- Kad izađe nova verzija, na boxu iskoči obavještenje "Nova verzija dostupna".
 
 ## Daljinski
 | Šta | Kako |

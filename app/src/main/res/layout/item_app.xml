@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent"
+    android:layout_width="wrap_content"
     android:layout_height="wrap_content"
     android:clickable="true"
     android:clipChildren="false"
@@ -8,19 +8,17 @@
     android:defaultFocusHighlightEnabled="false"
     android:focusable="true"
     android:gravity="center_horizontal"
-    android:orientation="vertical"
-    android:paddingTop="14dp"
-    android:paddingBottom="8dp">
+    android:orientation="vertical">
 
     <com.glass.launcher.GlassFrame
         android:id="@+id/tile"
-        android:layout_width="92dp"
-        android:layout_height="92dp">
+        android:layout_width="132dp"
+        android:layout_height="74dp">
 
         <ImageView
             android:id="@+id/icon"
-            android:layout_width="56dp"
-            android:layout_height="56dp"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
             android:layout_gravity="center"
             android:importantForAccessibility="no"
             android:scaleType="fitCenter" />
@@ -28,14 +26,12 @@
 
     <TextView
         android:id="@+id/label"
-        android:layout_width="match_parent"
+        android:layout_width="132dp"
         android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
+        android:layout_marginTop="10dp"
         android:ellipsize="end"
         android:fontFamily="@font/inter_regular"
         android:gravity="center"
-        android:paddingStart="4dp"
-        android:paddingEnd="4dp"
         android:shadowColor="#99000000"
         android:shadowRadius="6"
         android:singleLine="true"
