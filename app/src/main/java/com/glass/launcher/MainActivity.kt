@@ -542,7 +542,7 @@ class MainActivity : Activity() {
                 apps.addAll(list)
                 plusBitmap = plus
                 plusPeek = false
-                if (prefs.showAddTile || list.isEmpty()) apps.add(0, AppEntry(AppEntry.ADD, T.s("Add", "Dodaj", "Hinzufügen"), plus))
+                if (prefs.showAddTile || list.isEmpty()) apps.add(AppEntry(AppEntry.ADD, T.s("Add", "Dodaj", "Hinzufügen"), plus))
                 layoutGrid()
                 hint.visibility = if (list.isEmpty()) View.VISIBLE else View.GONE
                 if (firstLoad || list.isEmpty()) {
@@ -745,7 +745,7 @@ class MainActivity : Activity() {
     }
 
     private fun moveBy(delta: Int) {
-        val first = apps.indexOfFirst { !it.isAdd }.coerceAtLeast(0) // "+" stays at the start
+        val first = apps.indexOfFirst { !it.isAdd }.coerceAtLeast(0) // "+" stays at the end
         val last = apps.indexOfLast { !it.isAdd }
         val target = (movingPos + delta).coerceIn(first, maxOf(first, last))
         if (target == movingPos) return
@@ -768,14 +768,10 @@ class MainActivity : Activity() {
         }
         if (!menu.isOpen && movingPos < 0 && event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
             val pos = focusedPos()
-            val firstApp = apps.indexOfFirst { !it.isAdd }
-            if (k == KeyEvent.KEYCODE_DPAD_LEFT && pos != RecyclerView.NO_POSITION && pos == firstApp && !apps.any { it.isAdd }) {
-                val now = SystemClock.elapsedRealtime()
-                if (now - lastLeftAtStart < 1500) { lastLeftAtStart = 0; revealPlus(); return true }
-                lastLeftAtStart = now
-            } else if (plusPeek && (k == KeyEvent.KEYCODE_DPAD_RIGHT || k == KeyEvent.KEYCODE_DPAD_UP || k == KeyEvent.KEYCODE_DPAD_DOWN)) {
-                handler.removeCallbacks(hidePlus)
-                handler.postDelayed(hidePlus, 600)
+            // endless row: right on the last tile jumps to the first, left on the first jumps to the last
+            if (prefs.singleRow && pos != RecyclerView.NO_POSITION && apps.size > 1) {
+                if (k == KeyEvent.KEYCODE_DPAD_RIGHT && pos == apps.size - 1) { lastPos = 0; focusTile(0); return true }
+                if (k == KeyEvent.KEYCODE_DPAD_LEFT && pos == 0) { lastPos = apps.size - 1; focusTile(apps.size - 1); return true }
             }
         }
         if (movingPos >= 0 && !menu.isOpen) {

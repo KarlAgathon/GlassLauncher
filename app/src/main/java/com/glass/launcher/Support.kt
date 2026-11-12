@@ -127,7 +127,7 @@ class Prefs(ctx: Context) {
     /** corner radius in % of tile height: 0 = square corners */
     var tileCorner: Int get() = int("tCorner", 16); set(v) = putInt("tCorner", v)
     /** 0 S, 1 M, 2 L, 3 XL */
-    var tileSize: Int get() = int("tSize", 1); set(v) = putInt("tSize", v)
+    var tileSize: Int get() = int("tSize2", 2); set(v) = putInt("tSize2", v)
     /** gap between tiles in dp */
     var tileGap: Int get() = int("tGap", 12); set(v) = putInt("tGap", v)
     /** 0 FIT, 1 STRETCH */
@@ -139,16 +139,16 @@ class Prefs(ctx: Context) {
     /** all tiles sit in one big glass bar (Apple TV look) */
     var dock: Boolean get() = bool("tDock", false); set(v) = putBool("tDock", v)
     /** apps always in one row that scrolls left/right */
-    var singleRow: Boolean get() = bool("oneRow", true); set(v) = putBool("oneRow", v)
-    /** show the "+" tile (it is always shown while the home screen is empty) */
-    var showAddTile: Boolean get() = bool("addTile", false); set(v) = putBool("addTile", v)
+    var singleRow: Boolean get() = bool("oneRow2", true); set(v) = putBool("oneRow2", v)
+    /** show the "+" tile at the end of the row (always shown while the home screen is empty) */
+    var showAddTile: Boolean get() = bool("addTileEnd", true); set(v) = putBool("addTileEnd", v)
     /** status bar glass adapts to the brightness of the wallpaper behind it */
     var statusAdaptive: Boolean get() = bool("sAdaptive", true); set(v) = putBool("sAdaptive", v)
 
     /** tile size in dp: (width, height) */
     fun tileDp(): Pair<Int, Int> {
-        val wide = listOf(110 to 62, 132 to 74, 158 to 89, 188 to 106)
-        val sq = listOf(64, 80, 98, 118)
+        val wide = listOf(150 to 84, 184 to 104, 220 to 124, 260 to 146)
+        val sq = listOf(88, 108, 128, 152)
         val i = tileSize.coerceIn(0, 3)
         return if (tileShape == 0) wide[i] else sq[i] to sq[i]
     }
