@@ -735,9 +735,9 @@ object SysStats {
             reader.start()
             val ok = android.os.Debug.dumpService("cpuinfo", pipe[1].fileDescriptor, arrayOf())
             pipe[1].close()
-            reader.join(3000)
+            reader.join(1500)
             val text = sb.toString()
-            if (!ok || text.contains("Permission Denial")) { dumpDenied = true; return null }
+            if (!ok || text.contains("Permission Denial") || !text.contains("TOTAL")) { dumpDenied = true; return null }
             Regex("([0-9]+(?:\\.[0-9]+)?)%\\s+TOTAL").find(text)?.groupValues?.get(1)?.toDouble()?.let {
                 // TOTAL is the sum over all cores in some versions – keep it at most 100
                 val cores = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)

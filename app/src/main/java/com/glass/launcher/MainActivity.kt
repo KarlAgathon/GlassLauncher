@@ -75,6 +75,8 @@ class MainActivity : Activity() {
     private var firstLoad = true
     private var lastWeather = 0L
     private var cpuMisses = 0
+    @Volatile private var cpuValue: Int? = null
+    @Volatile private var cpuBusy = false
     private var pendingPermission: (() -> Unit)? = null
     private var pendingPick: ((File) -> Unit)? = null
 
@@ -579,7 +581,12 @@ class MainActivity : Activity() {
             if (NotifListener.connected) NotifListener.current().size.toString() else "–"
 
         // newer Android (Google TV Streamer …) gives apps no CPU numbers at all: then the CPU field hides itself
-        val cpu = if (prefs.showCpu) SysStats.cpuPercent() else null
+        // CPU is measured on a background thread (it can take a moment on some boxes) – never block the remote
+        val cpu = if (prefs.showCpu) cpuValue else null
+        if (prefs.showCpu && !cpuBusy) {
+            cpuBusy = true
+            Thread { val v = runCatching { SysStats.cpuPercent() }.getOrNull(); handler.post { cpuValue = v; cpuBusy = false } }.start()
+        }
         if (prefs.showCpu) cpuMisses = if (cpu == null) cpuMisses + 1 else 0
         val cpuShown = prefs.showCpu && (cpuMisses < 3 || ShizukuCpu.permitted())
         findViewById<View>(R.id.cpuBox).visibility = if (cpuShown) View.VISIBLE else View.GONE
