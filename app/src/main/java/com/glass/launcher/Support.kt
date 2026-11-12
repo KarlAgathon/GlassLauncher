@@ -670,7 +670,17 @@ object SysStats {
     private var lastTotal = 0L
     private var lastIdle = 0L
 
-    /** CPU load in %. Real value from /proc/stat if readable, otherwise estimated from CPU speed. */
+    private var lastIdleUs = 0L
+    private var lastWallUs = 0L
+    private var lastCpuCount = 0
+
+    /**
+     * CPU load in %.
+     * 1) /proc/stat when readable (older Android),
+     * 2) otherwise from the time the cores spent idle (cpuidle counters, readable by apps on newer Android),
+     * 3) otherwise from the load average.
+     * The CPU clock speed is NOT used: a fast clock does not mean a busy CPU.
+     */
     fun cpuPercent(): Int? {
         val real = runCatching {
             val parts = File("/proc/stat").bufferedReader().use { it.readLine() }
@@ -684,16 +694,39 @@ object SysStats {
             if (first || dt <= 0) null else (100 * (dt - di) / dt).toInt()
         }.getOrNull()
         if (real != null) return real.coerceIn(0, 100)
-        return runCatching {
-            val cpus = File("/sys/devices/system/cpu").listFiles { f -> f.name.matches(Regex("cpu\\d+")) } ?: return null
-            val ratios = cpus.mapNotNull { c ->
-                val cur = File(c, "cpufreq/scaling_cur_freq").readText().trim().toLongOrNull()
-                val max = File(c, "cpufreq/cpuinfo_max_freq").readText().trim().toLongOrNull()
-                if (cur != null && max != null && max > 0) cur.toDouble() / max else null
-            }
-            if (ratios.isEmpty()) null else (ratios.average() * 100).toInt().coerceIn(0, 100)
-        }.getOrNull()
+        if (lastTotal == 0L) idleBased()?.let { return it }
+        return loadAvg()
     }
+
+    /** Busy % from the cpuidle residency counters of the online cores. */
+    private fun idleBased(): Int? = runCatching {
+        val cpus = File("/sys/devices/system/cpu").listFiles { f -> f.name.matches(Regex("cpu\\d+")) } ?: return null
+        var idleUs = 0L
+        var count = 0
+        for (c in cpus) {
+            val online = File(c, "online").let { if (it.exists()) it.readText().trim() == "1" else true }
+            if (!online) continue
+            val states = File(c, "cpuidle").listFiles { f -> f.name.startsWith("state") } ?: continue
+            if (states.isEmpty()) continue
+            idleUs += states.sumOf { File(it, "time").readText().trim().toLongOrNull() ?: 0L }
+            count++
+        }
+        if (count == 0) return null
+        val wallUs = android.os.SystemClock.elapsedRealtimeNanos() / 1000
+        val first = lastWallUs == 0L || count != lastCpuCount
+        val dIdle = idleUs - lastIdleUs
+        val dWall = (wallUs - lastWallUs) * count
+        lastIdleUs = idleUs; lastWallUs = wallUs; lastCpuCount = count
+        if (first || dWall <= 0 || dIdle < 0) null
+        else (100 - 100.0 * dIdle / dWall).toInt().coerceIn(0, 100)
+    }.getOrNull()
+
+    /** Rough busy % from the 1-minute load average divided by the number of cores. */
+    private fun loadAvg(): Int? = runCatching {
+        val l = File("/proc/loadavg").readText().trim().split(" ")[0].toDouble()
+        val n = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+        (100 * l / n).toInt().coerceIn(0, 100)
+    }.getOrNull()
 
     fun ramPercent(ctx: Context): Int {
         val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
