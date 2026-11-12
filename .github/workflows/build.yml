@@ -20,7 +20,18 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
+      - name: Signing key (from secrets)
+        env:
+          KS: ${{ secrets.LEAD_KEYSTORE_B64 }}
+        run: |
+          if [ -z "$KS" ]; then echo "::error::Secret LEAD_KEYSTORE_B64 is missing"; exit 1; fi
+          echo "$KS" | base64 -d > app/release.keystore
       - run: gradle assembleRelease --no-daemon
+        env:
+          LEAD_KEY_PASSWORD: ${{ secrets.LEAD_KEY_PASSWORD }}
+      - name: Remove signing key
+        if: always()
+        run: rm -f app/release.keystore
       - name: Rename APK
         run: cp app/build/outputs/apk/release/*.apk GlassLauncher.apk
       - uses: actions/upload-artifact@v4

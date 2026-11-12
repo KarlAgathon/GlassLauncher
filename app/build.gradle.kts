@@ -12,25 +12,30 @@ android {
         minSdk = 23
         targetSdk = 34
         // raise both numbers for every new version you publish (needed for web updates)
-        versionCode = 27
-        versionName = "4.5"
+        versionCode = 28
+        versionName = "5.0"
     }
 
-    // Fixed key so every build can update the previous one.
-    // You can replace glass.keystore with your own key (keep it the same forever after).
+    // Private signing key: it is NOT in this repository. GitHub Actions writes it from the secrets
+    // LEAD_KEYSTORE_B64 (the keystore, base64) and LEAD_KEY_PASSWORD to app/release.keystore.
+    // Keep your own copy of the keystore safe: every update must be signed with the same key.
+    val keyPass: String? = System.getenv("LEAD_KEY_PASSWORD")
+    val keyFile = file("release.keystore")
     signingConfigs {
-        create("glass") {
-            storeFile = file("glass.keystore")
-            storePassword = "glasslauncher"
-            keyAlias = "glass"
-            keyPassword = "glasslauncher"
+        if (keyPass != null && keyFile.exists()) {
+            create("lead") {
+                storeFile = keyFile
+                storePassword = keyPass
+                keyAlias = "lead"
+                keyPassword = keyPass
+            }
         }
     }
     buildTypes {
-        getByName("debug") { signingConfig = signingConfigs.getByName("glass") }
         getByName("release") {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("glass")
+            signingConfig = signingConfigs.findByName("lead")
+                ?: throw GradleException("Signing key missing: set the GitHub secrets LEAD_KEYSTORE_B64 and LEAD_KEY_PASSWORD")
         }
     }
     compileOptions {
