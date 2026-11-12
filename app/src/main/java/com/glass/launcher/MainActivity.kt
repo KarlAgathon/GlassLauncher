@@ -191,6 +191,9 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         HomeService.setHome(true)
+        // the helper service (VPN key, Home button) can be switched off by Android – switch it back on by itself
+        if ((prefs.overlayVpn || prefs.overlayClock || prefs.homeRedirect) && !HomeService.isEnabled(this) && hasSecure())
+            HomeService.enableWithSecureSettings(this)
         // newer Android: CPU % only via Shizuku – ask once for its permission when Shizuku runs
         if (prefs.showCpu && !ShizukuCpu.permitted()) handler.postDelayed({ ShizukuCpu.ask() }, 1500)
         lastInput = SystemClock.elapsedRealtime()

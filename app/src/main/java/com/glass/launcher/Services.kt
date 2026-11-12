@@ -313,6 +313,8 @@ class BootReceiver : BroadcastReceiver() {
         if (a != Intent.ACTION_BOOT_COMPLETED && a != "android.intent.action.QUICKBOOT_POWERON" &&
             a != Intent.ACTION_LOCKED_BOOT_COMPLETED) return
         val app = ctx.applicationContext
+        // after a restart: helper service back on (needs WRITE_SECURE_SETTINGS, given once over ADB)
+        runCatching { if (!HomeService.isEnabled(app)) HomeService.enableWithSecureSettings(app) }
         Autostart.apply(app)
         runCatching { Updater.schedule(app) }
         val pending = goAsync()
