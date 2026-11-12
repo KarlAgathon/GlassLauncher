@@ -114,7 +114,7 @@ class HomeService : AccessibilityService() {
         // key inside a thin round ring: red = VPN off, green = VPN on
         val ring = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
-            setColor(Color.argb(90, 0, 0, 0))
+            setColor(Color.argb(60, 0, 0, 0))
             setStroke((1.5f * d).toInt().coerceAtLeast(2), Color.rgb(255, 80, 80))
         }
         val wrap = FrameLayout(this).apply { background = ring }
@@ -138,8 +138,8 @@ class HomeService : AccessibilityService() {
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.TOP or Gravity.END
-            x = (24 * d).toInt()
-            y = (18 * d).toInt()
+            x = (6 * d).toInt()
+            y = (6 * d).toInt()
         }
         val ok = runCatching { (getSystemService(WINDOW_SERVICE) as WindowManager).addView(v, lp) }.isSuccess
         if (ok) { overlay = v; keyView = key; keyRing = wrap; ringBg = ring; pillBg = pill; clockView = clock }
@@ -235,12 +235,12 @@ class HomeService : AccessibilityService() {
         v.visibility = View.VISIBLE
         keyRing?.visibility = if (p.overlayVpn) View.VISIBLE else View.GONE
         if (p.overlayVpn) {
-            val col = if (NetInfo.read(this).vpn) Color.rgb(52, 212, 122) else Color.rgb(255, 80, 80)
+            val col = if (NetInfo.read(this).vpn) Color.rgb(80, 245, 150) else Color.rgb(255, 105, 105)
             val d = resources.displayMetrics.density
             keyView?.setColorFilter(col)
             ringBg?.setStroke((1.5f * d).toInt().coerceAtLeast(2), col)
         }
-        breathe(p.overlayVpn)
+        breathe(false)
         clockView?.visibility = if (p.overlayClock) View.VISIBLE else View.GONE
         if (p.overlayClock) clockView?.text = SimpleDateFormat(ClockFmt.pattern(this, p), Locale.getDefault()).format(Date())
         // only the ringed key: no dark pill around it
