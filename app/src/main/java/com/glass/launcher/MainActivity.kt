@@ -224,6 +224,7 @@ class MainActivity : Activity() {
         HomeService.setHome(false)
         handler.removeCallbacks(ticker)
         handler.removeCallbacks(rotate)
+        chipPulse?.cancel(); chipPulse = null
     }
 
     override fun onDestroy() {
@@ -608,7 +609,9 @@ class MainActivity : Activity() {
         // newer Android (Google TV Streamer …) gives apps no CPU numbers at all: then the CPU field hides itself
         // CPU is measured on a background thread (it can take a moment on some boxes) – never block the remote
         val cpu = if (prefs.showCpu) cpuValue else null
-        if (prefs.showCpu && !cpuBusy) {
+        // no CPU numbers on this box (and no Shizuku): only try again once a minute
+        val cpuRetry = cpuMisses < 3 || ShizukuCpu.permitted() || tickCount % 60 < 5
+        if (prefs.showCpu && !cpuBusy && cpuRetry) {
             cpuBusy = true
             Thread { val v = runCatching { SysStats.cpuPercent() }.getOrNull(); handler.post { cpuValue = v; cpuBusy = false } }.start()
         }
@@ -2110,7 +2113,8 @@ class MainActivity : Activity() {
             chipPulse = android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
                 duration = 1600
                 repeatMode = android.animation.ValueAnimator.REVERSE
-                repeatCount = android.animation.ValueAnimator.INFINITE
+                // glow a few times, then stay still: an endless animation redraws the screen all the time
+                repeatCount = 5
                 addUpdateListener { a ->
                     if (!updateBtn.isFocused) updateBtn.tint = 0.06f + 0.16f * (a.animatedValue as Float)
                     updateBtn.invalidate()

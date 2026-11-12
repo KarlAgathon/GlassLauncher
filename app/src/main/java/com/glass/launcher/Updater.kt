@@ -188,7 +188,8 @@ class UpdateCheckReceiver : BroadcastReceiver() {
                         Updater.notify(app, info)
                     }
                 }
-                // the other apps on the box
+                // the other apps on the box (low priority, so the remote stays quick)
+                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
                 runCatching { AppUpdates.checkIfDue(app) }
             } finally {
                 pending.finish()
