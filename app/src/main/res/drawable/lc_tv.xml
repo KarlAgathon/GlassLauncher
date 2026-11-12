@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Lucide icon "tv" (ISC license) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <path android:pathData="m17 2-5 5-5-5" android:strokeColor="#FFFFFFFF" android:strokeWidth="2"
+        android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" />
+    <path android:pathData="M4.0,7.0h16.0a 2.0 2.0 0 0 1 2.0 2.0 v11.0a 2.0 2.0 0 0 1 -2.0 2.0 h-16.0a 2.0 2.0 0 0 1 -2.0 -2.0 v-11.0a 2.0 2.0 0 0 1 2.0 -2.0 z" android:strokeColor="#FFFFFFFF" android:strokeWidth="2"
+        android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" />
+</vector>
