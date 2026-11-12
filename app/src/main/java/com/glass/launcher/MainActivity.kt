@@ -188,6 +188,7 @@ class MainActivity : Activity() {
             requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), REQ_NOTIF)
         }
         if (intent?.getBooleanExtra(EXTRA_SHOW_UPDATE, false) == true) handler.postDelayed({ installPendingOrCheck() }, 800)
+        if (intent?.getBooleanExtra(EXTRA_SHOW_APP_UPDATES, false) == true) handler.postDelayed({ appUpdatesMenu() }, 800)
     }
 
     override fun onResume() {
@@ -238,6 +239,7 @@ class MainActivity : Activity() {
         if (movingPos >= 0) finishMove()
         focusTile(0)
         if (intent?.getBooleanExtra(EXTRA_SHOW_UPDATE, false) == true) handler.postDelayed({ installPendingOrCheck() }, 500)
+        if (intent?.getBooleanExtra(EXTRA_SHOW_APP_UPDATES, false) == true) handler.postDelayed({ appUpdatesMenu() }, 500)
     }
 
     @Deprecated("Deprecated in Java")
@@ -593,14 +595,23 @@ class MainActivity : Activity() {
         if (cpuShown) findViewById<TextView>(R.id.cpuText).text = cpu?.let { "$it%" } ?: "–"
         findViewById<View>(R.id.ramBox).visibility = if (prefs.showRam) View.VISIBLE else View.GONE
         if (prefs.showRam) findViewById<TextView>(R.id.ramText).text = "${SysStats.ramPercent(this)}%"
+        findViewById<View>(R.id.diskBox).visibility = if (prefs.showDisk) View.VISIBLE else View.GONE
+        if (prefs.showDisk) {
+            val dp = SysStats.diskPercent()
+            findViewById<TextView>(R.id.diskText).text = "$dp%"
+            // nearly full storage turns the icon orange / red
+            findViewById<ImageView>(R.id.diskIcon).let {
+                if (dp >= 95) it.setColorFilter(Color.rgb(255, 80, 80)) else if (dp >= 85) it.setColorFilter(Color.rgb(255, 170, 60)) else it.clearColorFilter()
+            }
+        }
 
         findViewById<View>(R.id.weatherBox).visibility = if (prefs.showWeather) View.VISIBLE else View.GONE
 
         val left = prefs.showWeather || prefs.showNetwork || prefs.showVpn || prefs.showBluetooth || prefs.showNotifs
-        val right = (prefs.showCpu && cpuMisses < 3) || prefs.showRam
+        val right = (prefs.showCpu && cpuMisses < 3) || prefs.showRam || prefs.showDisk
         findViewById<View>(R.id.divider).visibility = if (left && right) View.VISIBLE else View.GONE
         // first visible group must not have a left margin
-        val groups = listOf(R.id.weatherBox, R.id.netBox, R.id.vpnBox, R.id.btBox, R.id.notifBox, R.id.cpuBox, R.id.ramBox)
+        val groups = listOf(R.id.weatherBox, R.id.netBox, R.id.vpnBox, R.id.btBox, R.id.notifBox, R.id.cpuBox, R.id.ramBox, R.id.diskBox)
             .map { findViewById<View>(it) }
         val firstVisible = groups.firstOrNull { it.visibility == View.VISIBLE }
         val m = (18 * resources.displayMetrics.density).toInt()
@@ -765,6 +776,11 @@ class MainActivity : Activity() {
                 }
             },
         )
+        if (!isSystem) items.add(GlassMenu.Item(T.s("Update source (GitHub)", "Izvor ažuriranja (GitHub)", "Update-Quelle (GitHub)"),
+            R.drawable.lc_link, value = AppUpdates.githubFor(this, pkg) ?: "Play") {
+            askText(T.s("GitHub owner/repo (empty = Google Play)", "GitHub vlasnik/repo (prazno = Google Play)", "GitHub Besitzer/Repo (leer = Google Play)"),
+                AppUpdates.githubFor(this, pkg) ?: "") { AppUpdates.setGithub(this, pkg, it) }
+        })
         if (!isSystem) items.add(GlassMenu.Item(T.s("Uninstall", "Deinstaliraj", "Deinstallieren"), R.drawable.lc_trash_2) {
             @Suppress("DEPRECATION")
             safeStart(Intent(Intent.ACTION_UNINSTALL_PACKAGE, Uri.fromParts("package", pkg, null)))
@@ -1000,6 +1016,8 @@ class MainActivity : Activity() {
             GlassMenu.Item(T.s("Auto-start apps", "Auto-start aplikacije", "Autostart-Apps"), R.drawable.lc_rocket) { autostartMenu() },
             GlassMenu.Item(T.s("Backup and restore", "Backup i vraćanje", "Sichern und wiederherstellen"), R.drawable.lc_archive) { backupMenu() },
             GlassMenu.Item(T.s("Update", "Ažuriranje", "Update"), R.drawable.lc_refresh_cw, value = "v" + Updater.currentName(this)) { updateMenu() },
+            GlassMenu.Item(T.s("App updates", "Ažuriranja aplikacija", "App-Updates"), R.drawable.lc_download,
+                value = AppUpdates.list(this).size.takeIf { it > 0 }?.toString()) { appUpdatesMenu() },
             GlassMenu.Item(T.s("File browser", "File browser", "Dateimanager"), R.drawable.lc_folder) {
                 startActivity(Intent(this, FileBrowserActivity::class.java))
             },
@@ -1283,6 +1301,7 @@ class MainActivity : Activity() {
             t(T.s("Notifications", "Obavještenja", "Benachrichtigungen"), R.drawable.lc_bell, prefs.showNotifs) { prefs.showNotifs = it },
             t("CPU %", R.drawable.lc_cpu, prefs.showCpu) { prefs.showCpu = it },
             t("RAM %", R.drawable.lc_memory_stick, prefs.showRam) { prefs.showRam = it },
+            t(T.s("Storage %", "Memorija (disk) %", "Speicher %"), R.drawable.lc_hard_drive, prefs.showDisk) { prefs.showDisk = it },
         ))
     }
 
@@ -1802,6 +1821,7 @@ class MainActivity : Activity() {
             R.id.vpnBox to { vpnPanel() },
             R.id.btBox to { bluetoothPanel() },
             R.id.notifBox to { notificationsPanel() },
+            R.id.diskBox to { startActivity(Intent(this, StorageActivity::class.java)) },
         )
         for ((id, act) in actions) {
             val v = findViewById<View>(id)
@@ -1937,6 +1957,65 @@ class MainActivity : Activity() {
 
     // ------------------------------------------------------------------ update
 
+    private var appCheckRunning = false
+
+    /** Updates for the other apps: list, check now, interval, on/off. */
+    private fun appUpdatesMenu() {
+        val list = AppUpdates.list(this)
+        val items = mutableListOf<GlassMenu.Item>()
+        for (u in list) {
+            items.add(GlassMenu.Item(u.label, drawable = runCatching { packageManager.getApplicationIcon(u.pkg) }.getOrNull(),
+                value = u.local + " → " + u.remote + if (u.source == "github") "  ⬇" else "  ▶",
+                longAction = { _: GlassMenu.Item ->
+                    menu.show(u.label, R.drawable.lc_package, listOf(
+                        GlassMenu.Item(T.s("Update", "Ažuriraj", "Aktualisieren"), R.drawable.lc_download) { startAppUpdate(u) },
+                        GlassMenu.Item(T.s("Skip this version", "Preskoči ovu verziju", "Diese Version überspringen"), R.drawable.lc_x) {
+                            AppUpdates.ignore(this, u); showUpdateChip(false)
+                        },
+                    ), u.pkg)
+                }) { startAppUpdate(u) })
+        }
+        val last = AppUpdates.lastCheck(this)
+        items.add(GlassMenu.Item(T.s("Check now", "Provjeri sada", "Jetzt prüfen"), R.drawable.lc_refresh_cw,
+            value = if (last == 0L) "–" else java.text.SimpleDateFormat("dd.MM. HH:mm", java.util.Locale.getDefault()).format(java.util.Date(last))) {
+            checkAppUpdates()
+        })
+        val every = with(AppUpdates) { this@MainActivity.intervalHours }
+        items.add(GlassMenu.Item(T.s("Check every", "Provjeravaj svakih", "Prüfen alle"), R.drawable.lc_clock, value = "$every h") {
+            menu.show(T.s("Check every", "Provjeravaj svakih", "Prüfen alle"), R.drawable.lc_clock, listOf(1, 3, 6, 12, 24).map { h ->
+                GlassMenu.Item("$h h", checked = h == every) { with(AppUpdates) { this@MainActivity.intervalHours = h }; appUpdatesMenu() }
+            })
+        })
+        items.add(GlassMenu.Item(T.s("Check automatically", "Automatska provjera", "Automatisch prüfen"), R.drawable.lc_bell,
+            checked = prefs.appUpdates, toggle = true) { prefs.appUpdates = it.checked; showUpdateChip(false) })
+        menu.show(T.s("App updates", "Ažuriranja aplikacija", "App-Updates"), R.drawable.lc_download, items,
+            if (list.isEmpty()) T.s("All apps are up to date", "Sve aplikacije su ažurne", "Alle Apps sind aktuell")
+            else T.s("⬇ = installs directly · ▶ = opens the store · long press = more",
+                "⬇ = instalira direktno · ▶ = otvara prodavnicu · dugi pritisak = više",
+                "⬇ = installiert direkt · ▶ = öffnet den Store · lange drücken = mehr"))
+    }
+
+    private fun startAppUpdate(u: AppUpdates.Update) {
+        menu.close()
+        AppUpdates.update(this, u) { msg -> toast(msg) }
+    }
+
+    private fun checkAppUpdates() {
+        if (appCheckRunning) { toast(T.s("Already checking…", "Već provjeravam…", "Prüfe schon…")); return }
+        appCheckRunning = true
+        menu.close()
+        toast(T.s("Checking apps… (takes a minute)", "Provjeravam aplikacije… (traje minutu)", "Prüfe Apps… (dauert eine Minute)"))
+        Thread {
+            val l = runCatching { AppUpdates.checkAll(this) }.getOrDefault(emptyList())
+            handler.post {
+                appCheckRunning = false
+                showUpdateChip(animate = l.isNotEmpty())
+                if (l.isEmpty()) toast(T.s("All apps are up to date", "Sve aplikacije su ažurne", "Alle Apps sind aktuell"))
+                else appUpdatesMenu()
+            }
+        }.start()
+    }
+
     private fun updateMenu() {
         val url = prefs.updateUrl
         menu.show(T.s("Update", "Ažuriranje", "Update"), R.drawable.lc_refresh_cw, listOf(
@@ -1986,12 +2065,15 @@ class MainActivity : Activity() {
     /** "New version" chip in the top bar: pops in with a little bounce, then glows softly. */
     private fun showUpdateChip(animate: Boolean) {
         val info = Updater.pending(this)
-        if (info == null) {
+        val apps = if (info == null && prefs.appUpdates) AppUpdates.list(this).size else 0
+        if (info == null && apps == 0) {
             chipPulse?.cancel(); chipPulse = null
             updateBtn.visibility = View.GONE
             return
         }
-        findViewById<TextView>(R.id.updateText).text = T.s("New version ", "Nova verzija ", "Neue Version ") + info.name
+        findViewById<TextView>(R.id.updateText).text =
+            if (info != null) T.s("New version ", "Nova verzija ", "Neue Version ") + info.name
+            else T.s("App updates: ", "Ažuriranja: ", "App-Updates: ") + apps
         val wasHidden = updateBtn.visibility != View.VISIBLE
         updateBtn.visibility = View.VISIBLE
         if (animate || wasHidden) {
@@ -2016,7 +2098,9 @@ class MainActivity : Activity() {
     /** Notification, chip and "Install": one click – download and open the installer straight away. */
     private fun installPendingOrCheck() {
         val p = Updater.pending(this)
-        if (p != null && p.apk.isNotBlank()) installUpdate(p) else checkUpdate(manual = true)
+        if (p != null && p.apk.isNotBlank()) installUpdate(p)
+        else if (p == null && prefs.appUpdates && AppUpdates.list(this).isNotEmpty()) appUpdatesMenu()
+        else checkUpdate(manual = true)
     }
 
     private var installing = false
@@ -2199,5 +2283,6 @@ class MainActivity : Activity() {
         private const val REQ_BACKUP = 16
         private const val REQ_NOTIF = 17
         const val EXTRA_SHOW_UPDATE = "show_update"
+        const val EXTRA_SHOW_APP_UPDATES = "show_app_updates"
     }
 }

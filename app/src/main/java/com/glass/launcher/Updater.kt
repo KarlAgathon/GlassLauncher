@@ -178,15 +178,18 @@ class UpdateCheckReceiver : BroadcastReceiver() {
         val prefs = Prefs(app)
         T.init(prefs.lang)
         val url = prefs.updateUrl
-        if (url.isBlank()) return
         val pending = goAsync()
         Thread {
             try {
-                Updater.check(app, url)?.let { info ->
-                    // download right away, so one click later only asks "install?"
-                    runCatching { Updater.download(app, info) }
-                    Updater.notify(app, info)
+                if (url.isNotBlank()) runCatching {
+                    Updater.check(app, url)?.let { info ->
+                        // download right away, so one click later only asks "install?"
+                        runCatching { Updater.download(app, info) }
+                        Updater.notify(app, info)
+                    }
                 }
+                // the other apps on the box
+                runCatching { AppUpdates.checkIfDue(app) }
             } finally {
                 pending.finish()
             }

@@ -271,6 +271,25 @@
                         style="@style/StatusText" />
                 </LinearLayout>
 
+                <LinearLayout
+                    android:id="@+id/diskBox"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="18dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <ImageView
+                        android:id="@+id/diskIcon"
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:importantForAccessibility="no"
+                        android:src="@drawable/lc_hard_drive" />
+                    <TextView
+                        android:id="@+id/diskText"
+                        style="@style/StatusText" />
+                </LinearLayout>
+
                 </LinearLayout>
             </com.glass.launcher.GlassFrame>
 

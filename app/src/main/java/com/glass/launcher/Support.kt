@@ -200,6 +200,9 @@ class Prefs(ctx: Context) {
     var showNotifs: Boolean get() = bool("sNotif", true); set(v) = putBool("sNotif", v)
     var showCpu: Boolean get() = bool("sCpu", true); set(v) = putBool("sCpu", v)
     var showRam: Boolean get() = bool("sRam", true); set(v) = putBool("sRam", v)
+    var showDisk: Boolean get() = bool("sDisk", true); set(v) = putBool("sDisk", v)
+    /** hourly check whether the other installed apps have a newer version */
+    var appUpdates: Boolean get() = bool("appUpd", true); set(v) = putBool("appUpd", v)
 
     var city: String get() = str("city", "Neumünster"); set(v) = putStr("city", v)
     var lat: Float get() = sp.getFloat("lat", 54.0717f); set(v) = sp.edit().putFloat("lat", v).apply()
@@ -783,6 +786,13 @@ object SysStats {
         if (mi.totalMem <= 0) return 0
         return ((mi.totalMem - mi.availMem) * 100 / mi.totalMem).toInt()
     }
+
+    /** How full the internal storage is, in %. */
+    fun diskPercent(): Int = runCatching {
+        val st = android.os.StatFs(android.os.Environment.getDataDirectory().path)
+        val total = st.totalBytes
+        if (total <= 0) 0 else ((total - st.availableBytes) * 100 / total).toInt()
+    }.getOrDefault(0)
 }
 
 /* ================================================================ internet */
