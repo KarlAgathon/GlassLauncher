@@ -582,9 +582,10 @@ class MainActivity : Activity() {
             net.wifi -> { netIcon.setImageResource(R.drawable.lc_wifi); netIcon.alpha = 1f }
             else -> { netIcon.setImageResource(R.drawable.lc_wifi_off); netIcon.alpha = 0.5f }
         }
-        val showSsid = net.wifi && !net.eth && net.ssid != null
+        ssidWanted = net.wifi && !net.eth && net.ssid != null
+        val showSsid = ssidWanted && !statusCompactSsid
         ssid.visibility = if (showSsid) View.VISIBLE else View.GONE
-        if (showSsid) ssid.text = net.ssid
+        if (ssidWanted) ssid.text = net.ssid
 
         findViewById<View>(R.id.vpnBox).visibility = if (prefs.showVpn) View.VISIBLE else View.GONE
         findViewById<ImageView>(R.id.vpnIcon).setColorFilter(
@@ -640,13 +641,51 @@ class MainActivity : Activity() {
         val groups = listOf(R.id.weatherBox, R.id.netBox, R.id.vpnBox, R.id.btBox, R.id.notifBox, R.id.cpuBox, R.id.ramBox, R.id.diskBox)
             .map { findViewById<View>(it) }
         val firstVisible = groups.firstOrNull { it.visibility == View.VISIBLE }
-        val m = (18 * resources.displayMetrics.density).toInt()
+        setStatusGap(groups, firstVisible, statusGapDp)
+        statusPill.visibility = if (prefs.showStatusBar && (left || right)) View.VISIBLE else View.GONE
+        statusPill.post { fitStatus(groups, firstVisible) }
+    }
+
+    /** gap between the status groups and whether the Wi-Fi name is hidden – shrinks when space is short */
+    private var statusGapDp = 18
+    private var statusCompactSsid = false
+    private var ssidWanted = false
+
+    private fun setStatusGap(groups: List<View>, first: View?, gapDp: Int) {
+        val m = (gapDp * resources.displayMetrics.density).toInt()
         for (g in groups) {
             val lp = g.layoutParams as ViewGroup.MarginLayoutParams
-            val want = if (g == firstVisible) 0 else m
+            val want = if (g == first) 0 else m
             if (lp.marginStart != want) { lp.marginStart = want; g.layoutParams = lp }
         }
-        statusPill.visibility = if (prefs.showStatusBar && (left || right)) View.VISIBLE else View.GONE
+    }
+
+    /**
+     * With many icons switched on the bar no longer fits next to the buttons and Android squeezes
+     * the icons on top of each other. Then: smaller gaps first, then hide the Wi-Fi name.
+     */
+    private fun fitStatus(groups: List<View>, first: View?) {
+        val inner = (statusPill as ViewGroup).getChildAt(0) ?: return
+        val row = statusPill.parent as? LinearLayout ?: return
+        if (row.width <= 0 || statusPill.visibility != View.VISIBLE) return
+        var others = row.paddingLeft + row.paddingRight
+        for (i in 0 until row.childCount) {
+            val c = row.getChildAt(i)
+            if (c === statusPill || c === clockSpacer || c.visibility == View.GONE) continue
+            val lp = c.layoutParams as? ViewGroup.MarginLayoutParams
+            others += c.width + (lp?.leftMargin ?: 0) + (lp?.rightMargin ?: 0)
+        }
+        val plp = statusPill.layoutParams as? ViewGroup.MarginLayoutParams
+        val avail = row.width - others - (plp?.leftMargin ?: 0) - (plp?.rightMargin ?: 0)
+        val ssid = findViewById<View>(R.id.ssidText)
+        val levels = listOf(18 to false, 12 to false, 12 to true, 8 to true)
+        for ((gap, hideSsid) in levels) {
+            setStatusGap(groups, first, gap)
+            ssid.visibility = if (ssidWanted && !hideSsid && prefs.showNetwork) View.VISIBLE else View.GONE
+            inner.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
+            statusGapDp = gap; statusCompactSsid = hideSsid
+            if (inner.measuredWidth <= avail) break
+        }
     }
 
     private fun updateWeather() {
