@@ -51,11 +51,31 @@ object Updater {
     fun ready(ctx: Context, info: Info): File? = apkFile(ctx, info).takeIf { it.isFile && it.length() > 100_000 }
 
     /** Blocking download of the new APK (skipped when it is already there). Old update files are removed. */
-    fun download(ctx: Context, info: Info): File {
+    fun download(ctx: Context, info: Info, progress: ((Int) -> Unit)? = null): File {
         ready(ctx, info)?.let { return it }
         val f = apkFile(ctx, info)
         f.parentFile?.listFiles()?.forEach { if (it.name.startsWith("LEAD-update-") || it.name.startsWith("GlassLauncher-update")) it.delete() }
-        Http.download(info.apk, f)
+        val tmp = File(f.parentFile, f.name + ".part")
+        val c = Http.open(info.apk)
+        val total = c.contentLength.toLong()
+        c.inputStream.use { input ->
+            tmp.outputStream().use { out ->
+                val buf = ByteArray(64 * 1024)
+                var done = 0L
+                var lastPct = -1
+                while (true) {
+                    val n = input.read(buf)
+                    if (n < 0) break
+                    out.write(buf, 0, n)
+                    done += n
+                    if (total > 0 && progress != null) {
+                        val pct = (done * 100 / total).toInt()
+                        if (pct != lastPct) { lastPct = pct; progress(pct) }
+                    }
+                }
+            }
+        }
+        if (!tmp.renameTo(f)) { tmp.copyTo(f, true); tmp.delete() }
         return f
     }
 

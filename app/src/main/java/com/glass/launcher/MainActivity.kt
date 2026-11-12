@@ -1884,18 +1884,27 @@ class MainActivity : Activity() {
     private var resumed = false
 
     private fun installUpdate(info: Updater.Info) {
-        if (installing) return
+        if (installing) {
+            toast(T.s("Already downloading – the install question comes by itself", "Već preuzimam – pitanje za instalaciju dolazi samo",
+                "Lade schon – die Installationsfrage kommt von selbst"))
+            return
+        }
         promptedCode = info.code
         val ready = Updater.ready(this, info)
         if (ready != null) { Updater.install(this, ready); return }
         installing = true
         handler.postDelayed({ installing = false }, 120_000)
-        toast(T.s("Downloading version ", "Preuzimam verziju ", "Lade Version ") + info.name + "…")
+        val chipText = findViewById<TextView>(R.id.updateText)
+        updateBtn.visibility = View.VISIBLE
+        chipText.text = T.s("Downloading ", "Preuzimam ", "Lade ") + info.name + "…"
         Thread {
             try {
-                val f = Updater.download(this, info)
+                val f = Updater.download(this, info) { pct ->
+                    handler.post { chipText.text = T.s("Downloading ", "Preuzimam ", "Lade ") + info.name + "  $pct %" }
+                }
                 handler.post {
                     installing = false
+                    chipText.text = T.s("Install ", "Instaliraj ", "Installieren ") + info.name
                     // ask only while the home screen is on top; otherwise the chip / next return asks
                     if (resumed) Updater.install(this, f) else promptedCode = 0L
                 }
