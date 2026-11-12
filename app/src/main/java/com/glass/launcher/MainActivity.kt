@@ -74,6 +74,7 @@ class MainActivity : Activity() {
     private var lastPos = 0
     private var firstLoad = true
     private var lastWeather = 0L
+    private var cpuMisses = 0
     private var pendingPermission: (() -> Unit)? = null
     private var pendingPick: ((File) -> Unit)? = null
 
@@ -572,15 +573,19 @@ class MainActivity : Activity() {
         findViewById<TextView>(R.id.notifCount).text =
             if (NotifListener.connected) NotifListener.current().size.toString() else "–"
 
-        findViewById<View>(R.id.cpuBox).visibility = if (prefs.showCpu) View.VISIBLE else View.GONE
-        if (prefs.showCpu) findViewById<TextView>(R.id.cpuText).text = SysStats.cpuPercent()?.let { "$it%" } ?: "–"
+        // newer Android (Google TV Streamer …) gives apps no CPU numbers at all: then the CPU field hides itself
+        val cpu = if (prefs.showCpu) SysStats.cpuPercent() else null
+        if (prefs.showCpu) cpuMisses = if (cpu == null) cpuMisses + 1 else 0
+        val cpuShown = prefs.showCpu && cpuMisses < 3
+        findViewById<View>(R.id.cpuBox).visibility = if (cpuShown) View.VISIBLE else View.GONE
+        if (cpuShown) findViewById<TextView>(R.id.cpuText).text = cpu?.let { "$it%" } ?: "–"
         findViewById<View>(R.id.ramBox).visibility = if (prefs.showRam) View.VISIBLE else View.GONE
         if (prefs.showRam) findViewById<TextView>(R.id.ramText).text = "${SysStats.ramPercent(this)}%"
 
         findViewById<View>(R.id.weatherBox).visibility = if (prefs.showWeather) View.VISIBLE else View.GONE
 
         val left = prefs.showWeather || prefs.showNetwork || prefs.showVpn || prefs.showBluetooth || prefs.showNotifs
-        val right = prefs.showCpu || prefs.showRam
+        val right = (prefs.showCpu && cpuMisses < 3) || prefs.showRam
         findViewById<View>(R.id.divider).visibility = if (left && right) View.VISIBLE else View.GONE
         // first visible group must not have a left margin
         val groups = listOf(R.id.weatherBox, R.id.netBox, R.id.vpnBox, R.id.btBox, R.id.notifBox, R.id.cpuBox, R.id.ramBox)
