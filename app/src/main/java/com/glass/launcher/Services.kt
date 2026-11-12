@@ -1,6 +1,9 @@
 package com.glass.launcher
 
 import android.accessibilityservice.AccessibilityService
+import android.animation.ValueAnimator
+import android.view.animation.AccelerateDecelerateInterpolator
+import android.widget.FrameLayout
 import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
@@ -74,6 +77,10 @@ class HomeService : AccessibilityService() {
     private var last = 0L
     private var overlay: LinearLayout? = null
     private var keyView: ImageView? = null
+    private var keyRing: FrameLayout? = null
+    private var ringBg: GradientDrawable? = null
+    private var pillBg: GradientDrawable? = null
+    private var breath: ValueAnimator? = null
     private var clockView: TextView? = null
     private var shown = false
     private val h = Handler(Looper.getMainLooper())
@@ -92,26 +99,37 @@ class HomeService : AccessibilityService() {
 
     private fun createOverlay() {
         val d = resources.displayMetrics.density
+        val pill = GradientDrawable().apply {
+            cornerRadius = 20 * d
+            setColor(Color.argb(110, 0, 0, 0))
+            setStroke((1 * d).toInt(), Color.argb(70, 255, 255, 255))
+        }
         val v = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding((12 * d).toInt(), (6 * d).toInt(), (12 * d).toInt(), (6 * d).toInt())
-            background = GradientDrawable().apply {
-                cornerRadius = 20 * d
-                setColor(Color.argb(110, 0, 0, 0))
-                setStroke((1 * d).toInt(), Color.argb(70, 255, 255, 255))
-            }
+            setPadding((6 * d).toInt(), (6 * d).toInt(), (6 * d).toInt(), (6 * d).toInt())
+            background = pill
             visibility = View.GONE
         }
+        // key inside a thin round ring: red = VPN off, green = VPN on
+        val ring = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(Color.argb(90, 0, 0, 0))
+            setStroke((1.5f * d).toInt().coerceAtLeast(2), Color.rgb(255, 80, 80))
+        }
+        val wrap = FrameLayout(this).apply { background = ring }
         val key = ImageView(this).apply { setImageResource(R.drawable.lc_key_round) }
-        v.addView(key, LinearLayout.LayoutParams((18 * d).toInt(), (18 * d).toInt()))
+        val ks = (17 * d).toInt()
+        wrap.addView(key, FrameLayout.LayoutParams(ks, ks, Gravity.CENTER))
+        val rs = (34 * d).toInt()
+        v.addView(wrap, LinearLayout.LayoutParams(rs, rs))
         val clock = TextView(this).apply {
             setTextColor(Color.WHITE)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
             typeface = Fonts.medium(this@HomeService)
         }
         v.addView(clock, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            .apply { marginStart = (8 * d).toInt() })
+            .apply { marginStart = (8 * d).toInt(); marginEnd = (8 * d).toInt() })
         val lp = WindowManager.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
@@ -124,22 +142,46 @@ class HomeService : AccessibilityService() {
             y = (18 * d).toInt()
         }
         val ok = runCatching { (getSystemService(WINDOW_SERVICE) as WindowManager).addView(v, lp) }.isSuccess
-        if (ok) { overlay = v; keyView = key; clockView = clock }
+        if (ok) { overlay = v; keyView = key; keyRing = wrap; ringBg = ring; pillBg = pill; clockView = clock }
+    }
+
+    /** Slow "breathing": the key fades almost away and comes back, about every 6 seconds. */
+    private fun breathe(on: Boolean) {
+        val w = keyRing ?: return
+        if (on) {
+            if (breath?.isRunning == true) return
+            breath = ValueAnimator.ofFloat(1f, 0.12f).apply {
+                duration = 3000
+                repeatMode = ValueAnimator.REVERSE
+                repeatCount = ValueAnimator.INFINITE
+                interpolator = AccelerateDecelerateInterpolator()
+                addUpdateListener { w.alpha = it.animatedValue as Float }
+                start()
+            }
+        } else {
+            breath?.cancel()
+            breath = null
+            w.alpha = 1f
+        }
     }
 
     private fun refresh() {
         val v = overlay ?: return
         val p = Prefs(this)
-        if (!shown || (!p.overlayVpn && !p.overlayClock)) { v.visibility = View.GONE; return }
+        if (!shown || (!p.overlayVpn && !p.overlayClock)) { v.visibility = View.GONE; breathe(false); return }
         v.visibility = View.VISIBLE
-        keyView?.visibility = if (p.overlayVpn) View.VISIBLE else View.GONE
+        keyRing?.visibility = if (p.overlayVpn) View.VISIBLE else View.GONE
         if (p.overlayVpn) {
-            keyView?.setColorFilter(if (NetInfo.read(this).vpn) Color.rgb(52, 212, 122) else Color.rgb(255, 80, 80))
+            val col = if (NetInfo.read(this).vpn) Color.rgb(52, 212, 122) else Color.rgb(255, 80, 80)
+            val d = resources.displayMetrics.density
+            keyView?.setColorFilter(col)
+            ringBg?.setStroke((1.5f * d).toInt().coerceAtLeast(2), col)
         }
+        breathe(p.overlayVpn)
         clockView?.visibility = if (p.overlayClock) View.VISIBLE else View.GONE
         if (p.overlayClock) clockView?.text = SimpleDateFormat(ClockFmt.pattern(this, p), Locale.getDefault()).format(Date())
-        (clockView?.layoutParams as? LinearLayout.LayoutParams)?.marginStart =
-            if (p.overlayVpn) (8 * resources.displayMetrics.density).toInt() else 0
+        // only the ringed key: no dark pill around it
+        v.background = if (p.overlayClock) pillBg else null
     }
 
     private fun setShown(v: Boolean) {
@@ -173,6 +215,7 @@ class HomeService : AccessibilityService() {
     override fun onDestroy() {
         instance = null
         h.removeCallbacks(tick)
+        breathe(false)
         overlay?.let { v -> runCatching { (getSystemService(WINDOW_SERVICE) as WindowManager).removeView(v) } }
         overlay = null
         super.onDestroy()
