@@ -385,6 +385,8 @@ class MainActivity : Activity() {
 
     private var movies: List<Movie> = emptyList()
     private var moviesKey = ""
+    /** which source filled [movies]: 2 = TMDB, 3 = plugin. Only that source is ever shown. */
+    private var moviesMode = 0
     private var slideFiles: List<File> = emptyList()
     private var slideIndex = 0
     private val rotate = object : Runnable {
@@ -418,10 +420,12 @@ class MainActivity : Activity() {
                     prefs.wpMode = 0; loadWallpaper(); return
                 }
                 val cacheKey = "plugin:" + p.id
-                if (cacheKey == moviesKey && movies.isNotEmpty()) { handler.post(rotate); return }
+                if (cacheKey == moviesKey && moviesMode == 3 && movies.isNotEmpty()) { handler.post(rotate); return }
+                if (moviesMode != 3) { movies = emptyList(); moviesKey = "" }
                 Thread {
                     val list = Plugins.movies(Plugins.fetch(this, p)).shuffled()
                     handler.post {
+                        if (prefs.wpMode != 3) return@post   // switched to something else meanwhile
                         if (list.isEmpty()) {
                             toast(T.s("The plugin sent no pictures – open its settings and try again",
                                 "Plugin nije poslao slike – otvori njegove postavke pa pokušaj ponovo",
@@ -429,8 +433,8 @@ class MainActivity : Activity() {
                             if (movies.isEmpty()) { prefs.wpMode = 0; loadWallpaper() }
                             return@post
                         }
-                        movies = list; moviesKey = cacheKey; slideIndex = 0
-                        handler.post(rotate)
+                        movies = list; moviesKey = cacheKey; moviesMode = 3; slideIndex = 0
+                        handler.removeCallbacks(rotate); handler.post(rotate)
                     }
                 }.start()
             }
@@ -443,17 +447,19 @@ class MainActivity : Activity() {
                 // the day is part of the key, so the list is fetched fresh every day
                 val day = System.currentTimeMillis() / (24 * 60 * 60 * 1000L)
                 val cacheKey = key + prefs.tmdbType + prefs.tmdbList + T.lang + day
-                if (cacheKey == moviesKey && movies.isNotEmpty()) { handler.post(rotate); return }
+                if (cacheKey == moviesKey && moviesMode == 2 && movies.isNotEmpty()) { handler.post(rotate); return }
+                if (moviesMode != 2) { movies = emptyList(); moviesKey = "" }
                 Thread {
                     val list = Movies.load(key, prefs.tmdbType, prefs.tmdbList).shuffled()
                     handler.post {
+                        if (prefs.wpMode != 2) return@post   // switched to something else meanwhile
                         if (list.isEmpty()) {
                             toast(T.s("Couldn't load films (key or internet?)", "Filmovi se ne mogu učitati (ključ ili internet?)", "Filme nicht ladbar (Schlüssel oder Internet?)"))
                             if (movies.isEmpty()) { prefs.wpMode = 0; loadWallpaper() }
                             return@post
                         }
-                        movies = list; moviesKey = cacheKey; slideIndex = 0
-                        handler.post(rotate)
+                        movies = list; moviesKey = cacheKey; moviesMode = 2; slideIndex = 0
+                        handler.removeCallbacks(rotate); handler.post(rotate)
                     }
                 }.start()
             }
@@ -469,7 +475,7 @@ class MainActivity : Activity() {
                 showPicture({ Bitmaps.decodeScaled(f, w, h) }, fade = true)
             }
             2 -> {
-                if (movies.isEmpty()) return
+                if (movies.isEmpty() || moviesMode != 2) return
                 val m = movies[slideIndex++ % movies.size]
                 if (slideIndex % movies.size == 0) moviesKey = "" // refresh the list now and then
                 showPicture({
@@ -479,7 +485,7 @@ class MainActivity : Activity() {
                 }, fade = true, movie = m)
             }
             3 -> {
-                if (movies.isEmpty()) return
+                if (movies.isEmpty() || moviesMode != 3) return
                 val m = movies[slideIndex++ % movies.size]
                 if (slideIndex % movies.size == 0) moviesKey = "" // ask the plugin again after one round
                 showPicture({
@@ -971,11 +977,16 @@ class MainActivity : Activity() {
         }
         val items = ArrayList<GlassMenu.Item>()
         for (p in list) {
-            items.add(GlassMenu.Item(T.s("Use ", "Koristi ", "Verwenden: ") + p.name, R.drawable.lc_play,
-                checked = prefs.wpMode == 3 && prefs.wpPlugin == p.id) {
-                prefs.wpPlugin = p.id; prefs.wpMode = 3; moviesKey = ""
-                toast(T.s("Loading pictures from ", "Učitavam slike iz ", "Lade Bilder von ") + p.name + "…")
-                loadWallpaper()
+            items.add(GlassMenu.Item(p.name + " " + T.s("on", "uključen", "an"), R.drawable.lc_play,
+                checked = prefs.wpMode == 3 && prefs.wpPlugin == p.id, toggle = true) {
+                if (it.checked) {
+                    prefs.wpPlugin = p.id; prefs.wpMode = 3; moviesKey = ""   // replaces TMDB / another plugin
+                    toast(T.s("Loading pictures from ", "Učitavam slike iz ", "Lade Bilder von ") + p.name + "…")
+                    loadWallpaper()
+                    menu.close()
+                } else if (prefs.wpMode == 3 && prefs.wpPlugin == p.id) {
+                    prefs.wpMode = 0; handler.removeCallbacks(rotate); showMovieInfo(null); loadWallpaper()
+                }
             })
             items.add(GlassMenu.Item(p.name + " – " + T.s("settings", "postavke", "Einstellungen"), R.drawable.lc_settings) {
                 if (!Plugins.openSettings(this, p)) toast(T.s("This plugin has no settings", "Ovaj plugin nema postavke", "Dieses Plugin hat keine Einstellungen"))
@@ -1065,8 +1076,12 @@ class MainActivity : Activity() {
         val types = listOf(T.s("Films and series", "Filmovi i serije", "Filme und Serien") to "all",
             T.s("Only films", "Samo filmovi", "Nur Filme") to "movie", T.s("Only series", "Samo serije", "Nur Serien") to "tv")
         menu.show(T.s("Films and series", "Filmovi i serije", "Filme und Serien"), R.drawable.lc_tv, listOf(
-            GlassMenu.Item(T.s("Switch on", "Uključi", "Einschalten"), R.drawable.lc_play, checked = prefs.wpMode == 2) {
-                if (prefs.tmdbKey.isBlank()) askTmdbKey(thenStart = true) else { prefs.wpMode = 2; moviesKey = ""; loadWallpaper() }
+            GlassMenu.Item(T.s("Films & series (TMDB) on", "Filmovi i serije (TMDB) uključeno", "Filme & Serien (TMDB) an"), R.drawable.lc_play,
+                checked = prefs.wpMode == 2, toggle = true) {
+                if (it.checked) {
+                    if (prefs.tmdbKey.isBlank()) { it.checked = false; askTmdbKey(thenStart = true) }
+                    else { prefs.wpMode = 2; moviesKey = ""; loadWallpaper() }   // replaces a plugin, if one was on
+                } else if (prefs.wpMode == 2) { prefs.wpMode = 0; handler.removeCallbacks(rotate); showMovieInfo(null); loadWallpaper() }
             },
             GlassMenu.Item(T.s("Show", "Prikazuj", "Anzeigen"), R.drawable.lc_tv, value = types.first { it.second == prefs.tmdbType }.first) {
                 menu.show(T.s("Show", "Prikazuj", "Anzeigen"), R.drawable.lc_tv, types.map { (n, v) ->

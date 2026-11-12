@@ -163,6 +163,9 @@ class Prefs(ctx: Context) {
     /** 0 one picture, 1 slideshow from a folder, 2 films & series (TMDB), 3 wallpaper plugin */
     var wpMode: Int get() = int("wpMode", 0); set(v) = putInt("wpMode", v)
     var wpFolder: String get() = str("wpFolder", ""); set(v) = putStr("wpFolder", v)
+    /** file manager sort: 0 name, 1 size, 2 type (extension), 3 changed, 4 arrived on the box */
+    var fileSort: Int get() = int("fSort", 0); set(v) = putInt("fSort", v)
+    var fileSortDesc: Boolean get() = bool("fSortDesc", false); set(v) = putBool("fSortDesc", v)
     /** wallpaper plugin (Projectivy plugins like SofaDrop): "package/serviceClass" */
     var wpPlugin: String get() = str("wpPlugin", ""); set(v) = putStr("wpPlugin", v)
     /** seconds between pictures */
