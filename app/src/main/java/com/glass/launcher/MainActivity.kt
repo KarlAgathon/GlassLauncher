@@ -187,6 +187,7 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        HomeService.setHome(true)
         lastInput = SystemClock.elapsedRealtime()
         handler.removeCallbacks(ticker)
         handler.post(ticker)
@@ -204,6 +205,7 @@ class MainActivity : Activity() {
 
     override fun onPause() {
         super.onPause()
+        HomeService.setHome(false)
         handler.removeCallbacks(ticker)
         handler.removeCallbacks(rotate)
     }

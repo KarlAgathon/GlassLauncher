@@ -46,6 +46,14 @@ class HomeService : AccessibilityService() {
 
         @Volatile var instance: HomeService? = null
 
+        /** our own home screen (or its screensaver) is on top; set by those activities themselves */
+        @Volatile var homeVisible = true
+
+        fun setHome(visible: Boolean) {
+            homeVisible = visible
+            instance?.let { s -> s.h.post { s.reevaluate() } }
+        }
+
         /** System power menu (restart / turn off). */
         fun powerMenu(): Boolean = instance?.performGlobalAction(AccessibilityService.GLOBAL_ACTION_POWER_DIALOG) ?: false
 
@@ -83,7 +91,8 @@ class HomeService : AccessibilityService() {
     private var breath: ValueAnimator? = null
     private var clockView: TextView? = null
     private var shown = false
-    private val h = Handler(Looper.getMainLooper())
+    val h = Handler(Looper.getMainLooper())
+    private var lastPkg: String? = null
     private val tick = object : Runnable {
         override fun run() {
             refresh()
@@ -260,7 +269,10 @@ class HomeService : AccessibilityService() {
         if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val pkg = event.packageName?.toString() ?: return
         if (pkg in IGNORE || pkg.contains("inputmethod") || pkg.endsWith(".ime")) return
-        if (pkg == packageName) { setShown(false); return }
+        // our own windows are handled by the activities themselves (setHome); a late event from
+        // the launcher must not hide the key in an app that opened right after it (e.g. TizenTube)
+        if (pkg == packageName) return
+        lastPkg = pkg
         if (pkg in STOCK) {
             setShown(false)
             if (!Prefs(this).homeRedirect) return
@@ -273,7 +285,12 @@ class HomeService : AccessibilityService() {
             }
             return
         }
-        setShown(true)
+        setShown(!homeVisible)
+    }
+
+    /** Key is shown whenever any app other than our home screen / stock launcher is on top. */
+    fun reevaluate() {
+        setShown(!homeVisible && lastPkg != null && lastPkg !in STOCK)
     }
 
     override fun onInterrupt() {}

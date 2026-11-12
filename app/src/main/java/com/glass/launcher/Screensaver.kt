@@ -121,8 +121,8 @@ class ScreensaverActivity : Activity() {
         setContentView(view)
     }
 
-    override fun onResume() { super.onResume(); view.start() }
-    override fun onPause() { view.stop(); super.onPause() }
+    override fun onResume() { super.onResume(); HomeService.setHome(true); view.start() }
+    override fun onPause() { view.stop(); HomeService.setHome(false); super.onPause() }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.action == KeyEvent.ACTION_UP) finish()
