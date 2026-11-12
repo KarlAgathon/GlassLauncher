@@ -674,6 +674,22 @@ class MainActivity : Activity() {
 
     // ------------------------------------------------------------------ "+" menu
 
+    /** Every app on the box (also system apps) – just open it, nothing is added to the home screen. */
+    private fun allAppsMenu() {
+        Thread {
+            val list = AppLoader.choosable(this)
+            handler.post {
+                menu.show(T.s("All apps", "Sve aplikacije", "Alle Apps") + " (${list.size})", R.drawable.lc_layout_grid,
+                    list.map { (pkg, label, icon) ->
+                        GlassMenu.Item(label, drawable = icon) {
+                            if (pkg == AppEntry.FILES) startActivity(Intent(this, FileBrowserActivity::class.java))
+                            else launch(pkg, label)
+                        }
+                    })
+            }
+        }.start()
+    }
+
     private fun showAddMenu() {
         menu.show(T.s("Add apps", "Dodaj aplikacije", "Apps hinzufügen"), R.drawable.lc_plus, listOf(
             GlassMenu.Item(T.s("Choose from installed apps", "Izaberi iz instaliranih aplikacija", "Aus installierten Apps wählen"), R.drawable.lc_layout_grid) { chooseApps() },
@@ -861,6 +877,7 @@ class MainActivity : Activity() {
         val langName = T.languages.firstOrNull { it.first == T.lang }?.second ?: "English"
         menu.show(T.s("Settings", "Postavke", "Einstellungen"), R.drawable.lc_settings, listOf(
             GlassMenu.Item(T.s("Add apps", "Dodaj aplikacije", "Apps hinzufügen"), R.drawable.lc_plus) { showAddMenu() },
+            GlassMenu.Item(T.s("All apps", "Sve aplikacije", "Alle Apps"), R.drawable.lc_layout_grid) { allAppsMenu() },
             GlassMenu.Item(T.s("Android settings of the box", "Android postavke boxa", "Android-Einstellungen der Box"), R.drawable.lc_settings) {
                 safeStart(Intent(Settings.ACTION_SETTINGS))
             },
