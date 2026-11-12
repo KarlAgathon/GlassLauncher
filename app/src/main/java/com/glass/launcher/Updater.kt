@@ -81,6 +81,14 @@ object Updater {
 
     /** Opens the Android installer for an APK file. */
     fun install(act: Activity, f: File) {
+        // Android 13+: an app installed through the old "open APK" way is marked "restricted" and its
+        // helper service (VPN key, Home button) gets switched off. Installing through a PackageInstaller
+        // session (like an app store does) avoids that – so use it whenever possible.
+        val pkg = runCatching { act.packageManager.getPackageArchiveInfo(f.absolutePath, 0)?.packageName }.getOrNull()
+        if (pkg != null && (Build.VERSION.SDK_INT < 26 || act.packageManager.canRequestPackageInstalls())) {
+            AppInstaller.start(act, listOf(pkg to listOf(f)))
+            return
+        }
         // open the Android installer right away; if this app may not install yet,
         // Android itself shows the "allow" switch on the way
         try {
