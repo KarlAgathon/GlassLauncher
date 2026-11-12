@@ -1617,14 +1617,22 @@ class MainActivity : Activity() {
             col.gravity = Gravity.START
             clock.setTextSize(TypedValue.COMPLEX_UNIT_SP, 58f)
         }
-        // the "new version" chip goes to the free side
-        (updateBtn.layoutParams as? FrameLayout.LayoutParams)?.let { p ->
-            p.gravity = Gravity.TOP or if (right) Gravity.START else Gravity.END
-            p.marginStart = if (right) (44 * d).toInt() else 0
-            p.marginEnd = if (right) 0 else (36 * d).toInt()
-            updateBtn.layoutParams = p
+        // the "new version" chip: clock on the right = third line under the date; otherwise top right
+        if (chipHome == null) chipHome = updateBtn.parent as? FrameLayout
+        (updateBtn.parent as? ViewGroup)?.removeView(updateBtn)
+        if (right) {
+            col.addView(updateBtn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, (42 * d).toInt())
+                .apply { topMargin = (12 * d).toInt(); gravity = Gravity.END })
+        } else {
+            chipHome?.addView(updateBtn, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, (42 * d).toInt()).apply {
+                gravity = Gravity.TOP or Gravity.END
+                topMargin = (84 * d).toInt(); marginEnd = (36 * d).toInt()
+            })
         }
     }
+
+    /** the screen layer the update chip floats on when it is not under the date */
+    private var chipHome: FrameLayout? = null
 
     private fun clockMenu() {
         val fmt = listOf(T.s("Like Android", "Kao Android", "Wie Android") to 0, "24h" to 1, "12h (AM/PM)" to 2)
