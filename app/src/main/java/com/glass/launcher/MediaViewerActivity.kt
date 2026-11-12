@@ -58,6 +58,49 @@ class MediaViewerActivity : Activity() {
             }
         }
 
+        const val VLC = "org.videolan.vlc"
+
+        fun hasVlc(act: Activity) = runCatching { act.packageManager.getPackageInfo(VLC, 0); true }.getOrDefault(false)
+
+        /**
+         * Default players: videos and music open in VLC (when it is installed), pictures in the built-in viewer.
+         * Without VLC, videos and music play in the built-in player.
+         */
+        fun openDefault(act: Activity, f: File) {
+            val k = kind(f)
+            if ((k == "video" || k == "audio") && hasVlc(act)) {
+                try {
+                    val uri = FileProvider.getUriForFile(act, "${act.packageName}.files", f)
+                    val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(f.extension.lowercase())
+                        ?: if (k == "video") "video/*" else "audio/*"
+                    act.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, mime).setPackage(VLC)
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+                    return
+                } catch (e: Exception) { /* fall back to the built-in player */ }
+            }
+            if (k != null) {
+                act.startActivity(Intent(act, MediaViewerActivity::class.java).putExtra(EXTRA_PATH, f.absolutePath))
+                return
+            }
+            openWith(act, f)
+        }
+
+        /** Shares one or more files (send to another app). */
+        fun share(act: Activity, files: List<File>) {
+            try {
+                val uris = ArrayList(files.filter { it.isFile }.map { FileProvider.getUriForFile(act, "${act.packageName}.files", it) })
+                if (uris.isEmpty()) return
+                val i = if (uris.size == 1) Intent(Intent.ACTION_SEND).putExtra(Intent.EXTRA_STREAM, uris[0])
+                    else Intent(Intent.ACTION_SEND_MULTIPLE).putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+                i.type = if (files.size == 1) (MimeTypeMap.getSingleton().getMimeTypeFromExtension(files[0].extension.lowercase()) ?: "*/*") else "*/*"
+                i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                act.startActivity(Intent.createChooser(i, T.s("Share", "Podijeli", "Teilen")))
+            } catch (e: Exception) {
+                Toast.makeText(act, T.s("No app can receive this", "Nijedna aplikacija ne može primiti ovo", "Keine App kann das empfangen"),
+                    Toast.LENGTH_LONG).show()
+            }
+        }
+
         /** Opens a file with another app, always with the Android "open with" chooser. */
         fun openWith(act: Activity, f: File) {
             try {

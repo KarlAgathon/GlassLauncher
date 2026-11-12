@@ -872,10 +872,10 @@ class MainActivity : Activity() {
         }
         if (!menu.isOpen && movingPos < 0 && event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
             val pos = focusedPos()
-            // endless row: right on the last tile jumps to the first, left on the first jumps to the last
-            if (prefs.singleRow && pos != RecyclerView.NO_POSITION && apps.size > 1) {
-                if (k == KeyEvent.KEYCODE_DPAD_RIGHT && pos == apps.size - 1) { lastPos = 0; focusTile(0); return true }
-                if (k == KeyEvent.KEYCODE_DPAD_LEFT && pos == 0) { lastPos = apps.size - 1; focusTile(apps.size - 1); return true }
+            // the row stops at both ends: left on the first tile stays there, right on the last tile (or +) stays there
+            if (prefs.singleRow && pos != RecyclerView.NO_POSITION) {
+                if (k == KeyEvent.KEYCODE_DPAD_RIGHT && pos == apps.size - 1) return true
+                if (k == KeyEvent.KEYCODE_DPAD_LEFT && pos == 0) return true
             }
         }
         if (movingPos >= 0 && !menu.isOpen) {

@@ -190,6 +190,8 @@ class FileBrowserActivity : Activity() {
     /** action rows at the top of a list: selection, paste, sort */
     private fun addTopActions(canPaste: Boolean) {
         if (picking) return
+        if (!selectMode) entries.add(Entry(null, T.s("Select several files", "Označi više fajlova", "Mehrere Dateien auswählen"),
+            R.drawable.lc_check, T.s("then OK on each file", "pa OK na svaki fajl", "dann OK auf jede Datei"), action = "selStart"))
         if (selectMode) {
             entries.add(Entry(null, T.s("Selected: ", "Označeno: ", "Ausgewählt: ") + selected.size + "   –   " +
                 T.s("what to do…", "šta uraditi…", "was tun…"), R.drawable.lc_check, "", action = "selActions"))
@@ -411,6 +413,8 @@ class FileBrowserActivity : Activity() {
             "sort" -> { sortMenu(); return }
             "selAll" -> { entries.forEach { en -> if (en.action == null && !en.up && !en.choose) en.file?.let { selected.add(it.absolutePath) } }; show(); return }
             "selEnd" -> { selectMode = false; selected.clear(); show(); return }
+            "selStart" -> { selectMode = true; selected.clear(); show2()
+                toast(T.s("Press OK on the files you want", "Pritisni OK na fajlove koje želiš", "OK auf die gewünschten Dateien drücken")); return }
             "selActions" -> { selectionMenu(); return }
         }
         val f = e.file ?: return
@@ -455,11 +459,7 @@ class FileBrowserActivity : Activity() {
     private fun open(f: File) {
         val ext = f.extension.lowercase()
         if (ext == "apk") { Updater.install(this, f); return }
-        if (MediaViewerActivity.kind(f) != null) {
-            startActivity(Intent(this, MediaViewerActivity::class.java).putExtra(MediaViewerActivity.EXTRA_PATH, f.absolutePath))
-            return
-        }
-        MediaViewerActivity.openWith(this, f)
+        MediaViewerActivity.openDefault(this, f)
     }
 
     private fun dialog() = AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
@@ -484,17 +484,38 @@ class FileBrowserActivity : Activity() {
         if (e.trash != null) { trashItemMenu(e.trash); return }
         if (selectMode) { toggle(f); return }
         val actions = ArrayList<Pair<String, () -> Unit>>()
-        if (f.isFile) actions.add(T.s("Open with…", "Otvori s…", "Öffnen mit…") to { MediaViewerActivity.openWith(this, f) })
         actions.add(T.s("Select several", "Označi više", "Mehrere auswählen") to { selectMode = true; selected.clear(); selected.add(f.absolutePath); show2() })
-        actions.add(T.s("Move", "Premjesti", "Verschieben") to { startClip(listOf(f), true) })
-        actions.add(T.s("Copy", "Kopiraj", "Kopieren") to { startClip(listOf(f), false) })
-        actions.add(T.s("Rename", "Preimenuj", "Umbenennen") to { rename(f) })
-        actions.add(T.s("Delete", "Obriši", "Löschen") to { deleteDialog(listOf(f)) })
-        actions.add(T.s("Details", "Detalji", "Details") to { details(f) })
+        actions.addAll(fileActions(listOf(f)))
+        if (f.isFile) actions.add(T.s("Open with…", "Otvori s…", "Öffnen mit…") to { MediaViewerActivity.openWith(this, f) })
         pickList(f.name, actions)
     }
 
     private fun selectedFiles() = selected.map { File(it) }.filter { it.exists() }
+
+    /** Delete, Move, Share, Copy, Cut, Rename, Properties – for one file or a selection. */
+    private fun fileActions(files: List<File>): List<Pair<String, () -> Unit>> {
+        val out = ArrayList<Pair<String, () -> Unit>>()
+        out.add(T.s("Delete", "Obriši", "Löschen") to { deleteDialog(files) })
+        out.add(T.s("Move", "Premjesti", "Verschieben") to { startClip(files, true) })
+        if (files.any { it.isFile }) out.add(T.s("Share", "Podijeli", "Teilen") to { MediaViewerActivity.share(this, files) })
+        out.add(T.s("Copy", "Kopiraj", "Kopieren") to { startClip(files, false) })
+        out.add(T.s("Cut", "Izreži", "Ausschneiden") to { startClip(files, true) })
+        if (files.size == 1) out.add(T.s("Rename", "Preimenuj", "Umbenennen") to { rename(files[0]) })
+        out.add(T.s("Properties", "Svojstva", "Eigenschaften") to { if (files.size == 1) details(files[0]) else detailsMany(files) })
+        return out
+    }
+
+    private fun detailsMany(files: List<File>) {
+        Thread {
+            var size = 0L; var count = 0
+            for (f in files) f.walkTopDown().filter { it.isFile }.forEach { size += it.length(); count++ }
+            val msg = T.s("Items: ", "Stavki: ", "Elemente: ") + files.size +
+                "\n" + T.s("Files inside: ", "Fajlova ukupno: ", "Dateien insgesamt: ") + count +
+                "\n" + T.s("Size: ", "Veličina: ", "Größe: ") + Formatter.formatFileSize(this, size) +
+                "\n" + (files.first().parentFile?.absolutePath ?: "")
+            runOnUiThread { dialog().setTitle(T.s("Properties", "Svojstva", "Eigenschaften")).setMessage(msg).setPositiveButton("OK", null).show() }
+        }.start()
+    }
 
     private fun selectionMenu() {
         val files = selectedFiles()
@@ -509,11 +530,7 @@ class FileBrowserActivity : Activity() {
             return
         }
         val total = files.sumOf { if (it.isFile) it.length() else 0L }
-        pickList(T.s("Selected: ", "Označeno: ", "Ausgewählt: ") + n + "  (" + Formatter.formatShortFileSize(this, total) + ")", listOf(
-            T.s("Delete", "Obriši", "Löschen") to { deleteDialog(files) },
-            T.s("Move", "Premjesti", "Verschieben") to { startClip(files, true) },
-            T.s("Copy", "Kopiraj", "Kopieren") to { startClip(files, false) },
-        ))
+        pickList(T.s("Selected: ", "Označeno: ", "Ausgewählt: ") + n + "  (" + Formatter.formatShortFileSize(this, total) + ")", fileActions(files))
     }
 
     // ------------------------------------------------------------------ delete: recycle bin or for good
