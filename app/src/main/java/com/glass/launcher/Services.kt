@@ -83,6 +83,10 @@ class HomeService : AccessibilityService() {
     }
 
     private var last = 0L
+
+    private var burst = 0
+
+    private var burstStart = 0L
     private var overlay: LinearLayout? = null
     private var keyView: ImageView? = null
     private var keyRing: FrameLayout? = null
@@ -278,6 +282,12 @@ class HomeService : AccessibilityService() {
             if (!Prefs(this).homeRedirect) return
             val now = System.currentTimeMillis()
             if (now - last < 800) return
+            // right after switching on, Google's launcher starts by itself: leave it alone for 2 minutes,
+            // otherwise the two launchers can push each other away (black screen)
+            if (android.os.SystemClock.elapsedRealtime() < 120_000L) return
+            // never fight: at most 3 jumps per minute
+            if (now - burstStart > 60_000L) { burstStart = now; burst = 0 }
+            if (++burst > 3) return
             last = now
             runCatching {
                 startActivity(Intent(this, MainActivity::class.java)
