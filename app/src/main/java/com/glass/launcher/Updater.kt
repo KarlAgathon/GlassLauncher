@@ -75,7 +75,23 @@ object Updater {
 
     private const val CHANNEL = "updates"
 
+    /** Remembers the newest version found, so the home screen can show the "new version" chip. */
+    fun remember(ctx: Context, info: Info) {
+        ctx.getSharedPreferences("glass_global", Context.MODE_PRIVATE).edit()
+            .putLong("pendingCode", info.code).putString("pendingName", info.name)
+            .putString("pendingApk", info.apk).putString("pendingNotes", info.notes).apply()
+    }
+
+    /** The remembered newer version, or null when the installed one is up to date. */
+    fun pending(ctx: Context): Info? {
+        val g = ctx.getSharedPreferences("glass_global", Context.MODE_PRIVATE)
+        val code = g.getLong("pendingCode", 0L)
+        if (code <= currentCode(ctx)) return null
+        return Info(code, g.getString("pendingName", "?") ?: "?", g.getString("pendingApk", "") ?: "", g.getString("pendingNotes", "") ?: "")
+    }
+
     fun notify(ctx: Context, info: Info) {
+        remember(ctx, info)
         val g = ctx.getSharedPreferences("glass_global", Context.MODE_PRIVATE)
         if (g.getLong("notifiedCode", 0L) >= info.code) return
         g.edit().putLong("notifiedCode", info.code).apply()
@@ -98,6 +114,11 @@ object Updater {
             .setAutoCancel(true)
             .build()
         runCatching { nm.notify(77, n) }
+        // also pop up a small banner on top of whatever is on screen (films, other apps)
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            HomeService.instance?.showBanner(
+                T.s("New version", "Nova verzija", "Neue Version") + " – Glass Launcher " + info.name)
+        }
     }
 
     /** Checks for a new version every hour, also when the launcher is not open. */

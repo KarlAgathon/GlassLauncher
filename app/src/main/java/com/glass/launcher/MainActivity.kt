@@ -53,6 +53,7 @@ class MainActivity : Activity() {
     private lateinit var gridArea: FrameLayout
     private lateinit var profileBtn: GlassFrame
     private lateinit var settingsBtn: GlassFrame
+    private lateinit var updateBtn: GlassFrame
     private lateinit var profileLetter: TextView
     private var tickCount = 0
     private var lastInput = SystemClock.elapsedRealtime()
@@ -113,6 +114,7 @@ class MainActivity : Activity() {
         hint = findViewById(R.id.hint)
         profileBtn = findViewById(R.id.profileBtn)
         settingsBtn = findViewById(R.id.settingsBtn)
+        updateBtn = findViewById(R.id.updateBtn)
         powerBtn = findViewById(R.id.powerBtn)
         profileLetter = findViewById(R.id.profileLetter)
 
@@ -121,6 +123,7 @@ class MainActivity : Activity() {
                 if (open) ViewGroup.FOCUS_BLOCK_DESCENDANTS else ViewGroup.FOCUS_AFTER_DESCENDANTS
             profileBtn.isFocusable = !open
             settingsBtn.isFocusable = !open
+            updateBtn.isFocusable = !open
             powerBtn.isFocusable = !open
             statusGroups().forEach { it.isFocusable = !open }
             if (!open) {
@@ -137,6 +140,14 @@ class MainActivity : Activity() {
                 v.animate().scaleX(sc).scaleY(sc).setDuration(140).withEndAction { v.invalidate() }.start()
             }
         }
+        updateBtn.radiusDp = 21f
+        updateBtn.accent = true
+        updateBtn.setOnFocusChangeListener { v, has ->
+            (v as GlassFrame).focusedLook = has
+            val sc = if (has) 1.12f else 1f
+            v.animate().scaleX(sc).scaleY(sc).setDuration(140).withEndAction { v.invalidate() }.start()
+        }
+        updateBtn.setOnClickListener { Updater.pending(this)?.let { showUpdateOffer(it) } ?: checkUpdate(manual = true) }
         profileBtn.setOnClickListener { profileMenu() }
         settingsBtn.setOnClickListener { showSettings() }
         powerBtn.setOnClickListener { powerMenu() }
@@ -183,6 +194,7 @@ class MainActivity : Activity() {
             handler.removeCallbacks(rotate)
             handler.postDelayed(rotate, prefs.wpInterval.coerceAtLeast(10) * 1000L)
         }
+        showUpdateChip(animate = false)
         val every = 60 * 60 * 1000L
         if (prefs.updateUrl.isNotBlank() && System.currentTimeMillis() - prefs.lastUpdateCheck > every) {
             prefs.lastUpdateCheck = System.currentTimeMillis()
@@ -329,7 +341,7 @@ class MainActivity : Activity() {
             dark = ((lum - 0.35f) * 1.1f).coerceIn(0f, 0.55f)
             tint = (base + (0.35f - lum).coerceAtLeast(0f) * 0.25f).coerceIn(0f, 0.6f)
         }
-        for (g in listOf(statusPill, profileBtn, settingsBtn, powerBtn)) {
+        for (g in listOf(statusPill, updateBtn, profileBtn, settingsBtn, powerBtn)) {
             g.tint = tint
             g.darken = dark
             g.invalidate()
@@ -1661,18 +1673,57 @@ class MainActivity : Activity() {
         if (manual) toast(T.s("Checking…", "Provjeravam…", "Prüfe…"))
         Thread {
             val info = Updater.check(this, url)
+            if (info != null) Updater.remember(this, info)
             if (info != null && !manual) Updater.notify(this, info)
             handler.post {
                 if (info == null) {
                     if (manual) toast(T.s("You have the latest version", "Imaš najnoviju verziju", "Du hast die neueste Version"))
+                    showUpdateChip(animate = false)
                     return@post
                 }
-                menu.show(T.s("New version ", "Nova verzija ", "Neue Version ") + info.name, R.drawable.lc_download, listOf(
-                    GlassMenu.Item(T.s("Install now", "Instaliraj sada", "Jetzt installieren"), R.drawable.lc_download) { installUpdate(info) },
-                    GlassMenu.Item(T.s("Later", "Kasnije", "Später"), R.drawable.lc_x),
-                ), info.notes.ifBlank { null })
+                showUpdateChip(animate = true)
+                if (manual) showUpdateOffer(info)
             }
         }.start()
+    }
+
+    private fun showUpdateOffer(info: Updater.Info) {
+        menu.show(T.s("New version ", "Nova verzija ", "Neue Version ") + info.name, R.drawable.lc_download, listOf(
+            GlassMenu.Item(T.s("Install now", "Instaliraj sada", "Jetzt installieren"), R.drawable.lc_download) { installUpdate(info) },
+            GlassMenu.Item(T.s("Later", "Kasnije", "Später"), R.drawable.lc_x),
+        ), info.notes.ifBlank { null })
+    }
+
+    private var chipPulse: android.animation.ValueAnimator? = null
+
+    /** "New version" chip in the top bar: pops in with a little bounce, then glows softly. */
+    private fun showUpdateChip(animate: Boolean) {
+        val info = Updater.pending(this)
+        if (info == null) {
+            chipPulse?.cancel(); chipPulse = null
+            updateBtn.visibility = View.GONE
+            return
+        }
+        findViewById<TextView>(R.id.updateText).text = T.s("New version ", "Nova verzija ", "Neue Version ") + info.name
+        val wasHidden = updateBtn.visibility != View.VISIBLE
+        updateBtn.visibility = View.VISIBLE
+        if (animate || wasHidden) {
+            updateBtn.scaleX = 0.3f; updateBtn.scaleY = 0.3f; updateBtn.alpha = 0f
+            updateBtn.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(550)
+                .setInterpolator(android.view.animation.OvershootInterpolator(2.2f)).start()
+        }
+        if (chipPulse == null) {
+            chipPulse = android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
+                duration = 1600
+                repeatMode = android.animation.ValueAnimator.REVERSE
+                repeatCount = android.animation.ValueAnimator.INFINITE
+                addUpdateListener { a ->
+                    if (!updateBtn.isFocused) updateBtn.tint = 0.06f + 0.16f * (a.animatedValue as Float)
+                    updateBtn.invalidate()
+                }
+                start()
+            }
+        }
     }
 
     private fun installUpdate(info: Updater.Info) {

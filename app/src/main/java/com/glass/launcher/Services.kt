@@ -145,17 +145,33 @@ class HomeService : AccessibilityService() {
         if (ok) { overlay = v; keyView = key; keyRing = wrap; ringBg = ring; pillBg = pill; clockView = clock }
     }
 
-    /** Slow "breathing": the key fades almost away and comes back, about every 6 seconds. */
+    /**
+     * Slow "breathing": the key fades in (1.5 s), stays (3 s), fades out (1.5 s),
+     * stays away (2.5 s) – one calm breath about every 8.5 seconds.
+     */
     private fun breathe(on: Boolean) {
         val w = keyRing ?: return
         if (on) {
             if (breath?.isRunning == true) return
-            breath = ValueAnimator.ofFloat(1f, 0.12f).apply {
-                duration = 3000
-                repeatMode = ValueAnimator.REVERSE
+            val fadeIn = 1500f; val stay = 3000f; val fadeOut = 1500f; val away = 2500f
+            val total = fadeIn + stay + fadeOut + away
+            val low = 0.06f
+            fun smooth(t: Float) = t * t * (3f - 2f * t)
+            breath = ValueAnimator.ofFloat(0f, total).apply {
+                duration = total.toLong()
                 repeatCount = ValueAnimator.INFINITE
-                interpolator = AccelerateDecelerateInterpolator()
-                addUpdateListener { w.alpha = it.animatedValue as Float }
+                repeatMode = ValueAnimator.RESTART
+                interpolator = android.view.animation.LinearInterpolator()
+                addUpdateListener {
+                    val t = it.animatedValue as Float
+                    val a = when {
+                        t < fadeIn -> smooth(t / fadeIn)
+                        t < fadeIn + stay -> 1f
+                        t < fadeIn + stay + fadeOut -> 1f - smooth((t - fadeIn - stay) / fadeOut)
+                        else -> 0f
+                    }
+                    w.alpha = low + (1f - low) * a
+                }
                 start()
             }
         } else {
@@ -163,6 +179,53 @@ class HomeService : AccessibilityService() {
             breath = null
             w.alpha = 1f
         }
+    }
+
+    private var banner: View? = null
+
+    /** A glass banner that slides in at the top of the screen for a few seconds (works over other apps). */
+    fun showBanner(text: String) {
+        val d = resources.displayMetrics.density
+        val wm = getSystemService(WINDOW_SERVICE) as WindowManager
+        banner?.let { old -> runCatching { wm.removeView(old) } }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding((16 * d).toInt(), (10 * d).toInt(), (20 * d).toInt(), (10 * d).toInt())
+            background = GradientDrawable().apply {
+                cornerRadius = 24 * d
+                setColor(Color.argb(150, 10, 20, 35))
+                setStroke((1.5f * d).toInt().coerceAtLeast(2), Color.rgb(120, 220, 255))
+            }
+        }
+        val icon = ImageView(this).apply { setImageResource(R.drawable.lc_download); setColorFilter(Color.rgb(120, 220, 255)) }
+        box.addView(icon, LinearLayout.LayoutParams((20 * d).toInt(), (20 * d).toInt()))
+        box.addView(TextView(this).apply {
+            this.text = text
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            typeface = Fonts.medium(this@HomeService)
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            .apply { marginStart = (10 * d).toInt() })
+        val lp = WindowManager.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            PixelFormat.TRANSLUCENT,
+        ).apply { gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL; y = (20 * d).toInt() }
+        if (runCatching { wm.addView(box, lp) }.isFailure) return
+        banner = box
+        box.alpha = 0f
+        box.translationY = -40 * d
+        box.animate().alpha(1f).translationY(0f).setDuration(450)
+            .setInterpolator(android.view.animation.OvershootInterpolator(1.4f)).start()
+        h.postDelayed({
+            box.animate().alpha(0f).translationY(-40 * d).setDuration(400).withEndAction {
+                runCatching { wm.removeView(box) }
+                if (banner === box) banner = null
+            }.start()
+        }, 9000)
     }
 
     private fun refresh() {
