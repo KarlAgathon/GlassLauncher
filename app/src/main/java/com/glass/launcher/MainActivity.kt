@@ -729,6 +729,39 @@ class MainActivity : Activity() {
 
     // ------------------------------------------------------------------ "+" menu
 
+    /** Long press on an app in "All apps": open, put on the home screen, app info, force stop, uninstall. */
+    private fun appOptions(pkg: String, label: String) {
+        val pinned = pkg in prefs.pinned
+        val isSystem = runCatching {
+            (packageManager.getApplicationInfo(pkg, 0).flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
+        }.getOrDefault(false)
+        val items = mutableListOf(
+            GlassMenu.Item(T.s("Open", "Otvori", "Öffnen"), R.drawable.lc_play) { launch(pkg, label) },
+            if (pinned) GlassMenu.Item(T.s("Remove from home screen", "Ukloni s početnog ekrana", "Vom Startbildschirm entfernen"), R.drawable.lc_x) {
+                prefs.pinned = prefs.pinned - pkg; reloadApps()
+            } else GlassMenu.Item(T.s("Add to home screen", "Dodaj na početni ekran", "Zum Startbildschirm hinzufügen"), R.drawable.lc_plus) {
+                prefs.pinned = prefs.pinned + pkg; reloadApps()
+                toast(T.s("Added: ", "Dodano: ", "Hinzugefügt: ") + label)
+            },
+            GlassMenu.Item(T.s("App info", "Informacije o aplikaciji", "App-Info"), R.drawable.lc_info) {
+                safeStart(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", pkg, null)))
+            },
+            GlassMenu.Item(T.s("Force stop", "Prisilno zaustavi", "Beenden erzwingen"), R.drawable.lc_power) {
+                if (ShizukuCpu.forceStop(pkg)) toast(T.s("Stopped: ", "Zaustavljeno: ", "Beendet: ") + label)
+                else {
+                    // without Shizuku Android only allows it on the app info page
+                    toast(T.s("Press \"Force stop\" here", "Ovdje pritisni \"Force stop\"", "Hier \"Beenden erzwingen\" drücken"))
+                    safeStart(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", pkg, null)))
+                }
+            },
+        )
+        if (!isSystem) items.add(GlassMenu.Item(T.s("Uninstall", "Deinstaliraj", "Deinstallieren"), R.drawable.lc_trash_2) {
+            @Suppress("DEPRECATION")
+            safeStart(Intent(Intent.ACTION_UNINSTALL_PACKAGE, Uri.fromParts("package", pkg, null)))
+        })
+        menu.show(label, R.drawable.lc_package, items, pkg)
+    }
+
     /** Every app on the box (also system apps) – just open it, nothing is added to the home screen. */
     private fun allAppsMenu() {
         Thread {
@@ -736,11 +769,15 @@ class MainActivity : Activity() {
             handler.post {
                 menu.show(T.s("All apps", "Sve aplikacije", "Alle Apps") + " (${list.size})", R.drawable.lc_layout_grid,
                     list.map { (pkg, label, icon) ->
-                        GlassMenu.Item(label, drawable = icon) {
+                        GlassMenu.Item(label, drawable = icon,
+                            longAction = if (pkg == AppEntry.FILES) null else ({ _: GlassMenu.Item -> appOptions(pkg, label) })) {
                             if (pkg == AppEntry.FILES) startActivity(Intent(this, FileBrowserActivity::class.java))
                             else launch(pkg, label)
                         }
-                    })
+                    },
+                    T.s("OK opens · hold OK (or right click) for app options",
+                        "OK otvara · drži OK (ili desni klik) za opcije aplikacije",
+                        "OK öffnet · OK halten (oder Rechtsklick) für App-Optionen"))
             }
         }.start()
     }

@@ -31,6 +31,8 @@ class GlassMenu(
         val value: String? = null,
         val flag: Boolean = false,
         val tint: Int? = null,
+        /** long press (or mouse right click) on the row */
+        val longAction: ((Item) -> Unit)? = null,
         val action: (Item) -> Unit = {},
     )
 
@@ -153,6 +155,10 @@ class GlassMenu(
             row.addView(check, LinearLayout.LayoutParams(dp(22), dp(22)).apply { marginStart = dp(10) })
         }
 
+        item.longAction?.let { la ->
+            row.setOnLongClickListener { close(); la(item); true }
+            row.setOnContextClickListener { close(); la(item); true }
+        }
         row.setOnClickListener {
             if (item.toggle) {
                 item.checked = !item.checked

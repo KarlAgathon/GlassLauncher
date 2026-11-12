@@ -24,6 +24,19 @@ object ShizukuCpu {
         runCatching { if (!Shizuku.shouldShowRequestPermissionRationale()) Shizuku.requestPermission(REQ) }
     }
 
+    private fun shell(vararg cmd: String): Process? = runCatching {
+        val m = Shizuku::class.java.getDeclaredMethod("newProcess",
+            Array<String>::class.java, Array<String>::class.java, String::class.java)
+        m.isAccessible = true
+        m.invoke(null, arrayOf(*cmd), null, null) as Process
+    }.getOrNull()
+
+    /** Force stop through Shizuku (apps can't do it themselves). */
+    fun forceStop(pkg: String): Boolean {
+        if (!permitted()) return false
+        return runCatching { shell("am", "force-stop", pkg)?.waitFor() == 0 }.getOrDefault(false)
+    }
+
     /** CPU % or null. Blocking (a few ms). */
     fun percent(): Int? {
         if (!permitted()) return null

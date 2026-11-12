@@ -5,6 +5,10 @@ object I18nExtra {
     val map: HashMap<String, Array<String>> = HashMap(512)
 
     init {
+        map["App info"] = arrayOf("Информация за приложението", "Informații aplicație", "Uygulama bilgisi", "معلومات التطبيق")
+        map["Force stop"] = arrayOf("Принудително спиране", "Oprire forțată", "Durmaya zorla", "فرض الإيقاف")
+        map["Uninstall"] = arrayOf("Деинсталирай", "Dezinstalează", "Kaldır", "إلغاء التثبيت")
+        map["Add to home screen"] = arrayOf("Добави на началния екран", "Adaugă pe ecranul principal", "Ana ekrana ekle", "إضافة إلى الشاشة الرئيسية")
         map["Shut down"] = arrayOf("Изключи", "Oprește", "Kapat", "إيقاف التشغيل")
         map["Restart"] = arrayOf("Рестарт", "Repornire", "Yeniden başlat", "إعادة التشغيل")
         map["Screensaver"] = arrayOf("Скрийнсейвър", "Screensaver", "Ekran koruyucu", "شاشة التوقف")
