@@ -179,6 +179,7 @@ class Prefs(ctx: Context) {
     var showWeather: Boolean get() = bool("sWeather", true); set(v) = putBool("sWeather", v)
     var showNetwork: Boolean get() = bool("sNet", true); set(v) = putBool("sNet", v)
     var showVpn: Boolean get() = bool("sVpn", true); set(v) = putBool("sVpn", v)
+    var showBluetooth: Boolean get() = bool("sBt", true); set(v) = putBool("sBt", v)
     var showNotifs: Boolean get() = bool("sNotif", true); set(v) = putBool("sNotif", v)
     var showCpu: Boolean get() = bool("sCpu", true); set(v) = putBool("sCpu", v)
     var showRam: Boolean get() = bool("sRam", true); set(v) = putBool("sRam", v)
@@ -806,4 +807,38 @@ object Movies {
                 o.optString("overview", ""), "https://image.tmdb.org/t/p/w1280$bd")
         }
     }.getOrDefault(emptyList())
+}
+
+
+/** Bluetooth state for the status bar: on/off, paired devices and which of them are connected. */
+data class BtDevice(val name: String, val connected: Boolean, val device: android.bluetooth.BluetoothDevice)
+data class BtState(val available: Boolean, val on: Boolean, val devices: List<BtDevice>) {
+    val connectedCount get() = devices.count { it.connected }
+}
+
+object BtInfo {
+    @Suppress("DEPRECATION", "MissingPermission")
+    fun adapter(ctx: android.content.Context): android.bluetooth.BluetoothAdapter? =
+        runCatching { (ctx.getSystemService(android.content.Context.BLUETOOTH_SERVICE) as? android.bluetooth.BluetoothManager)?.adapter }
+            .getOrNull() ?: runCatching { android.bluetooth.BluetoothAdapter.getDefaultAdapter() }.getOrNull()
+
+    @Suppress("MissingPermission")
+    fun read(ctx: android.content.Context): BtState {
+        val a = adapter(ctx) ?: return BtState(false, false, emptyList())
+        val on = runCatching { a.isEnabled }.getOrDefault(false)
+        val devs = if (!on) emptyList() else runCatching {
+            a.bondedDevices.orEmpty().map { d ->
+                // isConnected is hidden but readable on Android TV boxes; ignore if it is blocked
+                val c = runCatching { d.javaClass.getMethod("isConnected").invoke(d) as Boolean }.getOrDefault(false)
+                BtDevice(runCatching { d.name }.getOrNull() ?: d.address, c, d)
+            }.sortedWith(compareBy({ !it.connected }, { it.name.lowercase() }))
+        }.getOrDefault(emptyList())
+        return BtState(true, on, devs)
+    }
+
+    @Suppress("DEPRECATION", "MissingPermission")
+    fun setEnabled(ctx: android.content.Context, enable: Boolean): Boolean {
+        val a = adapter(ctx) ?: return false
+        return runCatching { if (enable) a.enable() else a.disable() }.getOrDefault(false)
+    }
 }

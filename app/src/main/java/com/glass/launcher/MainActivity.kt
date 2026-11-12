@@ -477,6 +477,18 @@ class MainActivity : Activity() {
         findViewById<ImageView>(R.id.vpnIcon).setColorFilter(
             if (net.vpn) Color.rgb(52, 212, 122) else Color.rgb(255, 80, 80))
 
+        val btBox = findViewById<View>(R.id.btBox)
+        val bt = if (prefs.showBluetooth) BtInfo.read(this) else null
+        btBox.visibility = if (bt != null && bt.available) View.VISIBLE else View.GONE
+        if (bt != null && bt.available) {
+            val btIcon = findViewById<ImageView>(R.id.btIcon)
+            val btCount = findViewById<TextView>(R.id.btCount)
+            btIcon.alpha = if (bt.on) 1f else 0.45f
+            if (bt.on && bt.connectedCount > 0) btIcon.setColorFilter(Color.rgb(96, 170, 255)) else btIcon.clearColorFilter()
+            btCount.visibility = if (bt.on && bt.connectedCount > 0) View.VISIBLE else View.GONE
+            btCount.text = bt.connectedCount.toString()
+        }
+
         findViewById<View>(R.id.notifBox).visibility = if (prefs.showNotifs) View.VISIBLE else View.GONE
         findViewById<TextView>(R.id.notifCount).text =
             if (NotifListener.connected) NotifListener.current().size.toString() else "–"
@@ -488,11 +500,11 @@ class MainActivity : Activity() {
 
         findViewById<View>(R.id.weatherBox).visibility = if (prefs.showWeather) View.VISIBLE else View.GONE
 
-        val left = prefs.showWeather || prefs.showNetwork || prefs.showVpn || prefs.showNotifs
+        val left = prefs.showWeather || prefs.showNetwork || prefs.showVpn || prefs.showBluetooth || prefs.showNotifs
         val right = prefs.showCpu || prefs.showRam
         findViewById<View>(R.id.divider).visibility = if (left && right) View.VISIBLE else View.GONE
         // first visible group must not have a left margin
-        val groups = listOf(R.id.weatherBox, R.id.netBox, R.id.vpnBox, R.id.notifBox, R.id.cpuBox, R.id.ramBox)
+        val groups = listOf(R.id.weatherBox, R.id.netBox, R.id.vpnBox, R.id.btBox, R.id.notifBox, R.id.cpuBox, R.id.ramBox)
             .map { findViewById<View>(it) }
         val firstVisible = groups.firstOrNull { it.visibility == View.VISIBLE }
         val m = (18 * resources.displayMetrics.density).toInt()
@@ -1057,6 +1069,7 @@ class MainActivity : Activity() {
             t(T.s("Weather", "Vrijeme", "Wetter"), R.drawable.lc_cloud_sun, prefs.showWeather) { prefs.showWeather = it; lastWeather = 0 },
             t("Wi-Fi / LAN", R.drawable.lc_wifi, prefs.showNetwork) { prefs.showNetwork = it },
             t("VPN", R.drawable.lc_key_round, prefs.showVpn) { prefs.showVpn = it },
+            t("Bluetooth", R.drawable.lc_bluetooth, prefs.showBluetooth) { prefs.showBluetooth = it },
             t(T.s("Notifications", "Obavještenja", "Benachrichtigungen"), R.drawable.lc_bell, prefs.showNotifs) { prefs.showNotifs = it },
             t("CPU %", R.drawable.lc_cpu, prefs.showCpu) { prefs.showCpu = it },
             t("RAM %", R.drawable.lc_memory_stick, prefs.showRam) { prefs.showRam = it },
@@ -1483,7 +1496,7 @@ class MainActivity : Activity() {
     // ================================================================== clickable status bar
 
     private fun statusGroups(): List<View> =
-        listOf(R.id.weatherBox, R.id.netBox, R.id.vpnBox, R.id.notifBox).map { findViewById<View>(it) }
+        listOf(R.id.weatherBox, R.id.netBox, R.id.vpnBox, R.id.btBox, R.id.notifBox).map { findViewById<View>(it) }
 
     private fun setupStatusClicks() {
         val d = resources.displayMetrics.density
@@ -1492,6 +1505,7 @@ class MainActivity : Activity() {
             R.id.weatherBox to { weatherPanel() },
             R.id.netBox to { networkPanel() },
             R.id.vpnBox to { vpnPanel() },
+            R.id.btBox to { bluetoothPanel() },
             R.id.notifBox to { notificationsPanel() },
         )
         for ((id, act) in actions) {
@@ -1553,6 +1567,39 @@ class MainActivity : Activity() {
         menu.show("VPN", R.drawable.lc_key_round, items,
             if (on) T.s("VPN is ON – connection is protected.", "VPN je UKLJUČEN – veza je zaštićena.", "VPN ist AN – Verbindung geschützt.")
             else T.s("VPN is OFF.", "VPN je ISKLJUČEN.", "VPN ist AUS."))
+    }
+
+    private fun openBluetoothSettings() {
+        try { startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) } catch (e: Exception) { safeStart(Intent(Settings.ACTION_SETTINGS)) }
+    }
+
+    private fun bluetoothPanel() {
+        if (Build.VERSION.SDK_INT >= 31 && checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED)
+            requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), 77)
+        val bt = BtInfo.read(this)
+        val items = mutableListOf<GlassMenu.Item>()
+        items.add(GlassMenu.Item(T.s("Bluetooth on", "Bluetooth uključen", "Bluetooth an"), R.drawable.lc_bluetooth,
+            checked = bt.on, toggle = true) {
+            if (!BtInfo.setEnabled(this, it.checked)) { it.checked = !it.checked; openBluetoothSettings() }
+            handler.postDelayed({ updateStatus() }, 1500)
+        })
+        for (dv in bt.devices) {
+            items.add(GlassMenu.Item(dv.name, R.drawable.lc_bluetooth,
+                value = if (dv.connected) T.s("connected", "povezan", "verbunden") else T.s("paired", "uparen", "gekoppelt"),
+                tint = if (dv.connected) Color.rgb(96, 170, 255) else null) { openBluetoothSettings() })
+        }
+        items.add(GlassMenu.Item(T.s("Pair a new device", "Upari novi uređaj", "Neues Gerät koppeln"), R.drawable.lc_plus) {
+            // Android TV's own pairing screen for remotes, gamepads, headphones and speakers
+            try { startActivity(Intent("com.google.android.intent.action.CONNECT_INPUT")) } catch (e: Exception) { openBluetoothSettings() }
+        })
+        items.add(GlassMenu.Item(T.s("Bluetooth settings", "Bluetooth postavke", "Bluetooth-Einstellungen"), R.drawable.lc_settings) { openBluetoothSettings() })
+        val sub = when {
+            !bt.available -> T.s("This device has no Bluetooth.", "Ovaj uređaj nema Bluetooth.", "Dieses Gerät hat kein Bluetooth.")
+            !bt.on -> T.s("Bluetooth is OFF.", "Bluetooth je ISKLJUČEN.", "Bluetooth ist AUS.")
+            bt.connectedCount == 0 -> T.s("Bluetooth is ON – nothing connected.", "Bluetooth je UKLJUČEN – ništa nije povezano.", "Bluetooth ist AN – nichts verbunden.")
+            else -> T.s("Connected: ", "Povezano: ", "Verbunden: ") + bt.devices.filter { it.connected }.joinToString(", ") { it.name }
+        }
+        menu.show("Bluetooth", R.drawable.lc_bluetooth, items, sub)
     }
 
     private fun notificationsPanel() {
