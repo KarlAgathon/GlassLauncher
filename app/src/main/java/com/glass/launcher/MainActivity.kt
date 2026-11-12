@@ -29,6 +29,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.LinearLayout
 import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
@@ -253,6 +254,7 @@ class MainActivity : Activity() {
             else -> Gravity.BOTTOM or Gravity.START
         }
         layoutGrid()
+        placeClock()
         clock.visibility = if (prefs.showClock) View.VISIBLE else View.GONE
         date.visibility = if (prefs.showDate) View.VISIBLE else View.GONE
         hint.text = T.s("Press OK to add your apps", "Pritisni OK da dodaš svoje aplikacije", "OK drücken, um deine Apps hinzuzufügen")
@@ -1482,11 +1484,42 @@ class MainActivity : Activity() {
 
     // ------------------------------------------------------------------ clock & corner overlay
 
+    /**
+     * Clock & date left (classic) or right: on the right they sit after the round buttons, right-aligned,
+     * and the status bar moves to the left – so pictures with their own title on the left stay readable.
+     */
+    private fun placeClock() {
+        val col = clock.parent as? LinearLayout ?: return
+        val row = col.parent as? LinearLayout ?: return
+        val right = prefs.clockSide == 1
+        row.removeView(col)
+        if (right) row.addView(col) else row.addView(col, 0)
+        col.gravity = if (right) Gravity.END else Gravity.START
+        val lp = col.layoutParams as LinearLayout.LayoutParams
+        lp.marginStart = if (right) (20 * resources.displayMetrics.density).toInt() else 0
+        col.layoutParams = lp
+        // the "new version" chip goes to the free side
+        (updateBtn.layoutParams as? FrameLayout.LayoutParams)?.let { p ->
+            val d = resources.displayMetrics.density
+            p.gravity = Gravity.TOP or if (right) Gravity.START else Gravity.END
+            p.marginStart = if (right) (44 * d).toInt() else 0
+            p.marginEnd = if (right) 0 else (36 * d).toInt()
+            updateBtn.layoutParams = p
+        }
+    }
+
     private fun clockMenu() {
         val fmt = listOf(T.s("Like Android", "Kao Android", "Wie Android") to 0, "24h" to 1, "12h (AM/PM)" to 2)
         menu.show(T.s("Clock", "Sat", "Uhr"), R.drawable.lc_clock, listOf(
             GlassMenu.Item(T.s("Format", "Format", "Format"), R.drawable.lc_clock, value = fmt.first { it.second == prefs.clockFormat }.first) {
                 choose(T.s("Format", "Format", "Format"), R.drawable.lc_clock, fmt, prefs.clockFormat) { prefs.clockFormat = it; updateClock() }
+            },
+            GlassMenu.Item(T.s("Clock position", "Položaj sata", "Position der Uhr"), R.drawable.lc_clock,
+                value = if (prefs.clockSide == 1) T.s("Top right", "Gore desno", "Oben rechts") else T.s("Top left", "Gore lijevo", "Oben links")) {
+                choose(T.s("Clock position", "Položaj sata", "Position der Uhr"), R.drawable.lc_clock, listOf(
+                    T.s("Top left", "Gore lijevo", "Oben links") to 0, T.s("Top right", "Gore desno", "Oben rechts") to 1), prefs.clockSide) {
+                    prefs.clockSide = it; applyLook()
+                }
             },
             GlassMenu.Item(T.s("Show seconds", "Prikaži sekunde", "Sekunden anzeigen"), R.drawable.lc_clock,
                 checked = prefs.clockSeconds, toggle = true) { prefs.clockSeconds = it.checked; updateClock() },

@@ -72,6 +72,7 @@ class FileBrowserActivity : Activity() {
     private lateinit var empty: TextView
     private lateinit var dash: LinearLayout
     private lateinit var selBar: LinearLayout
+    private lateinit var side: LinearLayout
 
     private fun dp(v: Float) = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, resources.displayMetrics)
 
@@ -86,6 +87,7 @@ class FileBrowserActivity : Activity() {
         empty = findViewById(R.id.empty)
         dash = findViewById(R.id.dash)
         selBar = findViewById(R.id.selBar)
+        side = findViewById(R.id.side)
         selBar.background = GradientDrawable().apply {
             cornerRadius = dp(22f); setColor(Color.argb(150, 12, 14, 26)); setStroke(dp(1f).toInt(), Color.argb(90, 255, 255, 255))
         }
@@ -228,8 +230,61 @@ class FileBrowserActivity : Activity() {
         }
         adapter.notifyDataSetChanged()
         updateSelBar()
+        buildSide()
         list.scrollToPosition(0)
         list.post { list.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus() }
+    }
+
+    /** Left side bar: the important places, always one click away. Content opens on the right. */
+    private fun buildSide() {
+        side.removeAllViews()
+        val d = resources.displayMetrics.density
+        val ext = Environment.getExternalStorageDirectory()
+        val places = ArrayList<Triple<String, Int, () -> Unit>>()
+        val here = dir?.absolutePath
+        fun folder(name: String, icon: Int, f: File) {
+            if (f.isDirectory) places.add(Triple(name, icon) { dir = f; virtual = null; selectMode = false; selected.clear(); show() })
+        }
+        if (!picking) places.add(Triple(T.s("Overview", "Pregled", "Übersicht"), R.drawable.lc_layers) {
+            dir = null; virtual = null; selectMode = false; selected.clear(); show()
+        })
+        folder(T.s("Internal storage", "Interna memorija", "Interner Speicher"), R.drawable.lc_hard_drive, ext)
+        folder("Download", R.drawable.lc_download, File(ext, Environment.DIRECTORY_DOWNLOADS))
+        folder(T.s("Movies", "Filmovi", "Filme"), R.drawable.lc_file_video, File(ext, Environment.DIRECTORY_MOVIES))
+        folder(T.s("Music", "Muzika", "Musik"), R.drawable.lc_file_music, File(ext, Environment.DIRECTORY_MUSIC))
+        folder(T.s("Pictures", "Slike", "Bilder"), R.drawable.lc_file_image, File(ext, Environment.DIRECTORY_PICTURES))
+        folder("DCIM", R.drawable.lc_image, File(ext, Environment.DIRECTORY_DCIM))
+        folder(T.s("Documents", "Dokumenti", "Dokumente"), R.drawable.lc_file, File(ext, "Documents"))
+        for (r in roots().drop(1)) folder("USB  ${r.name}", R.drawable.lc_usb, r)
+        if (!picking) places.add(Triple(T.s("Recycle bin", "Koš za smeće", "Papierkorb"), R.drawable.lc_trash_2) {
+            virtual = "trash"; selectMode = false; selected.clear(); show()
+        })
+        for ((name, icon, act) in places) {
+            val v = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(12f).toInt(), dp(10f).toInt(), dp(12f).toInt(), dp(10f).toInt())
+                isFocusable = true; isClickable = true
+            }
+            v.addView(ImageView(this).apply { setImageResource(icon) }, LinearLayout.LayoutParams(dp(20f).toInt(), dp(20f).toInt()))
+            v.addView(TextView(this).apply {
+                text = name; setTextColor(Color.WHITE); setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+                typeface = Fonts.regular(this@FileBrowserActivity); isSingleLine = true
+                ellipsize = android.text.TextUtils.TruncateAt.END
+            }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(12f).toInt() })
+            // the place that is open now is marked
+            val current = when {
+                name == T.s("Recycle bin", "Koš za smeće", "Papierkorb") -> virtual == "trash"
+                name == T.s("Overview", "Pregled", "Übersicht") -> dir == null && virtual == null
+                else -> false
+            }
+            val bgOff: android.graphics.drawable.Drawable? = if (current) GradientDrawable().apply {
+                cornerRadius = dp(12f); setColor(Color.argb(45, 255, 255, 255)) } else null
+            v.background = bgOff
+            v.setOnFocusChangeListener { view, has -> view.background = if (has) GlassDrawable(d, 12, true) else bgOff }
+            v.setOnClickListener { act() }
+            side.addView(v)
+        }
+        if (here != null) for (i in 0 until side.childCount) { /* folders keep plain look; the path line shows where you are */ }
     }
 
     /**
@@ -500,6 +555,7 @@ class FileBrowserActivity : Activity() {
         }
         adapter.notifyDataSetChanged()
         updateSelBar()
+        buildSide()
     }
 
     private fun open(f: File) {
@@ -532,7 +588,6 @@ class FileBrowserActivity : Activity() {
         val actions = ArrayList<Pair<String, () -> Unit>>()
         actions.add(T.s("Select several", "Označi više", "Mehrere auswählen") to { selectMode = true; selected.clear(); selected.add(f.absolutePath); show2() })
         actions.addAll(fileActions(listOf(f)))
-        if (f.isFile) actions.add(T.s("Open with…", "Otvori s…", "Öffnen mit…") to { MediaViewerActivity.openWith(this, f) })
         pickList(f.name, actions)
     }
 
@@ -548,6 +603,7 @@ class FileBrowserActivity : Activity() {
         out.add(T.s("Cut", "Izreži", "Ausschneiden") to { startClip(files, true) })
         if (files.size == 1) out.add(T.s("Rename", "Preimenuj", "Umbenennen") to { rename(files[0]) })
         out.add(T.s("Properties", "Svojstva", "Eigenschaften") to { if (files.size == 1) details(files[0]) else detailsMany(files) })
+        if (files.size == 1 && files[0].isFile) out.add(T.s("Open with…", "Otvori s…", "Öffnen mit…") to { MediaViewerActivity.openWith(this, files[0]) })
         return out
     }
 
@@ -737,6 +793,7 @@ class FileBrowserActivity : Activity() {
     // ------------------------------------------------------------------ list adapter
 
     private class VH(v: View) : RecyclerView.ViewHolder(v) {
+        val check: ImageView = v.findViewById(R.id.check)
         val icon: ImageView = v.findViewById(R.id.icon)
         val name: TextView = v.findViewById(R.id.name)
         val info: TextView = v.findViewById(R.id.info)
@@ -759,12 +816,36 @@ class FileBrowserActivity : Activity() {
                 if (p != RecyclerView.NO_POSITION) onLong(entries[p])
                 true
             }
+            // the little box on the left: press LEFT on a file, then OK to tick it (selects several files)
+            h.check.setOnFocusChangeListener { view, has -> view.alpha = if (has) 1f else 0.85f
+                view.scaleX = if (has) 1.25f else 1f; view.scaleY = view.scaleX }
+            h.check.setOnClickListener {
+                val p = h.bindingAdapterPosition
+                if (p == RecyclerView.NO_POSITION) return@setOnClickListener
+                val f = entries[p].file ?: return@setOnClickListener
+                val path = f.absolutePath
+                if (!selected.remove(path)) selected.add(path)
+                selectMode = selected.isNotEmpty()
+                show2()
+                list.post { list.findViewHolderForAdapterPosition(p)?.itemView?.findViewById<View>(R.id.check)?.requestFocus() }
+            }
             return h
         }
 
         override fun onBindViewHolder(h: VH, position: Int) {
             val e = entries[position]
-            h.icon.setImageResource(e.icon)
+            val checkable = e.file != null && e.action == null && !e.up && !e.choose && !picking && (dir != null || virtual != null)
+            h.check.visibility = if (checkable) View.VISIBLE else View.GONE
+            if (checkable) {
+                val on = e.file!!.absolutePath in selected
+                h.check.setImageResource(if (on) R.drawable.lc_check else 0)
+                h.check.background = GradientDrawable().apply {
+                    cornerRadius = dp(6f)
+                    setStroke(dp(2f).toInt(), Color.argb(if (on) 255 else 170, 255, 255, 255))
+                    setColor(if (on) Color.argb(200, 60, 140, 255) else Color.TRANSPARENT)
+                }
+            }
+            h.icon.setImageResource(if (e.icon == R.drawable.lc_check && checkable) iconFor(e.file!!) else e.icon)
             h.name.text = e.name
             h.info.text = e.info
         }

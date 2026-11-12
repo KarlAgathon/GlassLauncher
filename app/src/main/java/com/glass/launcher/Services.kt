@@ -308,6 +308,10 @@ class HomeService : AccessibilityService() {
 /** After the box starts: stop apps the user blocked from auto-starting. */
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent?) {
+        // only react to the real start of the box (other apps can't use this to stop apps)
+        val a = intent?.action ?: return
+        if (a != Intent.ACTION_BOOT_COMPLETED && a != "android.intent.action.QUICKBOOT_POWERON" &&
+            a != Intent.ACTION_LOCKED_BOOT_COMPLETED) return
         val app = ctx.applicationContext
         Autostart.apply(app)
         runCatching { Updater.schedule(app) }

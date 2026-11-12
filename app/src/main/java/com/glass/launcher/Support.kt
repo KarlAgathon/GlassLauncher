@@ -165,6 +165,8 @@ class Prefs(ctx: Context) {
     var wpFolder: String get() = str("wpFolder", ""); set(v) = putStr("wpFolder", v)
     /** file manager sort: 0 name, 1 size, 2 type (extension), 3 changed, 4 arrived on the box */
     var fileSort: Int get() = int("fSort", 0); set(v) = putInt("fSort", v)
+    /** clock & date: 0 top left, 1 top right (right keeps the left free for wallpapers with their own title) */
+    var clockSide: Int get() = int("clockSide", 1); set(v) = putInt("clockSide", v)
     var fileSortDesc: Boolean get() = bool("fSortDesc", false); set(v) = putBool("fSortDesc", v)
     /** wallpaper plugin (Projectivy plugins like SofaDrop): "package/serviceClass" */
     var wpPlugin: String get() = str("wpPlugin", ""); set(v) = putStr("wpPlugin", v)
@@ -790,9 +792,10 @@ object Http {
 object Weather {
     /** (icon, "7°") or null. Call off the main thread. */
     fun current(lat: Float, lon: Float): Pair<Int, String>? = runCatching {
-        val json = JSONObject(Http.text("https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon&current=temperature_2m,weather_code"))
+        val json = JSONObject(Http.text("https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon&current=temperature_2m,weather_code,is_day"))
         val cur = json.getJSONObject("current")
-        icon(cur.getInt("weather_code")) to "${Math.round(cur.getDouble("temperature_2m"))}°"
+        // at night: moon instead of sun
+        icon(cur.getInt("weather_code"), cur.optInt("is_day", 1) == 1) to "${Math.round(cur.getDouble("temperature_2m"))}°"
     }.getOrNull()
 
     /** Next days: (day name, icon, "max° / min°"). Call off the main thread. */
@@ -816,9 +819,9 @@ object Weather {
         Triple(res.getString("name"), res.getDouble("latitude").toFloat(), res.getDouble("longitude").toFloat())
     }.getOrNull()
 
-    private fun icon(code: Int) = when (code) {
-        0 -> R.drawable.lc_sun
-        1, 2 -> R.drawable.lc_cloud_sun
+    private fun icon(code: Int, day: Boolean = true) = when (code) {
+        0 -> if (day) R.drawable.lc_sun else R.drawable.lc_moon
+        1, 2 -> if (day) R.drawable.lc_cloud_sun else R.drawable.lc_cloud_moon
         3 -> R.drawable.lc_cloud
         45, 48 -> R.drawable.lc_cloud_fog
         in 51..67, in 80..82 -> R.drawable.lc_cloud_rain
