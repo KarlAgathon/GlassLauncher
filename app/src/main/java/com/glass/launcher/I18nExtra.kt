@@ -5,6 +5,16 @@ object I18nExtra {
     val map: HashMap<String, Array<String>> = HashMap(512)
 
     init {
+        map["Open"] = arrayOf("Отвори", "Deschide", "Aç", "فتح")
+        map["Open folder"] = arrayOf("Отвори папката", "Deschide folderul", "Klasörü aç", "فتح المجلد")
+        map["Untick"] = arrayOf("Премахни отметката", "Debifează", "İşareti kaldır", "إلغاء التحديد")
+        map["Tick (select several)"] = arrayOf("Отбележи (няколко файла)", "Bifează (mai multe fișiere)", "İşaretle (birden fazla)", "تحديد (عدة ملفات)")
+        map["then OK ticks each file"] = arrayOf("после OK отбелязва всеки файл", "apoi OK bifează fiecare fișier", "sonra OK her dosyayı işaretler", "ثم يحدد OK كل ملف")
+        map["Overview"] = arrayOf("Преглед", "Prezentare", "Genel bakış", "نظرة عامة")
+        map["Movies"] = arrayOf("Филми", "Filme", "Filmler", "الأفلام")
+        map["Music"] = arrayOf("Музика", "Muzică", "Müzik", "الموسيقى")
+        map["Clock position"] = arrayOf("Позиция на часовника", "Poziția ceasului", "Saat konumu", "موضع الساعة")
+        map["Top right"] = arrayOf("Горе вдясно", "Sus dreapta", "Sağ üst", "أعلى اليمين")
         map["Files"] = arrayOf("Файлове", "Fișiere", "Dosyalar", "الملفات")
         map["Storage access was not allowed."] = arrayOf("Достъпът до паметта не е разрешен.", "Accesul la stocare nu a fost permis.", "Depolama erişimine izin verilmedi.", "لم يتم السماح بالوصول إلى التخزين.")
         map["Name"] = arrayOf("Име", "Nume", "Ad", "الاسم")

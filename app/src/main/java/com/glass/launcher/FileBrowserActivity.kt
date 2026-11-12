@@ -198,7 +198,7 @@ class FileBrowserActivity : Activity() {
     private fun addTopActions(canPaste: Boolean) {
         if (picking) return
         if (!selectMode) entries.add(Entry(null, T.s("Select several files", "Označi više fajlova", "Mehrere Dateien auswählen"),
-            R.drawable.lc_check, T.s("then OK on each file", "pa OK na svaki fajl", "dann OK auf jede Datei"), action = "selStart"))
+            R.drawable.lc_check, T.s("then OK ticks each file", "pa OK označava svaki fajl", "dann markiert OK jede Datei"), action = "selStart"))
         if (selectMode) {
             entries.add(Entry(null, T.s("Selected: ", "Označeno: ", "Ausgewählt: ") + selected.size + "   –   " +
                 T.s("what to do…", "šta uraditi…", "was tun…"), R.drawable.lc_check, "", action = "selActions"))
@@ -531,7 +531,7 @@ class FileBrowserActivity : Activity() {
             finish()
             return
         }
-        open(f)
+        fileMenu(f)
     }
 
     private fun toggle(f: File) {
@@ -584,9 +584,19 @@ class FileBrowserActivity : Activity() {
         val f = e.file ?: return
         if (e.up || e.action != null || e.choose || picking) return
         if (e.trash != null) { trashItemMenu(e.trash); return }
-        if (selectMode) { toggle(f); return }
+        fileMenu(f)
+    }
+
+    /** OK, long press or right click on a file/folder: everything you can do with it. */
+    private fun fileMenu(f: File) {
         val actions = ArrayList<Pair<String, () -> Unit>>()
-        actions.add(T.s("Select several", "Označi više", "Mehrere auswählen") to { selectMode = true; selected.clear(); selected.add(f.absolutePath); show2() })
+        if (f.isFile) actions.add(T.s("Open", "Otvori", "Öffnen") to { open(f) })
+        else actions.add(T.s("Open folder", "Otvori folder", "Ordner öffnen") to { dir = f; virtual = null; show() })
+        val ticked = f.absolutePath in selected
+        actions.add((if (ticked) T.s("Untick", "Odznači", "Abwählen") else T.s("Tick (select several)", "Označi (za više fajlova)", "Auswählen (mehrere)")) to {
+            if (ticked) selected.remove(f.absolutePath) else selected.add(f.absolutePath)
+            selectMode = selected.isNotEmpty(); show2()
+        })
         actions.addAll(fileActions(listOf(f)))
         pickList(f.name, actions)
     }
@@ -790,6 +800,10 @@ class FileBrowserActivity : Activity() {
 
     private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_SHORT).show()
 
+    private fun tickedBg() = GradientDrawable().apply {
+        cornerRadius = dp(12f); setColor(Color.argb(110, 60, 140, 255)); setStroke(dp(1.5f).toInt(), Color.argb(200, 120, 190, 255))
+    }
+
     // ------------------------------------------------------------------ list adapter
 
     private class VH(v: View) : RecyclerView.ViewHolder(v) {
@@ -806,10 +820,20 @@ class FileBrowserActivity : Activity() {
             val v = LayoutInflater.from(parent.context).inflate(R.layout.item_file, parent, false)
             val h = VH(v)
             val d = resources.displayMetrics.density
-            v.setOnFocusChangeListener { view, has -> view.background = if (has) GlassDrawable(d, 12, true) else null }
+            v.setOnFocusChangeListener { view, has ->
+                val p = h.bindingAdapterPosition
+                val ticked = p != RecyclerView.NO_POSITION && entries.getOrNull(p)?.file?.absolutePath?.let { it in selected } == true
+                view.background = if (has) GlassDrawable(d, 12, true) else if (ticked) tickedBg() else null
+            }
             v.setOnClickListener {
                 val p = h.bindingAdapterPosition
                 if (p != RecyclerView.NO_POSITION) onEntry(entries[p])
+            }
+            // mouse: right click opens the menu
+            v.setOnContextClickListener {
+                val p = h.bindingAdapterPosition
+                if (p != RecyclerView.NO_POSITION) onLong(entries[p])
+                true
             }
             v.setOnLongClickListener {
                 val p = h.bindingAdapterPosition
@@ -846,6 +870,9 @@ class FileBrowserActivity : Activity() {
                 }
             }
             h.icon.setImageResource(if (e.icon == R.drawable.lc_check && checkable) iconFor(e.file!!) else e.icon)
+            // ticked files stay clearly marked (blue band) even without focus
+            val ticked = checkable && e.file!!.absolutePath in selected
+            if (!h.itemView.isFocused) h.itemView.background = if (ticked) tickedBg() else null
             h.name.text = e.name
             h.info.text = e.info
         }
