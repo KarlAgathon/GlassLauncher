@@ -647,7 +647,7 @@ class MainActivity : Activity() {
     }
 
     /** gap between the status groups and whether the Wi-Fi name is hidden – shrinks when space is short */
-    private var statusGapDp = 18
+    private var statusGapDp = 12
     private var statusCompactSsid = false
     private var ssidWanted = false
 
@@ -678,7 +678,7 @@ class MainActivity : Activity() {
         val plp = statusPill.layoutParams as? ViewGroup.MarginLayoutParams
         val avail = row.width - others - (plp?.leftMargin ?: 0) - (plp?.rightMargin ?: 0)
         val ssid = findViewById<View>(R.id.ssidText)
-        val levels = listOf(18 to false, 12 to false, 12 to true, 8 to true)
+        val levels = listOf(12 to false, 9 to false, 9 to true, 6 to true)
         for ((gap, hideSsid) in levels) {
             setStatusGap(groups, first, gap)
             ssid.visibility = if (ssidWanted && !hideSsid && prefs.showNetwork) View.VISIBLE else View.GONE
