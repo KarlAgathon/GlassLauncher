@@ -108,7 +108,7 @@ object Updater {
         val b = if (Build.VERSION.SDK_INT >= 26) android.app.Notification.Builder(ctx, CHANNEL)
         else android.app.Notification.Builder(ctx).setPriority(android.app.Notification.PRIORITY_HIGH)
         val n = b.setSmallIcon(R.drawable.lc_download)
-            .setContentTitle(T.s("New version available", "Nova verzija dostupna", "Neue Version verfügbar") + " – Glass Launcher " + info.name)
+            .setContentTitle(T.s("New version available", "Nova verzija dostupna", "Neue Version verfügbar") + " – LEAD Launcher " + info.name)
             .setContentText(info.notes.ifBlank { T.s("Open to install", "Otvori za instalaciju", "Zum Installieren öffnen") })
             .setContentIntent(open)
             .setAutoCancel(true)
@@ -117,7 +117,7 @@ object Updater {
         // also pop up a small banner on top of whatever is on screen (films, other apps)
         android.os.Handler(android.os.Looper.getMainLooper()).post {
             HomeService.instance?.showBanner(
-                T.s("New version", "Nova verzija", "Neue Version") + " – Glass Launcher " + info.name)
+                T.s("New version", "Nova verzija", "Neue Version") + " – LEAD Launcher " + info.name)
         }
     }
 

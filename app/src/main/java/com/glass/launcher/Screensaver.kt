@@ -93,7 +93,7 @@ class SaverView(ctx: Context) : FrameLayout(ctx) {
     fun stop() { h.removeCallbacks(tick) }
 }
 
-/** Screensaver that Android can use (Settings → Screensaver → Glass Launcher). */
+/** Screensaver that Android can use (Settings → Screensaver → LEAD Launcher). */
 class GlassDream : DreamService() {
     private var view: SaverView? = null
 
@@ -110,7 +110,7 @@ class GlassDream : DreamService() {
     override fun onDreamingStopped() { view?.stop(); super.onDreamingStopped() }
 }
 
-/** Same screensaver, started by Glass Launcher itself when the home screen is idle. */
+/** Same screensaver, started by LEAD Launcher itself when the home screen is idle. */
 class ScreensaverActivity : Activity() {
     private lateinit var view: SaverView
 

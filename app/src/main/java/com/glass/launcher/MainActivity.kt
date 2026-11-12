@@ -86,7 +86,7 @@ class MainActivity : Activity() {
             updateClock()
             if (tickCount++ % 5 == 0) {
                 updateStatus()
-                if (System.currentTimeMillis() - lastWeather > 30 * 60 * 1000L) updateWeather()
+                if (System.currentTimeMillis() - lastWeather > prefs.weatherMin * 60 * 1000L) updateWeather()
                 if (SystemClock.elapsedRealtime() < 3 * 60 * 1000L) Autostart.apply(this@MainActivity)
             }
             checkIdle()
@@ -147,7 +147,7 @@ class MainActivity : Activity() {
             val sc = if (has) 1.12f else 1f
             v.animate().scaleX(sc).scaleY(sc).setDuration(140).withEndAction { v.invalidate() }.start()
         }
-        updateBtn.setOnClickListener { Updater.pending(this)?.let { showUpdateOffer(it) } ?: checkUpdate(manual = true) }
+        updateBtn.setOnClickListener { Updater.pending(this)?.let { installUpdate(it) } ?: checkUpdate(manual = true) }
         profileBtn.setOnClickListener { profileMenu() }
         settingsBtn.setOnClickListener { showSettings() }
         powerBtn.setOnClickListener { powerMenu() }
@@ -410,10 +410,12 @@ class MainActivity : Activity() {
                     toast(T.s("Enter your TMDB key first", "Prvo upiši TMDB ključ", "Zuerst den TMDB-Schlüssel eintragen"))
                     prefs.wpMode = 0; loadWallpaper(); return
                 }
-                val cacheKey = key + prefs.tmdbType + T.lang
+                // the day is part of the key, so the list is fetched fresh every day
+                val day = System.currentTimeMillis() / (24 * 60 * 60 * 1000L)
+                val cacheKey = key + prefs.tmdbType + prefs.tmdbList + T.lang + day
                 if (cacheKey == moviesKey && movies.isNotEmpty()) { handler.post(rotate); return }
                 Thread {
-                    val list = Movies.trending(key, prefs.tmdbType).shuffled()
+                    val list = Movies.load(key, prefs.tmdbType, prefs.tmdbList).shuffled()
                     handler.post {
                         if (list.isEmpty()) {
                             toast(T.s("Couldn't load films (key or internet?)", "Filmovi se ne mogu učitati (ključ ili internet?)", "Filme nicht ladbar (Schlüssel oder Internet?)"))
@@ -555,7 +557,7 @@ class MainActivity : Activity() {
                     findViewById<ImageView>(R.id.weatherIcon).setImageResource(w.first)
                     findViewById<TextView>(R.id.weatherText).text = w.second
                 } else {
-                    lastWeather = System.currentTimeMillis() - 25 * 60 * 1000L // retry in ~5 min
+                    lastWeather = System.currentTimeMillis() - (prefs.weatherMin - 5).coerceAtLeast(0) * 60 * 1000L // retry in ~5 min
                 }
             }
         }.start()
@@ -979,6 +981,17 @@ class MainActivity : Activity() {
                     GlassMenu.Item(n, checked = v == prefs.tmdbType) { prefs.tmdbType = v; moviesKey = ""; if (prefs.wpMode == 2) loadWallpaper() }
                 })
             },
+            GlassMenu.Item(T.s("Which titles", "Koji naslovi", "Welche Titel"), R.drawable.lc_rocket,
+                value = if (prefs.tmdbList == "new") T.s("New & coming soon", "Novo i uskoro", "Neu & demnächst")
+                        else T.s("Popular this week", "Popularno ove sedmice", "Beliebt diese Woche")) {
+                choose(T.s("Which titles", "Koji naslovi", "Welche Titel"), R.drawable.lc_rocket, listOf(
+                    T.s("New & coming soon (cinema now, upcoming, series on air)", "Novo i uskoro (sad u kinu, uskoro, serije koje se emituju)",
+                        "Neu & demnächst (jetzt im Kino, bald, laufende Serien)") to 0,
+                    T.s("Popular this week", "Popularno ove sedmice", "Beliebt diese Woche") to 1),
+                    if (prefs.tmdbList == "new") 0 else 1) {
+                    prefs.tmdbList = if (it == 0) "new" else "trending"; moviesKey = ""; if (prefs.wpMode == 2) loadWallpaper()
+                }
+            },
             GlassMenu.Item(T.s("Title and description", "Naziv i opis", "Titel und Beschreibung"), R.drawable.lc_type,
                 checked = prefs.showMovieInfo, toggle = true) { prefs.showMovieInfo = it.checked; if (!it.checked) showMovieInfo(null) },
             GlassMenu.Item(T.s("TMDB key", "TMDB ključ", "TMDB-Schlüssel"), R.drawable.lc_key_round,
@@ -1162,12 +1175,12 @@ class MainActivity : Activity() {
                     startActivity(Intent(Settings.ACTION_HOME_SETTINGS))
                 } catch (e: Exception) {
                     menu.message(T.s("Default launcher", "Zadani launcher", "Standard-Launcher"), R.drawable.lc_house, T.s(
-                        "This box doesn't offer a choice. Use \"Home button opens Glass Launcher\".",
-                        "Ovaj box ne nudi izbor. Koristi \"Dugme Home otvara Glass Launcher\".",
-                        "Diese Box bietet keine Auswahl. Nutze \"Home-Taste öffnet Glass Launcher\"."))
+                        "This box doesn't offer a choice. Use \"Home button opens LEAD Launcher\".",
+                        "Ovaj box ne nudi izbor. Koristi \"Dugme Home otvara LEAD Launcher\".",
+                        "Diese Box bietet keine Auswahl. Nutze \"Home-Taste öffnet LEAD Launcher\"."))
                 }
             },
-            GlassMenu.Item(T.s("Home button opens Glass Launcher", "Dugme Home otvara Glass Launcher", "Home-Taste öffnet Glass Launcher"),
+            GlassMenu.Item(T.s("Home button opens LEAD Launcher", "Dugme Home otvara LEAD Launcher", "Home-Taste öffnet LEAD Launcher"),
                 R.drawable.lc_house, value = onOff(HomeService.isEnabled(this) && prefs.homeRedirect)) {
                 if (HomeService.isEnabled(this) && prefs.homeRedirect) {
                     prefs.homeRedirect = false
@@ -1194,7 +1207,7 @@ class MainActivity : Activity() {
         }
         try {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-            toast(T.s("Turn on \"Glass Launcher\" here", "Ovdje uključi \"Glass Launcher\"", "Hier \"Glass Launcher\" einschalten"))
+            toast(T.s("Turn on \"LEAD Launcher\" here", "Ovdje uključi \"LEAD Launcher\"", "Hier \"LEAD Launcher\" einschalten"))
         } catch (e: Exception) {
             adbHelp()
         }
@@ -1206,9 +1219,9 @@ class MainActivity : Activity() {
             "Na računaru u istoj mreži (na boxu uključi Opcije za programere → mrežno/USB otklanjanje grešaka):",
             "Am Computer im selben Netzwerk (auf der Box Entwickleroptionen → Netzwerk/USB-Debugging aktivieren):") +
             "\n\nadb connect <IP>\n${adbGrant()}\n\n" +
-            T.s("After this, Glass Launcher can turn on the Home button and Private DNS by itself.\n\nTo switch off the Google home screen completely:",
-                "Poslije toga Glass Launcher sam uključuje dugme Home i Private DNS.\n\nDa potpuno isključiš Google početni ekran:",
-                "Danach kann Glass Launcher die Home-Taste und Private DNS selbst einschalten.\n\nUm den Google-Startbildschirm ganz abzuschalten:") +
+            T.s("After this, LEAD Launcher can turn on the Home button and Private DNS by itself.\n\nTo switch off the Google home screen completely:",
+                "Poslije toga LEAD Launcher sam uključuje dugme Home i Private DNS.\n\nDa potpuno isključiš Google početni ekran:",
+                "Danach kann LEAD Launcher die Home-Taste und Private DNS selbst einschalten.\n\nUm den Google-Startbildschirm ganz abzuschalten:") +
             "\nadb shell pm disable-user --user 0 com.google.android.tvlauncher\n" +
             T.s("(undo: adb shell pm enable com.google.android.tvlauncher)",
                 "(vraćanje: adb shell pm enable com.google.android.tvlauncher)",
@@ -1292,9 +1305,9 @@ class MainActivity : Activity() {
                     else T.s("Run these once from a computer:", "Pokreni ovo jednom s računara:", "Einmal am Computer ausführen:") + "\n\n" + cmds)
                 }
                 menu.show(title, R.drawable.lc_rocket, items, T.s(
-                    "Switched off = Glass Launcher stops the app in the background after the box starts.",
-                    "Isključeno = Glass Launcher zaustavlja aplikaciju u pozadini nakon paljenja boxa.",
-                    "Aus = Glass Launcher stoppt die App im Hintergrund nach dem Start der Box."))
+                    "Switched off = LEAD Launcher stops the app in the background after the box starts.",
+                    "Isključeno = LEAD Launcher zaustavlja aplikaciju u pozadini nakon paljenja boxa.",
+                    "Aus = LEAD Launcher stoppt die App im Hintergrund nach dem Start der Box."))
             }
         }.start()
     }
@@ -1482,8 +1495,8 @@ class MainActivity : Activity() {
     private fun needServiceFor() {
         menu.show(T.s("Power", "Napajanje", "Energie"), R.drawable.lc_power, listOf(
             GlassMenu.Item(T.s("Switch on the helper service", "Uključi pomoćni servis", "Hilfsdienst einschalten"), R.drawable.lc_shield_check) { enableService() },
-        ), T.s("Android lets apps put the box to sleep or open the power menu only through the Glass Launcher helper service (Accessibility). Sleep needs Android 9 or newer.",
-            "Android dozvoljava gašenje i spavanje boxa samo preko pomoćnog servisa Glass Launchera (Pristupačnost). Spavanje traži Android 9 ili noviji.",
+        ), T.s("Android lets apps put the box to sleep or open the power menu only through the LEAD Launcher helper service (Accessibility). Sleep needs Android 9 or newer.",
+            "Android dozvoljava gašenje i spavanje boxa samo preko pomoćnog servisa LEAD Launchera (Pristupačnost). Spavanje traži Android 9 ili noviji.",
             "Android erlaubt Ruhemodus und Power-Menü nur über den Glass-Launcher-Hilfsdienst (Bedienungshilfen). Ruhemodus braucht Android 9 oder neuer."))
     }
 
@@ -1512,9 +1525,9 @@ class MainActivity : Activity() {
             GlassMenu.Item(T.s("Android screensaver settings", "Android postavke screensavera", "Android-Bildschirmschoner-Einstellungen"), R.drawable.lc_settings) {
                 safeStart(Intent(Settings.ACTION_DREAM_SETTINGS))
             },
-        ), T.s("Tip: in the Android screensaver settings you can also choose \"Glass Launcher\" – then the samurai clock shows in every app.",
-            "Savjet: u Android postavkama screensavera možeš izabrati i \"Glass Launcher\" – tada se samuraj sat prikazuje u svakoj aplikaciji.",
-            "Tipp: In den Android-Einstellungen kannst du auch \"Glass Launcher\" als Bildschirmschoner wählen."))
+        ), T.s("Tip: in the Android screensaver settings you can also choose \"LEAD Launcher\" – then the samurai clock shows in every app.",
+            "Savjet: u Android postavkama screensavera možeš izabrati i \"LEAD Launcher\" – tada se samuraj sat prikazuje u svakoj aplikaciji.",
+            "Tipp: In den Android-Einstellungen kannst du auch \"LEAD Launcher\" als Bildschirmschoner wählen."))
     }
 
     private fun checkIdle() {
@@ -1559,7 +1572,12 @@ class MainActivity : Activity() {
             handler.post {
                 val items = days.map { (day, icon, temps) -> GlassMenu.Item(day, icon, value = temps) } +
                     GlassMenu.Item(T.s("Change city", "Promijeni grad", "Stadt ändern"), R.drawable.lc_map_pin) { setCity() } +
-                    GlassMenu.Item(T.s("Refresh", "Osvježi", "Aktualisieren"), R.drawable.lc_refresh_cw) { lastWeather = 0; updateWeather() }
+                    GlassMenu.Item(T.s("Refresh", "Osvježi", "Aktualisieren"), R.drawable.lc_refresh_cw) { lastWeather = 0; updateWeather() } +
+                    GlassMenu.Item(T.s("Update every", "Osvježavaj svakih", "Aktualisieren alle"), R.drawable.lc_refresh_cw,
+                        value = "${prefs.weatherMin} min") {
+                        choose(T.s("Update every", "Osvježavaj svakih", "Aktualisieren alle"), R.drawable.lc_refresh_cw,
+                            listOf(15, 30, 60, 120).map { "$it min" to it }, prefs.weatherMin) { prefs.weatherMin = it }
+                    }
                 menu.show(title, R.drawable.lc_cloud_sun, items,
                     if (days.isEmpty()) T.s("No forecast right now (internet?)", "Prognoza trenutno nije dostupna (internet?)", "Keine Vorhersage (Internet?)") else null)
             }
@@ -1638,9 +1656,9 @@ class MainActivity : Activity() {
         if (!NotifListener.connected) {
             menu.show(T.s("Notifications", "Obavještenja", "Benachrichtigungen"), R.drawable.lc_bell, listOf(
                 GlassMenu.Item(T.s("Allow notification access", "Dozvoli pristup obavještenjima", "Benachrichtigungszugriff erlauben"), R.drawable.lc_check) { notificationAccess() },
-            ), T.s("Glass Launcher needs permission to show and clear notifications.",
-                "Glass Launcher treba dozvolu da prikazuje i briše obavještenja.",
-                "Glass Launcher braucht die Erlaubnis, Benachrichtigungen anzuzeigen und zu löschen."))
+            ), T.s("LEAD Launcher needs permission to show and clear notifications.",
+                "LEAD Launcher treba dozvolu da prikazuje i briše obavještenja.",
+                "LEAD Launcher braucht die Erlaubnis, Benachrichtigungen anzuzeigen und zu löschen."))
             return
         }
         val list = NotifListener.current()
@@ -1699,8 +1717,11 @@ class MainActivity : Activity() {
                     showUpdateChip(animate = false)
                     return@post
                 }
-                showUpdateChip(animate = true)
-                if (manual) showUpdateOffer(info)
+                if (manual) {
+                    // "Check now" = install right away, no extra steps
+                    updateBtn.visibility = View.GONE
+                    installUpdate(info)
+                } else showUpdateChip(animate = true)
             }
         }.start()
     }
@@ -1745,7 +1766,7 @@ class MainActivity : Activity() {
     }
 
     private fun installUpdate(info: Updater.Info) {
-        toast(T.s("Downloading…", "Preuzimam…", "Lade herunter…"))
+        toast(T.s("Downloading version ", "Preuzimam verziju ", "Lade Version ") + info.name + "…")
         Thread {
             try {
                 val f = Updater.download(this, info)

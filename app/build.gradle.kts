@@ -12,8 +12,8 @@ android {
         minSdk = 23
         targetSdk = 34
         // raise both numbers for every new version you publish (needed for web updates)
-        versionCode = 13
-        versionName = "3.1"
+        versionCode = 14
+        versionName = "3.2"
     }
 
     // Fixed key so every build can update the previous one.

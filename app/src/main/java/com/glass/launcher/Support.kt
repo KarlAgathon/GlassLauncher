@@ -168,6 +168,10 @@ class Prefs(ctx: Context) {
     var tmdbKey: String get() = str("tmdbKey", ""); set(v) = putStr("tmdbKey", v)
     /** "all", "movie" or "tv" */
     var tmdbType: String get() = str("tmdbType", "all"); set(v) = putStr("tmdbType", v)
+    /** "trending" = popular this week, "new" = just released and coming soon */
+    var tmdbList: String get() = str("tmdbList", "new"); set(v) = putStr("tmdbList", v)
+    /** minutes between weather updates */
+    var weatherMin: Int get() = int("weatherMin", 30); set(v) = putInt("weatherMin", v)
     var showMovieInfo: Boolean get() = bool("movieInfo", true); set(v) = putBool("movieInfo", v)
 
     fun applyPreset(p: Int) {
@@ -214,7 +218,7 @@ class Prefs(ctx: Context) {
     /** small corner overlay while a film / other app is open (needs the accessibility service) */
     var overlayVpn: Boolean get() = bool("ovVpn", true); set(v) = putBool("ovVpn", v)
     var overlayClock: Boolean get() = bool("ovClock", false); set(v) = putBool("ovClock", v)
-    /** Home button of the remote opens Glass Launcher (needs the accessibility service) */
+    /** Home button of the remote opens LEAD Launcher (needs the accessibility service) */
     var homeRedirect: Boolean get() = bool("homeRedir", true); set(v) = putBool("homeRedir", v)
 
     /** what to do when the home screen is idle: 0 nothing, 1 screensaver, 2 sleep */
@@ -825,27 +829,51 @@ object Weather {
 data class Movie(val title: String, val year: String, val rating: String, val kind: String, val overview: String, val image: String)
 
 object Movies {
+    private fun lang() = when (T.lang) { "bs" -> "bs-BA"; "de" -> "de-DE"; else -> "en-US" }
+
+    private fun get(key: String, path: String): org.json.JSONArray {
+        val v4 = key.length > 40
+        val sep = if (path.contains("?")) "&" else "?"
+        val url = "https://api.themoviedb.org/3/$path${sep}language=${lang()}" + if (v4) "" else "&api_key=$key"
+        val headers = if (v4) mapOf("Authorization" to "Bearer $key", "accept" to "application/json") else emptyMap()
+        return JSONObject(Http.text(url, headers)).getJSONArray("results")
+    }
+
+    private fun parse(res: org.json.JSONArray, forceTv: Boolean?): List<Movie> = (0 until res.length()).mapNotNull { i ->
+        val o = res.getJSONObject(i)
+        val bd = o.optString("backdrop_path", "")
+        if (bd.isBlank() || bd == "null") return@mapNotNull null
+        val isTv = forceTv ?: (o.optString("media_type") == "tv")
+        val title = o.optString(if (isTv) "name" else "title", o.optString("title", o.optString("name", "")))
+        val date = o.optString(if (isTv) "first_air_date" else "release_date", "")
+        val rating = o.optDouble("vote_average", 0.0)
+        Movie(title, date.take(4), if (rating > 0) String.format(java.util.Locale.US, "%.1f", rating) else "",
+            if (isTv) T.s("Series", "Serija", "Serie") else T.s("Movie", "Film", "Film"),
+            o.optString("overview", ""), "https://image.tmdb.org/t/p/w1280$bd")
+    }
+
     /** Trending films/series. key = TMDB API key (v3) or read-access token (v4). Call off the main thread. */
     fun trending(key: String, type: String): List<Movie> = runCatching {
-        val lang = when (T.lang) { "bs" -> "bs-BA"; "de" -> "de-DE"; else -> "en-US" }
         val t = if (type == "movie" || type == "tv") type else "all"
-        val v4 = key.length > 40
-        val url = "https://api.themoviedb.org/3/trending/$t/week?language=$lang" + if (v4) "" else "&api_key=$key"
-        val headers = if (v4) mapOf("Authorization" to "Bearer $key", "accept" to "application/json") else emptyMap()
-        val res = JSONObject(Http.text(url, headers)).getJSONArray("results")
-        (0 until res.length()).mapNotNull { i ->
-            val o = res.getJSONObject(i)
-            val bd = o.optString("backdrop_path", "")
-            if (bd.isBlank() || bd == "null") return@mapNotNull null
-            val isTv = o.optString("media_type") == "tv" || (t == "tv")
-            val title = o.optString(if (isTv) "name" else "title", o.optString("title", o.optString("name", "")))
-            val date = o.optString(if (isTv) "first_air_date" else "release_date", "")
-            val rating = o.optDouble("vote_average", 0.0)
-            Movie(title, date.take(4), if (rating > 0) String.format(java.util.Locale.US, "%.1f", rating) else "",
-                if (isTv) T.s("Series", "Serija", "Serie") else T.s("Movie", "Film", "Film"),
-                o.optString("overview", ""), "https://image.tmdb.org/t/p/w1280$bd")
-        }
+        parse(get(key, "trending/$t/week"), if (t == "tv") true else if (t == "movie") false else null)
     }.getOrDefault(emptyList())
+
+    /** Newest: films in cinemas now + coming soon, series airing now + new episodes this week. */
+    fun newest(key: String, type: String): List<Movie> {
+        val out = ArrayList<Movie>()
+        if (type != "tv") {
+            runCatching { out += parse(get(key, "movie/now_playing"), false) }
+            runCatching { out += parse(get(key, "movie/upcoming"), false) }
+        }
+        if (type != "movie") {
+            runCatching { out += parse(get(key, "tv/on_the_air"), true) }
+            runCatching { out += parse(get(key, "tv/airing_today"), true) }
+        }
+        return out.distinctBy { it.title + it.kind }
+    }
+
+    fun load(key: String, type: String, list: String): List<Movie> =
+        if (list == "new") newest(key, type).ifEmpty { trending(key, type) } else trending(key, type)
 }
 
 

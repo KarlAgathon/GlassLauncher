@@ -11,7 +11,7 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Backup / restore of everything Glass Launcher knows: all profiles, their apps, names,
+ * Backup / restore of everything LEAD Launcher knows: all profiles, their apps, names,
  * settings, own icons and wallpapers. (Passwords and Google logins belong to Android
  * and cannot be saved by any app.)
  */

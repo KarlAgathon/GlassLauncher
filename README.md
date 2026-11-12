@@ -1,4 +1,4 @@
-# Glass Launcher 2.1
+# LEAD Launcher 2.1
 
 Open-source launcher za Android TV (Mi Box) sa zamućenim staklenim pločicama, samuraj pozadinom i bez reklama.
 Interfejs je na engleskom, bosanskom i njemačkom.
@@ -13,7 +13,7 @@ Interfejs je na engleskom, bosanskom i njemačkom.
 - **Profili** s vlastitim aplikacijama, pozadinom i postavkama, plus prečica do Google računa (prijava, odjava, promjena).
 - **Backup i vraćanje** svih profila, ikona, pozadina i postavki u jedan fajl.
 - **File browser bez reklama,** koji se vidi i kao posebna aplikacija "Fajlovi".
-- **Zadani launcher:** dugme Home na daljinskom otvara Glass Launcher.
+- **Zadani launcher:** dugme Home na daljinskom otvara LEAD Launcher.
 - **Napajanje:** spavanje, restart i gašenje.
 - **Screensaver:** samuraj sa satom, i opcija šta box radi kad miruje.
 - **Private DNS** (AdGuard, Cloudflare, Google, Quad9 ili vlastiti server).

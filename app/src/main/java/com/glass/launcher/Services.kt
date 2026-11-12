@@ -30,7 +30,7 @@ import java.util.Locale
 
 /**
  * Optional accessibility service:
- *  - Home button of the remote opens Glass Launcher instead of the stock home screen
+ *  - Home button of the remote opens LEAD Launcher instead of the stock home screen
  *  - while a film / any other app is open: small VPN key (and optional clock) in the top-right corner
  */
 class HomeService : AccessibilityService() {

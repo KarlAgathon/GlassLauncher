@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Glass Launcher</string>
+    <string name="app_name">LEAD Launcher</string>
     <string name="files_name">Files</string>
-    <string name="acc_desc">Lets Glass Launcher open when you press the Home button on the remote.</string>
-    <string name="notif_name">Glass Launcher notifications</string>
+    <string name="acc_desc">Lets LEAD Launcher open when you press the Home button on the remote.</string>
+    <string name="notif_name">LEAD Launcher notifications</string>
 </resources>

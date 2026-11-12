@@ -32,8 +32,8 @@
 
     <application
         android:allowBackup="true"
-        android:banner="@drawable/banner"
-        android:icon="@drawable/ic_launcher"
+        android:banner="@drawable/banner_lead"
+        android:icon="@drawable/ic_lead"
         android:label="@string/app_name"
         android:requestLegacyExternalStorage="true"
         android:theme="@style/LauncherTheme"
