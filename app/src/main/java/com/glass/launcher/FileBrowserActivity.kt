@@ -16,6 +16,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.MimeTypeMap
+import android.widget.EditText
 import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
@@ -34,9 +35,14 @@ class FileBrowserActivity : Activity() {
         const val EXTRA_PATH = "path"
         const val EXTRA_START = "start"
         private const val REQ_PERM = 21
+
+        /** file waiting to be moved / copied (survives leaving and re-opening folders) */
+        private var clip: File? = null
+        private var clipMove = true
     }
 
-    private class Entry(val file: File?, val name: String, val icon: Int, val info: String, val up: Boolean = false, val choose: Boolean = false)
+    private class Entry(val file: File?, val name: String, val icon: Int, val info: String, val up: Boolean = false,
+                        val choose: Boolean = false, val action: String? = null)
 
     private val entries = ArrayList<Entry>()
     private var dir: File? = null
@@ -49,8 +55,8 @@ class FileBrowserActivity : Activity() {
     private lateinit var pathView: TextView
     private lateinit var empty: TextView
 
-    private val videoExt = setOf("mp4", "mkv", "avi", "mov", "webm", "ts", "m4v", "wmv", "flv")
-    private val audioExt = setOf("mp3", "flac", "wav", "aac", "ogg", "m4a", "wma", "opus")
+    private val videoExt = MediaViewerActivity.VIDEO
+    private val audioExt = MediaViewerActivity.AUDIO
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -131,14 +137,29 @@ class FileBrowserActivity : Activity() {
                 else -> ""
             }
             for ((i, r) in roots().withIndex()) {
-                if (i == 0) entries.add(Entry(r, T.s("Internal storage", "Interna memorija", "Interner Speicher"), R.drawable.lc_hard_drive, ""))
-                else entries.add(Entry(r, "USB / SD  (${r.name})", R.drawable.lc_usb, ""))
+                val free = runCatching { android.os.StatFs(r.absolutePath) }.getOrNull()
+                val info = if (free != null) T.s("free ", "slobodno ", "frei ") + Formatter.formatShortFileSize(this, free.availableBytes) +
+                    " / " + Formatter.formatShortFileSize(this, free.totalBytes) else ""
+                if (i == 0) entries.add(Entry(r, T.s("Internal storage", "Interna memorija", "Interner Speicher"), R.drawable.lc_hard_drive, info))
+                else entries.add(Entry(r, "USB / SD  (${r.name})", R.drawable.lc_usb, info))
+            }
+            if (!picking) for ((i, r) in roots().withIndex()) {
+                val n = if (i == 0) T.s("internal", "interna", "intern") else r.name
+                entries.add(Entry(r, T.s("What fills the storage", "Šta zauzima memoriju", "Was belegt den Speicher") + " – $n",
+                    R.drawable.lc_layers, T.s("chart by file type", "grafikon po vrsti fajlova", "Diagramm nach Dateityp"), action = "storage"))
             }
         } else {
             title.text = if (isRoot(d)) T.s("Internal storage", "Interna memorija", "Interner Speicher") else d.name
             pathView.text = d.absolutePath
             entries.add(Entry(null, T.s("Back", "Nazad", "Zurück"), R.drawable.lc_arrow_up, "", up = true))
             if (pickMode == "folder") entries.add(Entry(d, T.s("✓ Use this folder", "✓ Koristi ovaj folder", "✓ Diesen Ordner verwenden"), R.drawable.lc_check, "", choose = true))
+            val c = clip
+            if (c != null && !picking) {
+                val verb = if (clipMove) T.s("Move here", "Premjesti ovdje", "Hierher verschieben") else T.s("Copy here", "Kopiraj ovdje", "Hierher kopieren")
+                entries.add(Entry(d, "$verb:  ${c.name}", if (clipMove) R.drawable.lc_move else R.drawable.lc_check, "", action = "paste"))
+                entries.add(Entry(d, T.s("Cancel", "Odustani", "Abbrechen") + " (" + (if (clipMove) T.s("move", "premještanje", "Verschieben") else T.s("copy", "kopiranje", "Kopieren")) + ")",
+                    R.drawable.lc_x, "", action = "cancelclip"))
+            }
             val files = (d.listFiles() ?: emptyArray())
                 .filter { !it.name.startsWith(".") }
                 .filter { f -> when (pickMode) {
@@ -180,6 +201,11 @@ class FileBrowserActivity : Activity() {
 
     private fun onEntry(e: Entry) {
         if (e.up) { goUp(); return }
+        when (e.action) {
+            "storage" -> { e.file?.let { startActivity(Intent(this, StorageActivity::class.java).putExtra(StorageActivity.EXTRA_ROOT, it.absolutePath)) }; return }
+            "paste" -> { paste(); return }
+            "cancelclip" -> { clip = null; show(dir); return }
+        }
         val f = e.file ?: return
         if (e.choose) {
             setResult(RESULT_OK, Intent().putExtra(EXTRA_PATH, f.absolutePath))
@@ -198,21 +224,95 @@ class FileBrowserActivity : Activity() {
     private fun open(f: File) {
         val ext = f.extension.lowercase()
         if (ext == "apk") { Updater.install(this, f); return }
-        try {
-            val uri = FileProvider.getUriForFile(this, "$packageName.files", f)
-            val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "*/*"
-            startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, mime)
-                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
-        } catch (e: ActivityNotFoundException) {
-            toast(T.s("No app can open this file", "Nijedna aplikacija ne može otvoriti ovaj fajl", "Keine App kann diese Datei öffnen"))
-        } catch (e: Exception) {
-            toast(T.s("Can't open this file", "Ne mogu otvoriti ovaj fajl", "Datei kann nicht geöffnet werden"))
+        if (MediaViewerActivity.kind(f) != null) {
+            startActivity(Intent(this, MediaViewerActivity::class.java).putExtra(MediaViewerActivity.EXTRA_PATH, f.absolutePath))
+            return
         }
+        MediaViewerActivity.openWith(this, f)
     }
+
+    // ------------------------------------------------------------------ long press: move, copy, rename, delete …
 
     private fun onLong(e: Entry) {
         val f = e.file ?: return
-        if (e.up || dir == null) return
+        if (e.up || dir == null || e.action != null || e.choose) return
+        val actions = ArrayList<Pair<String, () -> Unit>>()
+        if (f.isFile) actions.add(T.s("Open with…", "Otvori s…", "Öffnen mit…") to { MediaViewerActivity.openWith(this, f) })
+        actions.add(T.s("Move", "Premjesti", "Verschieben") to { startClip(f, true) })
+        actions.add(T.s("Copy", "Kopiraj", "Kopieren") to { startClip(f, false) })
+        actions.add(T.s("Rename", "Preimenuj", "Umbenennen") to { rename(f) })
+        actions.add(T.s("Delete", "Obriši", "Löschen") to { confirmDelete(f) })
+        actions.add(T.s("Details", "Detalji", "Details") to { details(f) })
+        AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+            .setTitle(f.name)
+            .setItems(actions.map { it.first }.toTypedArray()) { _, i -> actions[i].second() }
+            .show()
+    }
+
+    private fun startClip(f: File, move: Boolean) {
+        clip = f
+        clipMove = move
+        toast(T.s("Now open the target folder and choose \"", "Sad otvori ciljni folder i izaberi \"", "Jetzt den Zielordner öffnen und \"") +
+            (if (move) T.s("Move here", "Premjesti ovdje", "Hierher verschieben") else T.s("Copy here", "Kopiraj ovdje", "Hierher kopieren")) + "\"")
+        show(dir)
+    }
+
+    private fun freeName(target: File): File {
+        if (!target.exists()) return target
+        val base = target.nameWithoutExtension
+        val ext = if (target.isDirectory || target.extension.isEmpty()) "" else "." + target.extension
+        var i = 1
+        while (true) {
+            val t = File(target.parentFile, "$base ($i)$ext")
+            if (!t.exists()) return t
+            i++
+        }
+    }
+
+    private fun paste() {
+        val src = clip ?: return
+        val d = dir ?: return
+        if (d.absolutePath == src.absolutePath || d.absolutePath.startsWith(src.absolutePath + "/")) {
+            toast(T.s("Can't put a folder into itself", "Folder se ne može staviti u samog sebe", "Ordner kann nicht in sich selbst"))
+            return
+        }
+        val move = clipMove
+        val target = freeName(File(d, src.name))
+        toast(if (move) T.s("Moving…", "Premještam…", "Verschiebe…") else T.s("Copying…", "Kopiram…", "Kopiere…"))
+        Thread {
+            val ok = runCatching {
+                if (move && src.renameTo(target)) true
+                else {
+                    val copied = src.copyRecursively(target, overwrite = false)
+                    if (copied && move) src.deleteRecursively() else copied
+                }
+            }.getOrDefault(false)
+            runOnUiThread {
+                clip = null
+                toast(if (ok) T.s("Done", "Gotovo", "Fertig") else T.s("Didn't work (no access or not enough space?)",
+                    "Nije uspjelo (nema pristupa ili nema mjesta?)", "Fehlgeschlagen (kein Zugriff oder kein Platz?)"))
+                show(dir)
+            }
+        }.start()
+    }
+
+    private fun rename(f: File) {
+        val input = EditText(this).apply { setText(f.name); setSelection(0, f.nameWithoutExtension.length.coerceAtMost(f.name.length)) }
+        AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+            .setTitle(T.s("Rename", "Preimenuj", "Umbenennen"))
+            .setView(input)
+            .setPositiveButton("OK") { _, _ ->
+                val n = input.text.toString().trim()
+                if (n.isEmpty() || n.contains("/")) return@setPositiveButton
+                val t = File(f.parentFile, n)
+                if (t.exists()) toast(T.s("That name already exists", "To ime već postoji", "Name existiert schon"))
+                else if (f.renameTo(t)) show(dir) else toast(T.s("Couldn't rename", "Preimenovanje nije uspjelo", "Umbenennen fehlgeschlagen"))
+            }
+            .setNegativeButton(T.s("Cancel", "Odustani", "Abbrechen"), null)
+            .show()
+    }
+
+    private fun confirmDelete(f: File) {
         AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
             .setTitle(f.name)
             .setMessage(T.s("Delete this?", "Obrisati ovo?", "Wirklich löschen?"))
@@ -222,6 +322,22 @@ class FileBrowserActivity : Activity() {
             }
             .setNegativeButton(T.s("Cancel", "Odustani", "Abbrechen"), null)
             .show()
+    }
+
+    private fun details(f: File) {
+        Thread {
+            val size = if (f.isDirectory) f.walkTopDown().filter { it.isFile }.sumOf { it.length() } else f.length()
+            val count = if (f.isDirectory) f.walkTopDown().count { it.isFile } else 1
+            val df = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT, T.locale)
+            val msg = T.s("Size: ", "Veličina: ", "Größe: ") + Formatter.formatFileSize(this, size) +
+                (if (f.isDirectory) "\n" + T.s("Files: ", "Fajlova: ", "Dateien: ") + count else "") +
+                "\n" + T.s("Changed: ", "Promijenjeno: ", "Geändert: ") + df.format(Date(f.lastModified())) +
+                "\n" + f.absolutePath
+            runOnUiThread {
+                AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                    .setTitle(f.name).setMessage(msg).setPositiveButton("OK", null).show()
+            }
+        }.start()
     }
 
     @Deprecated("Deprecated in Java")

@@ -74,6 +74,19 @@
         </activity>
 
         <activity
+            android:name=".MediaViewerActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:screenOrientation="landscape"
+            android:theme="@style/LauncherTheme" />
+
+        <activity
+            android:name=".StorageActivity"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:theme="@style/LauncherTheme" />
+
+        <activity
             android:name=".ScreensaverActivity"
             android:exported="false"
             android:screenOrientation="landscape"
