@@ -12,8 +12,8 @@ android {
         minSdk = 23
         targetSdk = 34
         // raise both numbers for every new version you publish (needed for web updates)
-        versionCode = 34
-        versionName = "5.6"
+        versionCode = 35
+        versionName = "5.7"
     }
 
     // Private signing key: it is NOT in this repository. GitHub Actions writes it from the secrets
@@ -49,4 +49,7 @@ android {
 dependencies {
     implementation("androidx.core:core:1.12.0")
     implementation("androidx.recyclerview:recyclerview:1.3.2")
+    // Shizuku: on newer Android (e.g. Google TV Streamer) the CPU load can only be read with ADB ("shell") rights
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
 }

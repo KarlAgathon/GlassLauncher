@@ -191,6 +191,8 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         HomeService.setHome(true)
+        // newer Android: CPU % only via Shizuku – ask once for its permission when Shizuku runs
+        if (prefs.showCpu && !ShizukuCpu.permitted()) handler.postDelayed({ ShizukuCpu.ask() }, 1500)
         lastInput = SystemClock.elapsedRealtime()
         handler.removeCallbacks(ticker)
         handler.post(ticker)
@@ -576,7 +578,7 @@ class MainActivity : Activity() {
         // newer Android (Google TV Streamer …) gives apps no CPU numbers at all: then the CPU field hides itself
         val cpu = if (prefs.showCpu) SysStats.cpuPercent() else null
         if (prefs.showCpu) cpuMisses = if (cpu == null) cpuMisses + 1 else 0
-        val cpuShown = prefs.showCpu && cpuMisses < 3
+        val cpuShown = prefs.showCpu && (cpuMisses < 3 || ShizukuCpu.permitted())
         findViewById<View>(R.id.cpuBox).visibility = if (cpuShown) View.VISIBLE else View.GONE
         if (cpuShown) findViewById<TextView>(R.id.cpuText).text = cpu?.let { "$it%" } ?: "–"
         findViewById<View>(R.id.ramBox).visibility = if (prefs.showRam) View.VISIBLE else View.GONE

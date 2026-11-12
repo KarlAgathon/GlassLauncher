@@ -686,6 +686,8 @@ object SysStats {
     private var lastTotal = 0L
     private var lastIdle = 0L
 
+    /** first Shizuku reading has no previous value: show 0 instead of hiding the field */
+    private val lastShizuku: Int? = 0
     private var lastIdleUs = 0L
     private var lastWallUs = 0L
     private var lastCpuCount = 0
@@ -711,6 +713,7 @@ object SysStats {
         }.getOrNull()
         if (real != null) return real.coerceIn(0, 100)
         if (lastTotal == 0L) idleBased()?.let { return it }
+        if (ShizukuCpu.permitted()) return ShizukuCpu.percent() ?: lastShizuku
         dumpCpu()?.let { return it }
         return loadAvg()
     }
