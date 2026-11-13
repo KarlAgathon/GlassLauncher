@@ -10,9 +10,20 @@ class NotifListener : NotificationListenerService() {
         @Volatile var instance: NotifListener? = null
         var onChange: (() -> Unit)? = null
 
+        /** apps whose notifications the user hid from the bell */
+        @Volatile var muted: Set<String> = emptySet()
+
+        /**
+         * Only real, clearable notifications: no "ongoing" ones, none that can't be deleted
+         * (like the permanent Google TV one), no group headers, nothing from hidden apps.
+         */
         fun current(): List<StatusBarNotification> =
-            runCatching { instance?.activeNotifications?.filter { !it.isOngoing } ?: emptyList() }
-                .getOrDefault(emptyList())
+            runCatching {
+                instance?.activeNotifications?.filter {
+                    !it.isOngoing && it.isClearable && it.packageName !in muted &&
+                        (it.notification.flags and android.app.Notification.FLAG_GROUP_SUMMARY) == 0
+                } ?: emptyList()
+            }.getOrDefault(emptyList())
 
         val connected get() = instance != null
 

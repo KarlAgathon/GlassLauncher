@@ -203,6 +203,10 @@ class Prefs(ctx: Context) {
     var showCpu: Boolean get() = bool("sCpu", true); set(v) = putBool("sCpu", v)
     var showRam: Boolean get() = bool("sRam", true); set(v) = putBool("sRam", v)
     var showDisk: Boolean get() = bool("sDisk", true); set(v) = putBool("sDisk", v)
+    /** apps whose notifications are not shown at the bell */
+    var mutedNotifs: Set<String>
+        get() = (sp.getString("mutedN", "") ?: "").split(',').filter { it.isNotBlank() }.toSet()
+        set(v) { sp.edit().putString("mutedN", v.joinToString(",")).apply() }
     /** hourly check whether the other installed apps have a newer version */
     var appUpdates: Boolean get() = bool("appUpd", true); set(v) = putBool("appUpd", v)
 

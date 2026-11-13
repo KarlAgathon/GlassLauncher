@@ -181,6 +181,7 @@ class MainActivity : Activity() {
                 android.net.NetworkRequest.Builder().addCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET).build(), netCallback)
         }
 
+        NotifListener.muted = prefs.mutedNotifs
         NotifListener.onChange = { runOnUiThread { updateStatus() } }
 
         applyLook()
@@ -198,6 +199,8 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         HomeService.setHome(true)
+        // coming back to the home screen (e.g. after the box woke up): check for a new version every 30 min at most
+        handler.postDelayed({ maybeCheckUpdate(30) }, 3000)
         // the helper service (VPN key, Home button) can be switched off by Android – switch it back on by itself
         if ((prefs.overlayVpn || prefs.overlayClock || prefs.homeRedirect) && !HomeService.isEnabled(this) && hasSecure())
             HomeService.enableWithSecureSettings(this)
@@ -220,6 +223,16 @@ class MainActivity : Activity() {
             prefs.lastUpdateCheck = System.currentTimeMillis()
             checkUpdate(manual = false)
         }
+    }
+
+    /** Looks for a new LEAD version when the last look is older than [minMinutes] (start, wake-up, back home). */
+    private fun maybeCheckUpdate(minMinutes: Int) {
+        if (prefs.updateUrl.isBlank()) return
+        val g = getSharedPreferences("glass_global", Context.MODE_PRIVATE)
+        val now = System.currentTimeMillis()
+        if (now - g.getLong("lastUpdCheck", 0L) < minMinutes * 60_000L) return
+        g.edit().putLong("lastUpdCheck", now).apply()
+        checkUpdate(manual = false)
     }
 
     override fun onPause() {
@@ -704,6 +717,7 @@ class MainActivity : Activity() {
             handler.postDelayed({
                 if (weatherFails > 0 || findViewById<TextView>(R.id.weatherText).text.isNullOrBlank()) { lastWeather = 0; updateWeather() }
                 updateStatus()
+                maybeCheckUpdate(5)   // box switched on / internet back: look for a new LEAD right away
             }, 1500)
         }
     }
@@ -2051,6 +2065,11 @@ class MainActivity : Activity() {
                     GlassMenu.Item(T.s("Open", "Otvori", "Öffnen"), R.drawable.lc_play) { runCatching { sbn.notification.contentIntent?.send() } },
                     GlassMenu.Item(T.s("Clear", "Obriši", "Löschen"), R.drawable.lc_x) {
                         NotifListener.clear(sbn); handler.postDelayed({ updateStatus(); notificationsPanel() }, 300)
+                    },
+                    GlassMenu.Item(T.s("Never show from ", "Nikad ne prikazuj od ", "Nie mehr anzeigen von ") + app, R.drawable.lc_eye) {
+                        prefs.mutedNotifs = prefs.mutedNotifs + sbn.packageName
+                        NotifListener.muted = prefs.mutedNotifs
+                        updateStatus(); handler.postDelayed({ notificationsPanel() }, 200)
                     },
                 ), txt)
             })
