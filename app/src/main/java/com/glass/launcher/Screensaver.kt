@@ -160,9 +160,10 @@ class SaverView(ctx: Context) : FrameLayout(ctx) {
 
     private fun glass(radius: Float = 30f) = GradientDrawable().apply {
         cornerRadius = dp(radius).toFloat()
-        colors = intArrayOf(Color.argb(70, 255, 255, 255), Color.argb(34, 255, 255, 255))
+        // almost clear glass: just a hint of white and a thin light edge
+        colors = intArrayOf(Color.argb(26, 255, 255, 255), Color.argb(10, 255, 255, 255))
         orientation = GradientDrawable.Orientation.TL_BR
-        setStroke(dp(1f), Color.argb(70, 255, 255, 255))
+        setStroke(dp(1f), Color.argb(55, 255, 255, 255))
     }
 
     private val tick = object : Runnable {
@@ -226,14 +227,11 @@ class SaverView(ctx: Context) : FrameLayout(ctx) {
 
     private fun showOwn() {
         val f = File(context.filesDir, Profiles.wallpaperName(prefs.profile))
-        val last = File(context.cacheDir, "last_wallpaper.jpg")
+        // only your own picture or the built-in one – never the film pictures (SofaDrop / TMDB)
         Thread {
             val b: Bitmap? = runCatching {
-                when {
-                    f.exists() -> Bitmaps.decodeScaled(f, dm.widthPixels, dm.heightPixels)
-                    last.exists() -> Bitmaps.decodeScaled(last, dm.widthPixels, dm.heightPixels)
-                    else -> BitmapFactory.decodeResource(resources, R.drawable.wallpaper_default)
-                }
+                if (f.exists()) Bitmaps.decodeScaled(f, dm.widthPixels, dm.heightPixels)
+                else BitmapFactory.decodeResource(resources, R.drawable.wallpaper_default)
             }.getOrNull()
             h.post { if (b != null) crossfade(b) }
         }.start()
