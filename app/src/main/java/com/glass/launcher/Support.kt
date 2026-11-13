@@ -167,6 +167,10 @@ class Prefs(ctx: Context) {
     // ---- changing wallpaper
     /** 0 one picture, 1 slideshow from a folder, 2 films & series (TMDB), 3 wallpaper plugin */
     var wpMode: Int get() = int("wpMode", 0); set(v) = putInt("wpMode", v)
+    /** Performance mode: own wallpaper only (no TMDB / plugin), no glass effects, no animations */
+    var perfMode: Boolean get() = bool("perfMode", false); set(v) = putBool("perfMode", v)
+    /** wallpaper source before Performance mode was switched on (restored by Normal mode) */
+    var perfPrevWp: Int get() = int("perfPrevWp", 0); set(v) = putInt("perfPrevWp", v)
     var wpFolder: String get() = str("wpFolder", ""); set(v) = putStr("wpFolder", v)
     /** file manager sort: 0 name, 1 size, 2 type (extension), 3 changed, 4 arrived on the box */
     var fileSort: Int get() = int("fSort", 0); set(v) = putInt("fSort", v)

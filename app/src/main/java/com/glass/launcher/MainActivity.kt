@@ -122,6 +122,7 @@ class MainActivity : Activity() {
         updateBtn = findViewById(R.id.updateBtn)
         powerBtn = findViewById(R.id.powerBtn)
         profileLetter = findViewById(R.id.profileLetter)
+        Backdrop.lite = prefs.perfMode
 
         menu = GlassMenu(this, root) { open ->
             grid.descendantFocusability =
@@ -148,7 +149,7 @@ class MainActivity : Activity() {
             b.setOnFocusChangeListener { v, has ->
                 (v as GlassFrame).focusedLook = has
                 val sc = if (has) 1.15f else 1f
-                v.animate().scaleX(sc).scaleY(sc).setDuration(140).withEndAction { v.invalidate() }.start()
+                v.animate().scaleX(sc).scaleY(sc).setDuration(if (Backdrop.lite) 0L else 140L).withEndAction { v.invalidate() }.start()
             }
         }
         updateBtn.radiusDp = 21f
@@ -156,7 +157,7 @@ class MainActivity : Activity() {
         updateBtn.setOnFocusChangeListener { v, has ->
             (v as GlassFrame).focusedLook = has
             val sc = if (has) 1.12f else 1f
-            v.animate().scaleX(sc).scaleY(sc).setDuration(140).withEndAction { v.invalidate() }.start()
+            v.animate().scaleX(sc).scaleY(sc).setDuration(if (Backdrop.lite) 0L else 140L).withEndAction { v.invalidate() }.start()
         }
         updateBtn.setOnClickListener { installPendingOrCheck() }
         profileBtn.setOnClickListener { profileMenu() }
@@ -248,6 +249,31 @@ class MainActivity : Activity() {
         handler.removeCallbacks(ticker)
         handler.removeCallbacks(rotate)
         chipPulse?.cancel(); chipPulse = null
+    }
+
+    /** while another app is in front (TiviMate, YouTube …) the wallpaper is not needed: free its memory */
+    private var wallpaperFreed = false
+
+    override fun onStop() {
+        super.onStop()
+        if (!isChangingConfigurations) {
+            wallpaper.setImageDrawable(null)
+            lastShown = null
+            wallpaperFreed = true
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (wallpaperFreed) { wallpaperFreed = false; loadWallpaper() }
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        // Android asks for memory: drop what can be rebuilt (icons are reloaded when needed)
+        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_BACKGROUND && !resumed) {
+            wallpaper.setImageDrawable(null); lastShown = null; wallpaperFreed = true
+        }
     }
 
     override fun onDestroy() {
@@ -391,7 +417,8 @@ class MainActivity : Activity() {
         Thread {
             val src = runCatching { load() }.getOrNull() ?: return@Thread
             val crop = Bitmaps.centerCrop(src, w, h)
-            val frosted = Bitmaps.frosted(crop)
+            if (src !== crop) runCatching { src.recycle() }   // the full-size original is not needed any more
+            val frosted = if (prefs.perfMode) null else Bitmaps.frosted(crop)
             val shown = if (blur) Bitmaps.softBlur(crop) else crop
             handler.post {
                 val apply = {
@@ -403,7 +430,7 @@ class MainActivity : Activity() {
                     adaptStatus(shown)
                     invalidateGlass()
                 }
-                if (fade) {
+                if (fade && !prefs.perfMode) {
                     wallpaper.animate().alpha(0.15f).setDuration(450).withEndAction {
                         apply()
                         wallpaper.animate().alpha(1f).setDuration(650).start()
@@ -1169,6 +1196,8 @@ class MainActivity : Activity() {
             GlassMenu.Item("Private DNS", R.drawable.lc_shield_check, value = dnsLabel()) { dnsMenu() },
             GlassMenu.Item(T.s("Auto-start apps", "Auto-start aplikacije", "Autostart-Apps"), R.drawable.lc_rocket) { autostartMenu() },
             GlassMenu.Item(T.s("Backup and restore", "Backup i vraćanje", "Sichern und wiederherstellen"), R.drawable.lc_archive) { backupMenu() },
+            if (prefs.perfMode) GlassMenu.Item(T.s("Normal mode", "Normalni mod", "Normaler Modus"), R.drawable.lc_image) { normalModeAsk() }
+            else GlassMenu.Item(T.s("Performance mode", "Performance mod", "Leistungsmodus"), R.drawable.lc_gauge) { perfModeAsk() },
             GlassMenu.Item(T.s("Speed test", "Test brzine", "Speedtest"), R.drawable.lc_gauge) {
                 startActivity(Intent(this, SpeedTestActivity::class.java))
             },
@@ -2015,6 +2044,64 @@ class MainActivity : Activity() {
         toast(T.s("Press \"Android TV OS build\" 7 times", "Pritisni 7 puta \"Android TV OS build\"", "7× auf \"Android TV OS build\" drücken"))
     }
 
+    // ------------------------------------------------------------------ performance / normal mode
+
+    private fun perfModeAsk() {
+        confirm(T.s("Performance mode", "Performance mod", "Leistungsmodus"), R.drawable.lc_gauge,
+            T.s("For the fastest box possible this switches off:\n" +
+                "• film & series pictures and trailers in the background (TMDB)\n" +
+                "• wallpaper plugins (SofaDrop)\n" +
+                "• the glass effects (blur, edge light) and animations\n\n" +
+                "Only your own wallpaper stays. LEAD uses less memory and processor.\nSwitch on?",
+                "Za što brži rad boxa ovo se gasi:\n" +
+                "• slike i najave filmova i serija u pozadini (TMDB)\n" +
+                "• pluginovi za pozadinu (SofaDrop)\n" +
+                "• stakleni efekti (zamućenje, svjetlo na rubovima) i animacije\n\n" +
+                "Ostaje samo tvoja pozadina. LEAD troši manje memorije i procesora.\nUključiti?",
+                "Für eine möglichst schnelle Box wird ausgeschaltet:\n" +
+                "• Film- und Serienbilder und Trailer im Hintergrund (TMDB)\n" +
+                "• Hintergrund-Plugins (SofaDrop)\n" +
+                "• die Glaseffekte (Unschärfe, Randlicht) und Animationen\n\n" +
+                "Nur dein eigenes Hintergrundbild bleibt. LEAD braucht weniger Speicher und Prozessor.\nEinschalten?")) {
+            setPerfMode(true)
+        }
+    }
+
+    private fun normalModeAsk() {
+        confirm(T.s("Normal mode", "Normalni mod", "Normaler Modus"), R.drawable.lc_image,
+            T.s("Everything comes back:\n" +
+                "• film & series pictures and trailers (TMDB) or your wallpaper plugin\n" +
+                "• the glass effects and animations\n\n" +
+                "This needs more memory (RAM) and processor power.\nSwitch on?",
+                "Sve se vraća:\n" +
+                "• slike i najave filmova i serija (TMDB) ili tvoj plugin za pozadinu\n" +
+                "• stakleni efekti i animacije\n\n" +
+                "To traži više memorije (RAM-a) i snage procesora.\nUključiti?",
+                "Alles kommt zurück:\n" +
+                "• Film- und Serienbilder und Trailer (TMDB) oder dein Hintergrund-Plugin\n" +
+                "• die Glaseffekte und Animationen\n\n" +
+                "Das braucht mehr Speicher (RAM) und Prozessorleistung.\nEinschalten?")) {
+            setPerfMode(false)
+        }
+    }
+
+    private fun setPerfMode(on: Boolean) {
+        if (on == prefs.perfMode) return
+        if (on) {
+            prefs.perfPrevWp = prefs.wpMode
+            if (prefs.wpMode == 2 || prefs.wpMode == 3) prefs.wpMode = 0
+        } else {
+            prefs.wpMode = prefs.perfPrevWp
+        }
+        prefs.perfMode = on
+        Backdrop.lite = on
+        if (on) { Backdrop.blurred = null; movies = emptyList(); showMovieInfo(null) }
+        applyLook()
+        invalidateGlass()
+        toast(if (on) T.s("Performance mode on", "Performance mod uključen", "Leistungsmodus an")
+            else T.s("Normal mode on", "Normalni mod uključen", "Normaler Modus an"))
+    }
+
     /** One question, Yes / No – Yes does exactly that one thing. */
     private fun confirm(title: String, icon: Int, question: String, yes: () -> Unit) {
         menu.show(title, icon, listOf(
@@ -2372,7 +2459,7 @@ class MainActivity : Activity() {
             updateBtn.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(550)
                 .setInterpolator(android.view.animation.OvershootInterpolator(2.2f)).start()
         }
-        if (chipPulse == null) {
+        if (chipPulse == null && !Backdrop.lite) {
             chipPulse = android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
                 duration = 1600
                 repeatMode = android.animation.ValueAnimator.REVERSE

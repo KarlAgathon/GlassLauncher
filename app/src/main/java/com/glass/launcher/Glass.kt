@@ -16,6 +16,8 @@ import androidx.core.content.res.ResourcesCompat
 
 /** The blurred wallpaper that glass panels show through themselves. */
 object Backdrop {
+    /** Performance mode: no blurred picture behind the glass and no edge light – plain see-through glass */
+    @Volatile var lite = false
     @Volatile var blurred: Bitmap? = null
     @Volatile var w = 0
     @Volatile var h = 0
@@ -111,7 +113,7 @@ class GlassFrame @JvmOverloads constructor(
         canvas.save()
         canvas.clipPath(path)
         val bd = Backdrop.blurred
-        if (backdrop && bd != null && Backdrop.w > 0) {
+        if (backdrop && !Backdrop.lite && bd != null && Backdrop.w > 0) {
             getLocationInWindow(loc)
             val s = if (scaleX > 0.01f) scaleX else 1f
             dst.set(-loc[0] / s, -loc[1] / s, (Backdrop.w - loc[0]) / s, (Backdrop.h - loc[1]) / s)
@@ -150,7 +152,7 @@ class GlassFrame @JvmOverloads constructor(
             return
         }
 
-        if (liquid && !focusedLook && !accent) {
+        if (liquid && !Backdrop.lite && !focusedLook && !accent) {
             drawLiquidEdges(canvas, w, h, r)
             if (rimMode == 0) return
         }

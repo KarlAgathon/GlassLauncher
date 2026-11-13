@@ -108,7 +108,7 @@ class AppAdapter(
         h.tile.focusedLook = focused
         h.tile.accent = moving
         val s = if (focused || moving) 1f + prefs.focusScale / 100f else 1f
-        h.tile.animate().scaleX(s).scaleY(s).setDuration(150).withEndAction { h.tile.invalidate() }.start()
+        h.tile.animate().scaleX(s).scaleY(s).setDuration(if (Backdrop.lite) 0L else 150L).withEndAction { h.tile.invalidate() }.start()
         h.tile.translationZ = if (focused) 10f else 0f
         h.itemView.translationZ = if (focused) 10f else 0f
         h.label.typeface = if (focused) Fonts.medium(h.itemView.context) else Fonts.regular(h.itemView.context)
