@@ -12,8 +12,8 @@ android {
         applicationId = "com.glass.launcher.vpntest"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
     }
     sourceSets["main"].java.srcDirs("src/main/java", "../shared/src")
     val keyPass: String? = System.getenv("LEAD_KEY_PASSWORD")

@@ -52,17 +52,22 @@ class SpeedEngine(private val net: Network?) {
     fun download(sample: (Float) -> Unit): Double {
         val bytes = AtomicLong(0); val done = AtomicBoolean(false)
         val t0 = SystemClock.elapsedRealtime()
+        // Cloudflare limits big downloads per address after several tests (answers 429):
+        // then the other servers take over
+        val src = java.util.concurrent.atomic.AtomicInteger(0)
         val workers = (1..4).map {
             Thread {
                 while (!done.get() && !stop) {
+                    val i = src.get()
                     runCatching {
-                        val c = open("https://speed.cloudflare.com/__down?bytes=50000000")
+                        val c = open(DOWN_URLS[i % DOWN_URLS.size])
+                        if (c.responseCode !in 200..299) { c.disconnect(); throw java.io.IOException("HTTP ${c.responseCode}") }
                         c.inputStream.use { inp ->
                             val buf = ByteArray(64 * 1024)
                             while (!done.get() && !stop) { val n = inp.read(buf); if (n < 0) break; bytes.addAndGet(n.toLong()) }
                         }
                         c.disconnect()
-                    }.onFailure { if (bytes.get() == 0L) Thread.sleep(300) }
+                    }.onFailure { src.compareAndSet(i, i + 1); Thread.sleep(150) }
                 }
             }.apply { start() }
         }
@@ -102,14 +107,17 @@ class SpeedEngine(private val net: Network?) {
     }
 
     private fun measure(bytes: AtomicLong, t0: Long, seconds: Int, sample: (Float) -> Unit): Double {
-        var lastB = 0L; var lastT = t0; var warmB = 0L; var warmT = 0L
+        var lastB = 0L; var lastT = t0; var warmB = 0L; var warmT = 0L; var firstT = 0L
         while (!stop) {
             Thread.sleep(250)
             val now = SystemClock.elapsedRealtime(); val b = bytes.get()
             sample(((b - lastB) * 8.0 / ((now - lastT).coerceAtLeast(1) / 1000.0) / 1_000_000.0).toFloat())
             lastB = b; lastT = now
-            if (warmT == 0L && now - t0 >= 1500) { warmT = now; warmB = b }
-            if (now - t0 >= seconds * 1000L) break
+            // the clock starts with the first data (a server switch at the start doesn't count)
+            if (firstT == 0L && b > 0) firstT = now
+            if (firstT != 0L && warmT == 0L && now - firstT >= 1500) { warmT = now; warmB = b }
+            if (firstT != 0L && now - firstT >= seconds * 1000L) break
+            if (firstT == 0L && now - t0 >= 8000L) break   // nothing comes at all
         }
         val end = SystemClock.elapsedRealtime(); val b = bytes.get()
         return if (warmT == 0L || end <= warmT) b * 8.0 / ((end - t0).coerceAtLeast(1) / 1000.0) / 1_000_000.0
@@ -117,6 +125,14 @@ class SpeedEngine(private val net: Network?) {
     }
 
     companion object {
+        /** download sources in order: Cloudflare, Hetzner (Falkenstein, Nuremberg), OVH */
+        val DOWN_URLS = listOf(
+            "https://speed.cloudflare.com/__down?bytes=50000000",
+            "https://fsn1-speed.hetzner.com/1GB.bin",
+            "https://nbg1-speed.hetzner.com/1GB.bin",
+            "https://proof.ovh.net/files/1Gb.dat",
+        )
+
         /** "DE" → 🇩🇪 */
         fun flag(cc: String): String =
             if (cc.length != 2) "🌐" else cc.uppercase().map { String(Character.toChars(0x1F1E6 + (it - 'A'))) }.joinToString("")
