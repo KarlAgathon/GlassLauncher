@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+
+    <!-- only apps signed with the same key (LEAD Launcher) may start a test -->
+    <permission
+        android:name="com.glass.launcher.permission.SPEEDTEST"
+        android:protectionLevel="signature" />
+
+    <application
+        android:label="LEAD VPN test"
+        android:icon="@drawable/ic_probe"
+        android:banner="@drawable/ic_probe"
+        android:allowBackup="false">
+
+        <!-- shows in the app list, so VPN apps (split tunneling) can list it; opens the LEAD speed test -->
+        <activity
+            android:name=".OpenActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name=".ProbeService"
+            android:exported="true"
+            android:permission="com.glass.launcher.permission.SPEEDTEST" />
+    </application>
+</manifest>

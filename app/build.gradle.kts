@@ -12,8 +12,8 @@ android {
         minSdk = 24
         targetSdk = 34
         // raise both numbers for every new version you publish (needed for web updates)
-        versionCode = 55
-        versionName = "7.7"
+        versionCode = 56
+        versionName = "7.8"
     }
 
     // Private signing key: it is NOT in this repository. GitHub Actions writes it from the secrets
@@ -43,6 +43,8 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
+    // speed test engine shared with the "LEAD VPN test" helper app
+    sourceSets["main"].java.srcDirs("src/main/java", "../shared/src")
     lint { abortOnError = false; checkReleaseBuilds = false }
 }
 

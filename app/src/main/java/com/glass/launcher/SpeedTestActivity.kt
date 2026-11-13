@@ -1,7 +1,10 @@
 package com.glass.launcher
 
 import android.app.Activity
+import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
+import android.content.ServiceConnection
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.LinearGradient
@@ -13,8 +16,10 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.os.Bundle
 import android.os.Handler
+import android.os.IBinder
 import android.os.Looper
-import android.os.SystemClock
+import android.os.Message
+import android.os.Messenger
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
@@ -22,23 +27,30 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import com.glass.speed.SpeedEngine
+import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Speed test with two cards:
- *  - VPN (green key): measures through the VPN that is active on the box
- *  - Without VPN (red box): measures straight over Wi-Fi / Ethernet, past the VPN
- * Each card shows ping, download, upload, the public address it came out from and a live graph.
- * Uses the Cloudflare speed test servers.
+ *  - Through VPN (green key): measured by the small "LEAD VPN test" helper app, which the user puts on the
+ *    VPN app's list (split tunneling). LEAD itself can stay outside the VPN.
+ *  - Without VPN (red box): measured by LEAD itself over Wi-Fi / Ethernet (past the VPN if LEAD is inside it).
+ * Each card shows the public IPv4 address with the country flag, so you can see the two really differ.
  */
 class SpeedTestActivity : Activity() {
 
+    companion object {
+        const val PROBE_APK = "https://github.com/KarlAgathon/GlassLauncher/releases/latest/download/LEAD-VPN-test.apk"
+    }
+
     private val h = Handler(Looper.getMainLooper())
-    private val running = AtomicBoolean(false)
-    @Volatile private var stop = false
+    private val directRunning = AtomicBoolean(false)
+    @Volatile private var directEngine: SpeedEngine? = null
+    private var probeConn: ServiceConnection? = null
 
     private fun dp(v: Float) = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, resources.displayMetrics)
 
@@ -48,19 +60,20 @@ class SpeedTestActivity : Activity() {
             radiusDp = 28f; tint = 0.07f; darken = 0.35f; clean = true
             isFocusable = true; isClickable = true
         }
+        val where = text(20f, Color.WHITE, medium = true)
         val status = text(15f, Color.argb(220, 255, 255, 255))
         val big = text(54f, Color.WHITE, medium = true)
-        val unit = text(16f, Color.argb(200, 255, 255, 255))
         val ping = text(16f, Color.argb(230, 255, 255, 255))
         val down = text(16f, Color.argb(230, 255, 255, 255))
         val up = text(16f, Color.argb(230, 255, 255, 255))
-        val where = text(13f, Color.argb(170, 255, 255, 255))
         val graph = Graph(this@SpeedTestActivity, color)
+        var ip: String? = null
+        var running = false
 
         init {
             val col = LinearLayout(this@SpeedTestActivity).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding(dp(28f).toInt(), dp(24f).toInt(), dp(28f).toInt(), dp(22f).toInt())
+                setPadding(dp(28f).toInt(), dp(22f).toInt(), dp(28f).toInt(), dp(20f).toInt())
             }
             val head = LinearLayout(this@SpeedTestActivity).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
             head.addView(ImageView(this@SpeedTestActivity).apply {
@@ -71,28 +84,37 @@ class SpeedTestActivity : Activity() {
                 text = if (viaVpn) T.s("Through VPN", "Kroz VPN", "Über VPN") else T.s("Without VPN", "Bez VPN-a", "Ohne VPN")
             })
             col.addView(head)
-            col.addView(status.apply { setPadding(0, dp(6f).toInt(), 0, dp(4f).toInt()) })
-            val numRow = LinearLayout(this@SpeedTestActivity).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.BOTTOM }
-            numRow.addView(big.apply { text = "–" })
-            numRow.addView(unit.apply { text = " Mbit/s"; setPadding(0, 0, 0, dp(12f).toInt()) })
-            col.addView(numRow)
-            col.addView(graph, LinearLayout.LayoutParams(-1, dp(110f).toInt()).apply { topMargin = dp(6f).toInt(); bottomMargin = dp(10f).toInt() })
-            col.addView(ping); col.addView(down); col.addView(up)
+            // public address + flag right under the title
             col.addView(where.apply { setPadding(0, dp(8f).toInt(), 0, 0) })
+            col.addView(status.apply { setPadding(0, dp(4f).toInt(), 0, dp(2f).toInt()) })
+            val numRow = LinearLayout(this@SpeedTestActivity).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.BOTTOM }
+            numRow.addView(big)
+            numRow.addView(text(16f, Color.argb(200, 255, 255, 255)).apply { text = " Mbit/s"; setPadding(0, 0, 0, dp(12f).toInt()) })
+            col.addView(numRow)
+            col.addView(graph, LinearLayout.LayoutParams(-1, dp(100f).toInt()).apply { topMargin = dp(4f).toInt(); bottomMargin = dp(8f).toInt() })
+            col.addView(ping); col.addView(down); col.addView(up)
             frame.addView(col)
             frame.setOnFocusChangeListener { _, has -> frame.focusedLook = has; frame.invalidate() }
-            frame.setOnClickListener { start(this) }
+            frame.setOnClickListener { if (viaVpn) startVpn() else startDirect() }
             reset()
         }
 
         fun reset() {
+            where.text = "–"
             status.text = T.s("OK = start", "OK = pokreni", "OK = starten")
             big.text = "–"
-            ping.text = T.s("Ping", "Ping", "Ping") + ": –"
+            ping.text = "Ping: –"
             down.text = "↓ Download: –"
             up.text = "↑ Upload: –"
-            where.text = ""
             graph.clear()
+            ip = null
+        }
+
+        fun showWhere(ipAddr: String?, cc: String?) {
+            ip = ipAddr
+            val country = if (cc.isNullOrBlank()) "" else Locale("", cc).getDisplayCountry(T.locale)
+            where.text = if (ipAddr == null) "?" else "${SpeedEngine.flag(cc ?: "")}  $country  ·  $ipAddr"
+            compare()
         }
     }
 
@@ -111,15 +133,13 @@ class SpeedTestActivity : Activity() {
         val root = FrameLayout(this).apply { setBackgroundColor(Color.rgb(11, 10, 22)) }
         Backdrop.blurred?.let { bd -> root.addView(ImageView(this).apply {
             setImageBitmap(bd); scaleType = ImageView.ScaleType.CENTER_CROP; alpha = 0.35f }, FrameLayout.LayoutParams(-1, -1)) }
-
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(56f).toInt(), dp(32f).toInt(), dp(56f).toInt(), dp(24f).toInt())
+            setPadding(dp(56f).toInt(), dp(30f).toInt(), dp(56f).toInt(), dp(20f).toInt())
         }
         col.addView(text(26f, Color.WHITE, medium = true).apply { text = T.s("Speed test", "Test brzine", "Speedtest") })
-        hint = text(15f, Color.argb(200, 255, 255, 255)).apply { setPadding(0, dp(4f).toInt(), 0, dp(20f).toInt()) }
+        hint = text(15f, Color.argb(210, 255, 255, 255)).apply { setPadding(0, dp(4f).toInt(), 0, dp(18f).toInt()) }
         col.addView(hint)
-
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         vpnCard = Card(true); directCard = Card(false)
         row.addView(vpnCard.frame, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(14f).toInt() })
@@ -127,179 +147,163 @@ class SpeedTestActivity : Activity() {
         col.addView(row)
         root.addView(col, FrameLayout.LayoutParams(-1, -1))
         setContentView(root)
-        updateHint()
+        hint.text = T.s("The VPN card measures through the small app \"LEAD VPN test\" – put it on your VPN's app list (split tunneling). LEAD itself stays outside the VPN.",
+            "VPN kartica mjeri preko male aplikacije \"LEAD VPN test\" – dodaj nju u listu aplikacija u VPN-u (split tunneling). Sam LEAD ostaje izvan VPN-a.",
+            "Die VPN-Karte misst über die kleine App \"LEAD VPN test\" – trag sie in der App-Liste deines VPN ein (Split-Tunneling). LEAD selbst bleibt außerhalb.")
         vpnCard.frame.post { vpnCard.frame.requestFocus() }
     }
 
-    override fun onDestroy() { stop = true; super.onDestroy() }
-
-    private fun cm() = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-
-    private fun vpnActive(): Boolean = runCatching {
-        cm().getNetworkCapabilities(cm().activeNetwork)?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true
-    }.getOrDefault(false)
-
-    /** Wi-Fi / Ethernet network underneath the VPN */
-    @Suppress("DEPRECATION")
-    private fun directNetwork(): Network? = runCatching {
-        cm().allNetworks.firstOrNull { n ->
-            val c = cm().getNetworkCapabilities(n) ?: return@firstOrNull false
-            !c.hasTransport(NetworkCapabilities.TRANSPORT_VPN) &&
-                c.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-                (c.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) || c.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET))
-        }
-    }.getOrNull()
-
-    private fun updateHint() {
-        hint.text = if (vpnActive()) T.s("VPN is on. Choose a card and press OK.", "VPN je uključen. Izaberi karticu i pritisni OK.",
-            "VPN ist an. Karte wählen und OK drücken.")
-        else T.s("VPN is off right now – both cards measure the same line.", "VPN trenutno nije uključen – obje kartice mjere istu vezu.",
-            "VPN ist gerade aus – beide Karten messen dieselbe Leitung.")
+    override fun onResume() {
+        super.onResume()
+        if (!vpnCard.running && !probeInstalled()) vpnCard.status.text = T.s("OK = install the helper \"LEAD VPN test\"",
+            "OK = instaliraj pomoćnu aplikaciju \"LEAD VPN test\"", "OK = Hilfs-App \"LEAD VPN test\" installieren")
     }
 
-    // ------------------------------------------------------------------ the test
-
-    private fun start(card: Card) {
-        if (!running.compareAndSet(false, true)) return
-        updateHint()
-        card.reset()
-        val net: Network? = if (card.viaVpn) null else directNetwork()
-        if (card.viaVpn && !vpnActive()) card.status.text = T.s("VPN is not on – measuring the normal line", "VPN nije uključen – mjerim običnu vezu", "VPN ist nicht an – messe die normale Leitung")
-        Thread {
-            try {
-                ui { if (!card.viaVpn || vpnActive()) card.status.text = T.s("Measuring ping…", "Mjerim ping…", "Messe Ping…") }
-                val info = trace(net)
-                ui { card.where.text = info }
-                val p = ping(net)
-                ui { card.ping.text = T.s("Ping", "Ping", "Ping") + ": ${p ?: "–"} ms" }
-                if (p == null) throw IllegalStateException("no connection")
-
-                ui { card.status.text = T.s("Download…", "Preuzimanje…", "Download…") }
-                val d = download(net, card)
-                ui { card.down.text = "↓ Download: %.1f Mbit/s".format(d); card.big.text = "%.0f".format(d) }
-
-                ui { card.status.text = T.s("Upload…", "Slanje…", "Upload…"); card.graph.mark() }
-                val u = upload(net, card)
-                ui {
-                    card.up.text = "↑ Upload: %.1f Mbit/s".format(u)
-                    card.status.text = T.s("Done · OK = again", "Gotovo · OK = ponovo", "Fertig · OK = nochmal")
-                    card.big.text = "%.0f".format(d)
-                }
-            } catch (e: Exception) {
-                ui {
-                    card.status.text = if (!card.viaVpn && vpnActive())
-                        T.s("The VPN does not let traffic past it. Switch the VPN off, or add LEAD to the VPN's split tunneling.",
-                            "VPN ne pušta saobraćaj mimo sebe. Ugasi VPN ili dodaj LEAD u split tunneling u VPN aplikaciji.",
-                            "Das VPN lässt nichts an sich vorbei. VPN ausschalten oder LEAD im Split-Tunneling des VPN eintragen.")
-                    else T.s("No connection to the test server", "Nema veze sa test serverom", "Keine Verbindung zum Testserver")
-                }
-            } finally {
-                running.set(false)
-            }
-        }.start()
+    override fun onDestroy() {
+        directEngine?.stop = true
+        probeConn?.let { runCatching { unbindService(it) } }
+        super.onDestroy()
     }
 
     private fun ui(f: () -> Unit) { h.post { if (!isFinishing) f() } }
 
-    private fun open(net: Network?, url: String): HttpURLConnection {
-        val u = URL(url)
-        val c = (if (net != null) net.openConnection(u) else u.openConnection()) as HttpURLConnection
-        c.connectTimeout = 8000; c.readTimeout = 10000
-        c.setRequestProperty("User-Agent", "LEAD-Launcher-Speedtest")
-        return c
+    /** both addresses known: same = the VPN card did not really go through the VPN */
+    private fun compare() {
+        val a = vpnCard.ip; val b = directCard.ip
+        if (a == null || b == null) return
+        hint.text = if (a == b) T.s("⚠ Same address on both cards: the helper app is NOT going through the VPN. Add \"LEAD VPN test\" to the VPN's app list.",
+            "⚠ Ista adresa na obje kartice: pomoćna aplikacija NE ide kroz VPN. Dodaj \"LEAD VPN test\" u listu aplikacija u VPN-u.",
+            "⚠ Gleiche Adresse auf beiden Karten: die Hilfs-App geht NICHT über das VPN. \"LEAD VPN test\" in die App-Liste des VPN eintragen.")
+        else T.s("✓ Different addresses – the VPN is working.", "✓ Različite adrese – VPN radi.", "✓ Verschiedene Adressen – das VPN funktioniert.")
     }
 
-    /** where the test came out: public IP and location (Cloudflare trace) */
-    private fun trace(net: Network?): String = runCatching {
-        val c = open(net, "https://speed.cloudflare.com/cdn-cgi/trace")
-        val t = c.inputStream.bufferedReader().use { it.readText() }; c.disconnect()
-        val m = t.lines().mapNotNull { l -> l.split('=', limit = 2).takeIf { it.size == 2 }?.let { it[0] to it[1] } }.toMap()
-        listOfNotNull(m["ip"], m["loc"], m["colo"]?.let { "server $it" }).joinToString("  ·  ")
-    }.getOrDefault("")
+    // ------------------------------------------------------------------ without VPN (LEAD itself)
 
-    private fun ping(net: Network?): Int? {
-        val times = mutableListOf<Long>()
-        repeat(6) {
-            runCatching {
-                val t0 = SystemClock.elapsedRealtime()
-                val c = open(net, "https://speed.cloudflare.com/__down?bytes=0")
-                c.inputStream.use { it.readBytes() }; c.disconnect()
-                times.add(SystemClock.elapsedRealtime() - t0)
+    private fun cm() = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+
+    /** if LEAD itself is inside a VPN: the Wi-Fi / Ethernet network underneath it */
+    @Suppress("DEPRECATION")
+    private fun directNetwork(): Network? = runCatching {
+        val c = cm().getNetworkCapabilities(cm().activeNetwork)
+        if (c?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) != true) return@runCatching null
+        cm().allNetworks.firstOrNull { n ->
+            val nc = cm().getNetworkCapabilities(n) ?: return@firstOrNull false
+            !nc.hasTransport(NetworkCapabilities.TRANSPORT_VPN) && nc.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                (nc.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) || nc.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET))
+        }
+    }.getOrNull()
+
+    private fun startDirect() {
+        if (!directRunning.compareAndSet(false, true)) return
+        val card = directCard
+        card.reset()
+        val e = SpeedEngine(directNetwork()); directEngine = e
+        Thread {
+            try {
+                ui { card.status.text = T.s("Finding address…", "Tražim adresu…", "Suche Adresse…") }
+                val w = e.where()
+                ui { card.showWhere(w?.ip, w?.country); card.status.text = "Ping…" }
+                val p = e.ping() ?: throw IllegalStateException()
+                ui { card.ping.text = "Ping: $p ms"; card.status.text = T.s("Download…", "Preuzimanje…", "Download…") }
+                val d = e.download { v -> ui { card.graph.add(v); card.big.text = "%.0f".format(v) } }
+                ui { card.down.text = "↓ Download: %.1f Mbit/s".format(d); card.big.text = "%.0f".format(d)
+                    card.graph.mark(); card.status.text = T.s("Upload…", "Slanje…", "Upload…") }
+                val u = e.upload { v -> ui { card.graph.add(v) } }
+                ui { card.up.text = "↑ Upload: %.1f Mbit/s".format(u); card.big.text = "%.0f".format(d)
+                    card.status.text = T.s("Done · OK = again", "Gotovo · OK = ponovo", "Fertig · OK = nochmal") }
+            } catch (ex: Exception) {
+                ui { card.status.text = T.s("No connection to the test server", "Nema veze sa test serverom", "Keine Verbindung zum Testserver") }
+            } finally { directRunning.set(false) }
+        }.start()
+    }
+
+    // ------------------------------------------------------------------ through VPN (helper app)
+
+    private fun probeInstalled() = runCatching { packageManager.getPackageInfo(SpeedEngine.PROBE_PKG, 0); true }.getOrDefault(false)
+
+    private fun startVpn() {
+        val card = vpnCard
+        if (card.running) return
+        if (!probeInstalled()) { installProbe(); return }
+        card.reset(); card.running = true
+        card.status.text = T.s("Connecting to LEAD VPN test…", "Povezujem se sa LEAD VPN test…", "Verbinde mit LEAD VPN test…")
+        probeConn?.let { runCatching { unbindService(it) } }
+        val replies = Messenger(object : Handler(Looper.getMainLooper()) {
+            override fun handleMessage(m: Message) {
+                if (isFinishing) return
+                val b = m.data
+                when (m.what) {
+                    SpeedEngine.MSG_PHASE -> when (m.arg1) {
+                        0 -> card.status.text = T.s("Finding address…", "Tražim adresu…", "Suche Adresse…")
+                        1 -> card.status.text = "Ping…"
+                        2 -> {
+                            card.showWhere(b.getString("ip"), b.getString("cc"))
+                            card.ping.text = "Ping: ${b.getInt("ping")} ms"
+                            card.status.text = if (b.getBoolean("vpn")) T.s("Download… (VPN active ✓)", "Preuzimanje… (VPN aktivan ✓)", "Download… (VPN aktiv ✓)")
+                                else T.s("Download… (⚠ this app is not in the VPN)", "Preuzimanje… (⚠ ova aplikacija nije u VPN-u)", "Download… (⚠ App ist nicht im VPN)")
+                        }
+                        3 -> { val d = b.getDouble("down"); card.down.text = "↓ Download: %.1f Mbit/s".format(d); card.big.text = "%.0f".format(d)
+                            card.graph.mark(); card.status.text = T.s("Upload…", "Slanje…", "Upload…") }
+                    }
+                    SpeedEngine.MSG_SAMPLE -> { val v = b.getFloat("v"); card.graph.add(v); if (!card.graph.marked()) card.big.text = "%.0f".format(v) }
+                    SpeedEngine.MSG_RESULT -> {
+                        card.running = false
+                        card.up.text = "↑ Upload: %.1f Mbit/s".format(b.getDouble("up"))
+                        card.big.text = "%.0f".format(b.getDouble("down"))
+                        card.status.text = if (b.getBoolean("vpn")) T.s("Done · VPN active ✓ · OK = again", "Gotovo · VPN aktivan ✓ · OK = ponovo", "Fertig · VPN aktiv ✓ · OK = nochmal")
+                            else T.s("Done · ⚠ not through VPN · OK = again", "Gotovo · ⚠ nije kroz VPN · OK = ponovo", "Fertig · ⚠ nicht über VPN · OK = nochmal")
+                    }
+                    SpeedEngine.MSG_ERROR -> { card.running = false
+                        card.status.text = T.s("No connection to the test server", "Nema veze sa test serverom", "Keine Verbindung zum Testserver") }
+                }
             }
+        })
+        val conn = object : ServiceConnection {
+            override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+                runCatching { Messenger(service).send(Message.obtain(null, SpeedEngine.MSG_START).apply { replyTo = replies }) }
+                    .onFailure { card.running = false; card.status.text = T.s("Helper app not reachable", "Pomoćna aplikacija ne odgovara", "Hilfs-App nicht erreichbar") }
+            }
+            override fun onServiceDisconnected(name: ComponentName?) { if (card.running) { card.running = false
+                card.status.text = T.s("Helper app stopped", "Pomoćna aplikacija se ugasila", "Hilfs-App beendet") } }
         }
-        if (times.isEmpty()) return null
-        return times.drop(1).ifEmpty { times }.min().toInt()
+        probeConn = conn
+        val ok = runCatching {
+            bindService(Intent().setComponent(ComponentName(SpeedEngine.PROBE_PKG, SpeedEngine.PROBE_SERVICE)), conn, Context.BIND_AUTO_CREATE)
+        }.getOrDefault(false)
+        if (!ok) { card.running = false; card.status.text = T.s("Helper app not reachable – reinstall it", "Pomoćna aplikacija ne odgovara – instaliraj je ponovo", "Hilfs-App nicht erreichbar – neu installieren") }
     }
 
-    /** 4 parallel downloads for ~10 s; returns Mbit/s and feeds the graph */
-    private fun download(net: Network?, card: Card): Double {
-        val bytes = AtomicLong(0); val done = AtomicBoolean(false)
-        val t0 = SystemClock.elapsedRealtime()
-        val workers = (1..4).map {
-            Thread {
-                while (!done.get() && !stop) {
-                    runCatching {
-                        val c = open(net, "https://speed.cloudflare.com/__down?bytes=50000000")
-                        c.inputStream.use { inp ->
-                            val buf = ByteArray(64 * 1024)
-                            while (!done.get() && !stop) { val n = inp.read(buf); if (n < 0) break; bytes.addAndGet(n.toLong()) }
-                        }
-                        c.disconnect()
-                    }.onFailure { if (bytes.get() == 0L) Thread.sleep(300) }
+    /** downloads "LEAD VPN test" from the LEAD release and installs it */
+    private fun installProbe() {
+        val card = vpnCard
+        card.running = true
+        card.status.text = T.s("Downloading LEAD VPN test…", "Skidam LEAD VPN test…", "Lade LEAD VPN test…")
+        Thread {
+            try {
+                val f = File(cacheDir, "LEAD-VPN-test.apk")
+                var url = URL(PROBE_APK)
+                var c: HttpURLConnection
+                var hops = 0
+                while (true) {
+                    c = url.openConnection() as HttpURLConnection
+                    c.instanceFollowRedirects = false; c.connectTimeout = 15000; c.readTimeout = 30000
+                    val code = c.responseCode
+                    if (code in 300..399 && hops++ < 5) { url = URL(url, c.getHeaderField("Location")); c.disconnect(); continue }
+                    break
                 }
-            }.apply { start() }
-        }
-        val mbps = sample(bytes, t0, card)
-        done.set(true); workers.forEach { it.join(2000) }
-        return mbps
-    }
-
-    /** 3 parallel uploads for ~8 s */
-    private fun upload(net: Network?, card: Card): Double {
-        val bytes = AtomicLong(0); val done = AtomicBoolean(false)
-        val chunk = ByteArray(2 * 1024 * 1024)
-        val t0 = SystemClock.elapsedRealtime()
-        val workers = (1..3).map {
-            Thread {
-                while (!done.get() && !stop) {
-                    runCatching {
-                        val c = open(net, "https://speed.cloudflare.com/__up")
-                        c.doOutput = true; c.requestMethod = "POST"
-                        c.setFixedLengthStreamingMode(chunk.size)
-                        c.outputStream.use { out ->
-                            var off = 0
-                            while (off < chunk.size && !done.get()) {
-                                val n = minOf(64 * 1024, chunk.size - off)
-                                out.write(chunk, off, n); off += n; bytes.addAndGet(n.toLong())
-                            }
-                        }
-                        runCatching { c.inputStream.use { it.readBytes() } }
-                        c.disconnect()
-                    }.onFailure { if (bytes.get() == 0L) Thread.sleep(300) }
+                c.inputStream.use { inp -> f.outputStream().use { inp.copyTo(it) } }
+                c.disconnect()
+                ui {
+                    card.running = false
+                    card.status.text = T.s("Install it, then add \"LEAD VPN test\" to the VPN's app list and press OK",
+                        "Instaliraj, zatim dodaj \"LEAD VPN test\" u listu aplikacija u VPN-u i pritisni OK",
+                        "Installieren, dann \"LEAD VPN test\" in die App-Liste des VPN eintragen und OK drücken")
+                    AppInstaller.start(this, listOf(SpeedEngine.PROBE_PKG to listOf(f)))
                 }
-            }.apply { start() }
-        }
-        val mbps = sample(bytes, t0, card, seconds = 8)
-        done.set(true); workers.forEach { it.join(2000) }
-        return mbps
-    }
-
-    /** every 250 ms: current speed into the graph + number; result = average after a short warm-up */
-    private fun sample(bytes: AtomicLong, t0: Long, card: Card, seconds: Int = 10): Double {
-        var lastB = 0L; var lastT = t0
-        var warmB = 0L; var warmT = 0L
-        while (!stop) {
-            Thread.sleep(250)
-            val now = SystemClock.elapsedRealtime(); val b = bytes.get()
-            val cur = (b - lastB) * 8.0 / ((now - lastT).coerceAtLeast(1) / 1000.0) / 1_000_000.0
-            lastB = b; lastT = now
-            ui { card.graph.add(cur.toFloat()); card.big.text = "%.0f".format(cur) }
-            if (warmT == 0L && now - t0 >= 1500) { warmT = now; warmB = b }
-            if (now - t0 >= seconds * 1000L) break
-        }
-        val end = SystemClock.elapsedRealtime(); val b = bytes.get()
-        return if (warmT == 0L || end <= warmT) b * 8.0 / ((end - t0).coerceAtLeast(1) / 1000.0) / 1_000_000.0
-        else (b - warmB) * 8.0 / ((end - warmT) / 1000.0) / 1_000_000.0
+            } catch (e: Exception) {
+                ui { card.running = false; card.status.text = T.s("Download failed", "Preuzimanje nije uspjelo", "Download fehlgeschlagen") }
+            }
+        }.start()
     }
 
     /** small live line graph (download, then upload after a divider) */
@@ -313,14 +317,14 @@ class SpeedTestActivity : Activity() {
         fun clear() { pts.clear(); markAt = -1; invalidate() }
         fun add(v: Float) { pts.add(v); invalidate() }
         fun mark() { markAt = pts.size }
+        fun marked() = markAt >= 0
 
         override fun onDraw(c: Canvas) {
             val w = width.toFloat(); val hh = height.toFloat()
             for (i in 1..3) c.drawLine(0f, hh * i / 4, w, hh * i / 4, grid)
             if (pts.size < 2) return
             val max = (pts.maxOrNull() ?: 1f).coerceAtLeast(1f) * 1.15f
-            val total = 74   // ~10 s download + ~8 s upload at 4 per second
-            val step = w / total
+            val step = w / 74
             if (markAt > 0) c.drawLine(markAt * step, 0f, markAt * step, hh, grid)
             val p = Path()
             pts.forEachIndexed { i, v -> val x = i * step; val y = hh - v / max * hh; if (i == 0) p.moveTo(x, y) else p.lineTo(x, y) }

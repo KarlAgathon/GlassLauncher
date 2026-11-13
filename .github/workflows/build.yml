@@ -33,7 +33,9 @@ jobs:
         if: always()
         run: rm -f app/release.keystore
       - name: Rename APK
-        run: cp app/build/outputs/apk/release/*.apk GlassLauncher.apk
+        run: |
+          cp app/build/outputs/apk/release/*.apk GlassLauncher.apk
+          cp vpntest/build/outputs/apk/release/*.apk LEAD-VPN-test.apk
       - uses: actions/upload-artifact@v4
         with:
           name: GlassLauncher-apk
@@ -68,4 +70,5 @@ jobs:
           make_latest: "true"
           files: |
             GlassLauncher.apk
+            LEAD-VPN-test.apk
             update.json

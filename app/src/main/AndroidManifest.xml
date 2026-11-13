@@ -9,6 +9,8 @@
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- to start a test in the "LEAD VPN test" helper app (same signing key only) -->
+    <uses-permission android:name="com.glass.launcher.permission.SPEEDTEST" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <!-- Android shows the Wi-Fi name (SSID) only to apps with location permission -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
@@ -33,6 +35,7 @@
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
 
     <queries>
+        <package android:name="com.glass.launcher.vpntest" />
         <intent>
             <action android:name="tv.projectivy.plugin.WALLPAPER_PROVIDER" />
         </intent>
