@@ -2326,8 +2326,9 @@ class MainActivity : Activity() {
                             startActivityForResult(Intent(this, FileBrowserActivity::class.java)
                                 .putExtra(FileBrowserActivity.EXTRA_PICK, "folder"), REQ_FILES)
                         }
-                        SaverPictures.REDDIT -> choose("Reddit", R.drawable.lc_image, SaverPictures.REDDITS.map { "r/$it" to it }, prefs.saverReddit) { r ->
-                            prefs.saverReddit = r; prefs.saverSrc = SaverPictures.REDDIT; screensaverMenu()
+                        SaverPictures.REDDIT -> choose("Reddit", R.drawable.lc_image,
+                            SaverPictures.REDDITS.mapIndexed { i, r -> "r/$r" to i }, SaverPictures.REDDITS.indexOf(prefs.saverReddit)) { i ->
+                            prefs.saverReddit = SaverPictures.REDDITS[i]; prefs.saverSrc = SaverPictures.REDDIT; screensaverMenu()
                         }
                         else -> { prefs.saverSrc = v; screensaverMenu() }
                     }
