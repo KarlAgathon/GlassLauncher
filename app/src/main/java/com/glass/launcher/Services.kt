@@ -288,6 +288,13 @@ class HomeService : AccessibilityService() {
         // our own windows are handled by the activities themselves (setHome); a late event from
         // the launcher must not hide the key in an app that opened right after it (e.g. TizenTube)
         if (pkg == packageName) return
+        // Google TV's launcher also opens small windows of its own over a running app (panels, dialogs,
+        // e.g. when Wireless debugging is switched on). Only its real home screen counts as "home" –
+        // otherwise LEAD would push the app you are watching (IPTV …) away.
+        if (pkg == "com.google.android.apps.tv.launcherx") {
+            val cls = event.className?.toString() ?: ""
+            if (cls.isNotEmpty() && !cls.contains("HomeActivity") && !cls.contains(".home.")) return
+        }
         val prev = lastPkg
         lastPkg = pkg
         // learn which apps are used most (for the "All apps" list)
