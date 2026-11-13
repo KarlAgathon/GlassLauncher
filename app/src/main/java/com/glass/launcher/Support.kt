@@ -144,6 +144,9 @@ class Prefs(ctx: Context) {
     var focusScale: Int get() = int("tFocus", 30); set(v) = putInt("tFocus", v)
     /** 0 left, 1 center, 2 right */
     var gridAlign: Int get() = int("gridAlign", 0); set(v) = putInt("gridAlign", v)
+    /** fine shift of the app row in dp (+ = down / right) */
+    var gridOffX: Int get() = int("gridOffX", 0); set(v) = putInt("gridOffX", v)
+    var gridOffY: Int get() = int("gridOffY", 0); set(v) = putInt("gridOffY", v)
     /** all tiles sit in one big glass bar (Apple TV look) */
     var dock: Boolean get() = bool("tDock", false); set(v) = putBool("tDock", v)
     /** apps always in one row that scrolls left/right */

@@ -31,6 +31,22 @@ object ShizukuCpu {
         m.invoke(null, arrayOf(*cmd), null, null) as Process
     }.getOrNull()
 
+    /** Runs a shell command through Shizuku; true if it could be started and ended with 0. */
+    fun run(vararg cmd: String): Boolean {
+        if (!permitted()) return false
+        return runCatching { shell(*cmd)?.waitFor() == 0 }.getOrDefault(false)
+    }
+
+    /** Output of a shell command through Shizuku, or null. Blocking. */
+    fun output(vararg cmd: String): String? {
+        if (!permitted()) return null
+        return runCatching {
+            val p = shell(*cmd) ?: return null
+            val t = p.inputStream.bufferedReader().use { it.readText() }
+            p.waitFor(); t
+        }.getOrNull()
+    }
+
     /** Force stop through Shizuku (apps can't do it themselves). */
     fun forceStop(pkg: String): Boolean {
         if (!permitted()) return false

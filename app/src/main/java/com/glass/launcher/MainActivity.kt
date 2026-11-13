@@ -131,7 +131,13 @@ class MainActivity : Activity() {
             updateBtn.isFocusable = !open
             powerBtn.isFocusable = !open
             statusGroups().forEach { it.isFocusable = !open }
-            if (!open) {
+            if (open) {
+                // remember where the menu was opened from (settings, profile, power, status icon …)
+                if (menuOpener == null) menuOpener = currentFocus?.takeIf { it !== grid && !isInGrid(it) }
+            } else {
+                val back = menuOpener
+                menuOpener = null
+                if (back != null && back.isShown && back.isFocusable) { back.requestFocus(); return@GlassMenu }
                 focusTile(lastPos)
                 if (plusPeek) { handler.removeCallbacks(hidePlus); handler.postDelayed(hidePlus, 1500) }
             }
@@ -324,12 +330,53 @@ class MainActivity : Activity() {
         dock.clipToOutline = false
         val vert = when (prefs.gridPosition) { 0 -> Gravity.TOP; 1 -> Gravity.CENTER_VERTICAL; else -> Gravity.BOTTOM }
         val hor = when (prefs.gridAlign) { 1 -> Gravity.CENTER_HORIZONTAL; 2 -> Gravity.END; else -> Gravity.START }
-        (dock.layoutParams as FrameLayout.LayoutParams).gravity = vert or hor
+        (dock.layoutParams as FrameLayout.LayoutParams).let {
+            it.gravity = vert or hor
+            // "Bottom" keeps a safe gap to the screen edge, so the tiles are never cut off
+            it.bottomMargin = if (prefs.gridPosition == 2) (28 * d).toInt() else 0
+            it.topMargin = if (prefs.gridPosition == 0) (8 * d).toInt() else 0
+        }
         dock.requestLayout()
+        dock.post { applyGridOffset() }
         dock.invalidate()
         adapter.notifyDataSetChanged()
         if (gridArea.width == 0) gridArea.post { if (gridArea.width > 0) layoutGrid() }
         dock.post { placeMovieInfo() }
+    }
+
+    /** fine shift (+/-) of the app row, always kept fully on the screen */
+    private fun applyGridOffset() {
+        val d = resources.displayMetrics.density
+        var tx = prefs.gridOffX * d
+        var ty = prefs.gridOffY * d
+        val (sw, sh) = screenSize()
+        val loc = IntArray(2)
+        dock.translationX = 0f; dock.translationY = 0f
+        dock.getLocationOnScreen(loc)
+        val margin = 12 * d
+        // keep inside the screen: not below the bottom edge, not off left / right
+        val maxDown = sh - margin - (loc[1] + dock.height)
+        if (ty > maxDown) ty = maxDown
+        if (loc[1] + ty < margin) ty = margin - loc[1]
+        if (loc[0] + tx < 0) tx = -loc[0].toFloat()
+        if (loc[0] + dock.width + tx > sw) tx = (sw - dock.width - loc[0]).toFloat()
+        dock.translationX = tx
+        dock.translationY = ty
+    }
+
+    /** +/- steps for the app row: the menu stays open so you can press several times */
+    private fun nudgeMenu(vertical: Boolean) {
+        val step = 8
+        val v = if (vertical) prefs.gridOffY else prefs.gridOffX
+        val title = if (vertical) T.s("Fine position – up / down", "Fino – gore / dole", "Feinposition – oben / unten")
+            else T.s("Fine position – left / right", "Fino – lijevo / desno", "Feinposition – links / rechts")
+        fun set(n: Int) { if (vertical) prefs.gridOffY = n else prefs.gridOffX = n; applyGridOffset(); placeMovieInfo(); nudgeMenu(vertical) }
+        menu.show(title, R.drawable.lc_move, listOf(
+            GlassMenu.Item(if (vertical) T.s("▲ Up", "▲ Gore", "▲ Hoch") else T.s("◀ Left", "◀ Lijevo", "◀ Links"), R.drawable.lc_minus) { set(v - step) },
+            GlassMenu.Item(if (vertical) T.s("▼ Down", "▼ Dolje", "▼ Runter") else T.s("▶ Right", "▶ Desno", "▶ Rechts"), R.drawable.lc_plus) { set(v + step) },
+            GlassMenu.Item(T.s("Reset", "Vrati na 0", "Zurücksetzen"), R.drawable.lc_rotate_cw, value = "$v dp") { set(0) },
+        ), T.s("Each press moves the apps a little. Back = done.", "Svaki pritisak malo pomjeri aplikacije. Back = gotovo.",
+            "Jeder Druck verschiebt die Apps ein Stück. Zurück = fertig."))
     }
 
     private fun screenSize(): Pair<Int, Int> {
@@ -1122,10 +1169,12 @@ class MainActivity : Activity() {
             GlassMenu.Item("Private DNS", R.drawable.lc_shield_check, value = dnsLabel()) { dnsMenu() },
             GlassMenu.Item(T.s("Auto-start apps", "Auto-start aplikacije", "Autostart-Apps"), R.drawable.lc_rocket) { autostartMenu() },
             GlassMenu.Item(T.s("Backup and restore", "Backup i vraćanje", "Sichern und wiederherstellen"), R.drawable.lc_archive) { backupMenu() },
-            GlassMenu.Item(T.s("File browser", "File browser", "Dateimanager"), R.drawable.lc_folder) {
-                startActivity(Intent(this, FileBrowserActivity::class.java))
-            },
-            GlassMenu.Item(T.s("App updates", "Ažuriranja aplikacija", "App-Updates"), R.drawable.lc_download,
+            GlassMenu.Item(T.s("Wireless debugging", "Wireless debugging", "Drahtloses Debugging"), R.drawable.lc_wifi,
+                checked = adbWifiOn(), toggle = true) { setAdbWifi(it.checked) },
+            GlassMenu.Item(T.s("Developer options", "Opcije za programere", "Entwickleroptionen"), R.drawable.lc_code) { openDeveloperOptions() },
+            GlassMenu.Item(T.s("Android TV OS build (developer mode)", "Android TV OS build (programerski mod)", "Android TV OS Build (Entwicklermodus)"),
+                R.drawable.lc_info) { openAbout() },
+            GlassMenu.Item(T.s("System-wide app updates", "Ažuriranja svih aplikacija", "App-Updates (ganzes System)"), R.drawable.lc_download,
                 value = AppUpdates.list(this).size.takeIf { it > 0 }?.toString()) { appUpdatesMenu() },
             GlassMenu.Item(T.s("Update", "Ažuriranje", "Update"), R.drawable.lc_refresh_cw, value = "v" + Updater.currentName(this)) { updateMenu() },
         ))
@@ -1383,6 +1432,10 @@ class MainActivity : Activity() {
                     T.s("Left", "Lijevo", "Links") to 0, T.s("Center", "Sredina", "Mitte") to 1, T.s("Right", "Desno", "Rechts") to 2),
                     prefs.gridAlign) { prefs.gridAlign = it; relayout() }
             },
+            GlassMenu.Item(T.s("Fine position – up / down (+/-)", "Fino pomjeranje – gore / dole (+/-)", "Feinposition – oben / unten (+/-)"),
+                R.drawable.lc_move, value = "${prefs.gridOffY} dp") { nudgeMenu(true) },
+            GlassMenu.Item(T.s("Fine position – left / right (+/-)", "Fino pomjeranje – lijevo / desno (+/-)", "Feinposition – links / rechts (+/-)"),
+                R.drawable.lc_move, value = "${prefs.gridOffX} dp") { nudgeMenu(false) },
         ))
     }
 
@@ -1630,13 +1683,42 @@ class MainActivity : Activity() {
                 Profiles.delete(this, cur); recreate()
             })
         }
-        items.add(GlassMenu.Item(T.s("Google account: sign in / out / switch", "Google račun: prijava / odjava / promjena",
-            "Google-Konto: an-/abmelden / wechseln"), R.drawable.lc_log_in) { openAccounts() })
-        items.add(GlassMenu.Item(T.s("Show which Google account is used", "Prikaži koji Google račun je prijavljen",
-            "Angemeldetes Google-Konto anzeigen"), R.drawable.lc_info) { chooseGoogleAccount() })
+        items.add(GlassMenu.Item(T.s("Google accounts", "Google računi", "Google-Konten"), R.drawable.lc_log_in,
+            value = Profiles.savedAccount(this)) { accountsMenu() })
         val acc = Profiles.savedAccount(this)
         menu.show(T.s("Profile", "Profil", "Profil") + ": " + Profiles.name(this, cur), R.drawable.lc_user, items,
             if (acc != null) "Google: $acc" else null)
+    }
+
+    /** Google accounts on the box: which ones, which this profile uses, add / remove / switch. Stays open. */
+    private fun accountsMenu() {
+        Thread {
+            // the full list needs Shizuku (Android hides accounts from apps); otherwise only the chosen one is known
+            val txt = ShizukuCpu.output("dumpsys", "account") ?: ""
+            val found = Regex("""Account \{name=([^,]+), type=com\.google\}""").findAll(txt).map { it.groupValues[1] }.distinct().toList()
+            handler.post {
+                val used = Profiles.savedAccount(this)
+                val names = (found + listOfNotNull(used)).distinct()
+                val items = mutableListOf<GlassMenu.Item>()
+                for (n in names) items.add(GlassMenu.Item(n, R.drawable.lc_user, checked = n == used) {
+                    Profiles.saveAccount(this, n)
+                    toast(T.s("This profile now uses ", "Ovaj profil sad koristi ", "Dieses Profil nutzt jetzt ") + n)
+                    accountsMenu()
+                })
+                items.add(GlassMenu.Item(T.s("Add account", "Dodaj račun", "Konto hinzufügen"), R.drawable.lc_user_plus) {
+                    val add = Intent(Settings.ACTION_ADD_ACCOUNT).putExtra(Settings.EXTRA_ACCOUNT_TYPES, arrayOf("com.google"))
+                    if (runCatching { startActivity(add) }.isFailure) openAccounts()
+                })
+                items.add(GlassMenu.Item(T.s("Sign out / remove an account", "Odjavi / ukloni račun", "Abmelden / Konto entfernen"), R.drawable.lc_log_in) { openAccounts() })
+                if (found.isEmpty()) items.add(GlassMenu.Item(T.s("Pick the account from the list", "Izaberi račun sa liste", "Konto aus der Liste wählen"), R.drawable.lc_info) { chooseGoogleAccount() })
+                menu.show(T.s("Google accounts", "Google računi", "Google-Konten"), R.drawable.lc_log_in, items,
+                    when {
+                        names.isEmpty() -> T.s("No Google account signed in.", "Nijedan Google račun nije prijavljen.", "Kein Google-Konto angemeldet.")
+                        used != null -> T.s("✓ = used by this profile · OK on another one switches", "✓ = koristi ovaj profil · OK na drugom mijenja", "✓ = von diesem Profil genutzt · OK auf einem anderen wechselt")
+                        else -> T.s("OK on an account = use it for this profile", "OK na računu = koristi ga za ovaj profil", "OK auf einem Konto = für dieses Profil nutzen")
+                    })
+            }
+        }.start()
     }
 
     private fun openAccounts() {
@@ -1710,6 +1792,15 @@ class MainActivity : Activity() {
                 topMargin = (84 * d).toInt(); marginEnd = (36 * d).toInt()
             })
         }
+    }
+
+    /** the button / status icon a menu was opened from – focus goes back there when the menu closes */
+    private var menuOpener: View? = null
+
+    private fun isInGrid(v: View): Boolean {
+        var p = v.parent
+        while (p != null) { if (p === grid) return true; p = p.parent }
+        return false
     }
 
     /** the screen layer the update chip floats on when it is not under the date */
@@ -1857,16 +1948,86 @@ class MainActivity : Activity() {
 
     private fun powerMenu() {
         menu.show(T.s("Power", "Napajanje", "Energie"), R.drawable.lc_power, listOf(
-            GlassMenu.Item(T.s("Shut down", "Ugasi", "Ausschalten"), R.drawable.lc_power) { goSleep() },
-            GlassMenu.Item(T.s("Restart", "Restart", "Neustart"), R.drawable.lc_rotate_cw) { restartBox() },
-            GlassMenu.Item(T.s("Screensaver", "Screensaver", "Bildschirmschoner"), R.drawable.lc_monitor) { startSaver() },
-        ), T.s("Shut down = standby: the box switches off and turns the TV off too (HDMI-CEC). A full power-off doesn't exist on TV boxes.",
-            "Ugasi = standby: box se gasi i gasi i TV (HDMI-CEC). Potpuno isključenje ne postoji na TV boxovima.",
-            "Ausschalten = Standby: die Box geht aus und schaltet auch den Fernseher aus (HDMI-CEC). Ganz aus gibt es bei TV-Boxen nicht."))
+            GlassMenu.Item(T.s("Shut down", "Ugasi", "Ausschalten"), R.drawable.lc_power) {
+                confirm(T.s("Shut down", "Ugasi", "Ausschalten"), R.drawable.lc_power,
+                    T.s("Do you really want to switch the box off?", "Sigurno želiš ugasiti uređaj?", "Box wirklich ausschalten?")) { goSleep() }
+            },
+            GlassMenu.Item(T.s("Restart", "Restart", "Neustart"), R.drawable.lc_rotate_cw) {
+                confirm(T.s("Restart", "Restart", "Neustart"), R.drawable.lc_rotate_cw,
+                    T.s("Do you really want to restart the box?", "Sigurno želiš restartovati uređaj?", "Box wirklich neu starten?")) { restartBox() }
+            },
+            GlassMenu.Item(T.s("Screensaver", "Screensaver", "Bildschirmschoner"), R.drawable.lc_monitor) {
+                confirm(T.s("Screensaver", "Screensaver", "Bildschirmschoner"), R.drawable.lc_monitor,
+                    T.s("Start the screensaver?", "Pokrenuti screensaver?", "Bildschirmschoner starten?")) { startSaver() }
+            },
+        ), T.s("Shut down: box and TV go off, the remote switches them on again.",
+            "Ugasi: box i TV se gase, daljinac ih ponovo pali.",
+            "Ausschalten: Box und Fernseher gehen aus, die Fernbedienung schaltet sie wieder ein."))
+    }
+
+    // ------------------------------------------------------------------ developer shortcuts
+
+    private fun adbWifiOn() = runCatching { Settings.Global.getInt(contentResolver, "adb_wifi_enabled", 0) == 1 }.getOrDefault(false)
+
+    /** Wireless debugging on / off straight from LEAD (needs the permission the setup script gives). */
+    private fun setAdbWifi(on: Boolean) {
+        val ok = runCatching {
+            if (on) {
+                Settings.Global.putInt(contentResolver, Settings.Global.DEVELOPMENT_SETTINGS_ENABLED, 1)
+                Settings.Global.putInt(contentResolver, Settings.Global.ADB_ENABLED, 1)
+            }
+            Settings.Global.putInt(contentResolver, "adb_wifi_enabled", if (on) 1 else 0)
+        }.isSuccess || (ShizukuCpu.permitted() && ShizukuCpu.run("settings", "put", "global", "adb_wifi_enabled", if (on) "1" else "0"))
+        if (!ok) { openDeveloperOptions(); return }
+        if (!on) { toast(T.s("Wireless debugging off", "Wireless debugging isključen", "Drahtloses Debugging aus")); return }
+        // show the address to type on the laptop
+        Thread {
+            Thread.sleep(1500)
+            val port = ShizukuCpu.output("getprop", "service.adb.tls.port")?.trim()?.takeIf { it.isNotBlank() && it != "0" }
+            val ip = runCatching {
+                java.net.NetworkInterface.getNetworkInterfaces().toList().filter { it.isUp && !it.isLoopback }
+                    .flatMap { it.inetAddresses.toList() }.firstOrNull { it is java.net.Inet4Address }?.hostAddress
+            }.getOrNull()
+            handler.post {
+                toast(T.s("Wireless debugging on", "Wireless debugging uključen", "Drahtloses Debugging an") +
+                    if (ip != null && port != null) "  ·  $ip:$port" else "")
+            }
+        }.start()
+    }
+
+    private fun openDeveloperOptions() {
+        val devOn = runCatching { Settings.Global.getInt(contentResolver, Settings.Global.DEVELOPMENT_SETTINGS_ENABLED, 0) == 1 }.getOrDefault(false)
+        if (!devOn) {
+            // switch developer mode on ourselves (no 7 taps needed); if not allowed, go to "Android TV OS build"
+            val ok = runCatching { Settings.Global.putInt(contentResolver, Settings.Global.DEVELOPMENT_SETTINGS_ENABLED, 1) }.isSuccess
+            if (!ok) { openAbout(); return }
+        }
+        if (runCatching { startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)) }.isFailure) openAbout()
+    }
+
+    /** "About" page – press "Android TV OS build" 7 times there to switch developer mode on. */
+    private fun openAbout() {
+        if (runCatching { startActivity(Intent(Settings.ACTION_DEVICE_INFO_SETTINGS)) }.isFailure)
+            runCatching { startActivity(Intent(Settings.ACTION_SETTINGS)) }
+        toast(T.s("Press \"Android TV OS build\" 7 times", "Pritisni 7 puta \"Android TV OS build\"", "7× auf \"Android TV OS build\" drücken"))
+    }
+
+    /** One question, Yes / No – Yes does exactly that one thing. */
+    private fun confirm(title: String, icon: Int, question: String, yes: () -> Unit) {
+        menu.show(title, icon, listOf(
+            GlassMenu.Item(T.s("Yes", "Da", "Ja"), R.drawable.lc_check) { yes() },
+            GlassMenu.Item(T.s("No", "Ne", "Nein"), R.drawable.lc_x) { },
+        ), question)
     }
 
     /** Restart: directly if Android allows it, otherwise the system power menu (choose "Restart" there). */
     private fun restartBox() {
+        // with Shizuku: restart straight away, no system menu in between
+        if (ShizukuCpu.permitted()) {
+            toast(T.s("Restarting…", "Restartujem…", "Neustart…"))
+            Thread { if (!ShizukuCpu.run("svc", "power", "reboot")) ShizukuCpu.run("reboot") }.start()
+            return
+        }
         val direct = runCatching { (getSystemService(Context.POWER_SERVICE) as android.os.PowerManager).reboot(null); true }.getOrDefault(false)
         if (direct) return
         if (HomeService.powerMenu()) {
@@ -1874,7 +2035,12 @@ class MainActivity : Activity() {
         } else needServiceFor()
     }
 
+    /** Standby: screen + box off, TV off over HDMI-CEC; the remote switches everything on again. */
     private fun goSleep() {
+        if (ShizukuCpu.permitted()) {
+            Thread { if (!ShizukuCpu.run("input", "keyevent", "KEYCODE_SLEEP")) handler.post { if (!HomeService.sleep()) needServiceFor() } }.start()
+            return
+        }
         if (!HomeService.sleep()) needServiceFor()
     }
 
