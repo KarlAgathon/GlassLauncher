@@ -176,6 +176,10 @@ class MainActivity : Activity() {
         }
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(packageReceiver, filter, Context.RECEIVER_EXPORTED)
         else registerReceiver(packageReceiver, filter)
+        runCatching {
+            (getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager).registerNetworkCallback(
+                android.net.NetworkRequest.Builder().addCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET).build(), netCallback)
+        }
 
         NotifListener.onChange = { runOnUiThread { updateStatus() } }
 
@@ -230,6 +234,7 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         super.onDestroy()
         runCatching { unregisterReceiver(packageReceiver) }
+        runCatching { (getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager).unregisterNetworkCallback(netCallback) }
         NotifListener.onChange = null
     }
 
@@ -667,7 +672,8 @@ class MainActivity : Activity() {
     private fun fitStatus(groups: List<View>, first: View?) {
         val inner = (statusPill as ViewGroup).getChildAt(0) ?: return
         val row = statusPill.parent as? LinearLayout ?: return
-        if (row.width <= 0 || statusPill.visibility != View.VISIBLE) return
+        if (statusPill.visibility != View.VISIBLE) return
+        if (row.width <= 0) { statusPill.postDelayed({ fitStatus(groups, first) }, 300); return }
         var others = row.paddingLeft + row.paddingRight
         for (i in 0 until row.childCount) {
             val c = row.getChildAt(i)
@@ -686,6 +692,20 @@ class MainActivity : Activity() {
             statusGapDp = gap; statusCompactSsid = hideSsid
             if (inner.measuredWidth <= avail) break
         }
+        // the test measuring above must be followed by a real layout, otherwise icons keep old places (overlap)
+        inner.requestLayout(); statusPill.requestLayout()
+    }
+
+    private var weatherFails = 0
+
+    /** internet back (e.g. after switching on): refresh weather and the bar straight away */
+    private val netCallback = object : android.net.ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: android.net.Network) {
+            handler.postDelayed({
+                if (weatherFails > 0 || findViewById<TextView>(R.id.weatherText).text.isNullOrBlank()) { lastWeather = 0; updateWeather() }
+                updateStatus()
+            }, 1500)
+        }
     }
 
     private fun updateWeather() {
@@ -697,10 +717,16 @@ class MainActivity : Activity() {
             val w = Weather.current(lat, lon)
             handler.post {
                 if (w != null) {
+                    weatherFails = 0
                     findViewById<ImageView>(R.id.weatherIcon).setImageResource(w.first)
                     findViewById<TextView>(R.id.weatherText).text = w.second
+                    updateStatus()   // the bar got wider: fit it again
                 } else {
-                    lastWeather = System.currentTimeMillis() - (prefs.weatherMin - 5).coerceAtLeast(0) * 60 * 1000L // retry in ~5 min
+                    // right after switching on the internet is often not there yet: try again soon
+                    // (20 s, 40 s, 80 s … at most 5 min)
+                    weatherFails++
+                    val wait = (20_000L shl (weatherFails - 1).coerceAtMost(4)).coerceAtMost(300_000L)
+                    lastWeather = System.currentTimeMillis() - prefs.weatherMin * 60 * 1000L + wait
                 }
             }
         }.start()
