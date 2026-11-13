@@ -31,6 +31,7 @@ object AppUpdates {
         "com.liskovsoft.smarttubetv.beta" to "yuliskov/SmartTube",
         "com.teamsmart.videomanager.tv" to "yuliskov/SmartTube",
         "moe.shizuku.privileged.api" to "thedjchi/Shizuku",
+        "com.rfmarcos.sofadrop" to "rfmarcos/sofadrop",
     )
 
     private fun store(ctx: Context) = ctx.getSharedPreferences("app_updates", Context.MODE_PRIVATE)
@@ -120,7 +121,7 @@ object AppUpdates {
         return PLAY_VERSION.find(html)?.groupValues?.get(1)?.trim()
     }
 
-    private fun github(repo: String): Pair<String, String>? {
+    fun github(repo: String): Pair<String, String>? {
         val txt = get("https://api.github.com/repos/$repo/releases/latest", 2_000_000) ?: return null
         val j = JSONObject(txt)
         val tag = j.optString("tag_name").ifBlank { j.optString("name") }

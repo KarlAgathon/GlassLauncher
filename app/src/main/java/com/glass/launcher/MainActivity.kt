@@ -122,6 +122,17 @@ class MainActivity : Activity() {
         updateBtn = findViewById(R.id.updateBtn)
         powerBtn = findViewById(R.id.powerBtn)
         profileLetter = findViewById(R.id.profileLetter)
+        // a brand-new install starts in Performance mode; Normal mode later offers the add-ons
+        run {
+            val g = getSharedPreferences("glass_global", Context.MODE_PRIVATE)
+            if (!g.contains("installSeen")) {
+                val fresh = getSharedPreferences(Profiles.prefsName(prefs.profile), Context.MODE_PRIVATE).all.isEmpty()
+                if (fresh) prefs.perfMode = true
+                g.edit().putBoolean("installSeen", true).apply()
+            }
+        }
+        // icons that come with LEAD (TiviMate, YouTube, Disney+ …)
+        runCatching { BuiltinIcons.seed(this) }
         Backdrop.lite = prefs.perfMode
 
         menu = GlassMenu(this, root) { open ->
@@ -211,6 +222,12 @@ class MainActivity : Activity() {
             HomeService.enableWithSecureSettings(this)
         // newer Android: CPU % only via Shizuku – ask once for its permission when Shizuku runs
         if (prefs.showCpu && !ShizukuCpu.permitted()) handler.postDelayed({ ShizukuCpu.ask() }, 1500)
+        getSharedPreferences("glass_global", Context.MODE_PRIVATE).let { g ->
+            if (g.getBoolean("pendingSofa", false) && Extras.installed(this, Extras.SOFADROP)) {
+                g.edit().remove("pendingSofa").apply()
+                handler.postDelayed({ useSofadrop() }, 1000)
+            }
+        }
         lastInput = SystemClock.elapsedRealtime()
         handler.removeCallbacks(ticker)
         handler.post(ticker)
@@ -1194,6 +1211,7 @@ class MainActivity : Activity() {
             GlassMenu.Item("Private DNS", R.drawable.lc_shield_check, value = dnsLabel()) { dnsMenu() },
             GlassMenu.Item(T.s("Auto-start apps", "Auto-start aplikacije", "Autostart-Apps"), R.drawable.lc_rocket) { autostartMenu() },
             GlassMenu.Item(T.s("Backup and restore", "Backup i vraćanje", "Sichern und wiederherstellen"), R.drawable.lc_archive) { backupMenu() },
+            GlassMenu.Item(T.s("Add-ons (SofaDrop, Shizuku)", "Dodaci (SofaDrop, Shizuku)", "Erweiterungen (SofaDrop, Shizuku)"), R.drawable.lc_plus) { extrasMenu() },
             if (prefs.perfMode) GlassMenu.Item(T.s("Normal mode", "Normalni mod", "Normaler Modus"), R.drawable.lc_image) { normalModeAsk() }
             else GlassMenu.Item(T.s("Performance mode", "Performance mod", "Leistungsmodus"), R.drawable.lc_gauge) { perfModeAsk() },
             GlassMenu.Item(T.s("Speed test", "Test brzine", "Speedtest"), R.drawable.lc_gauge) {
@@ -2080,7 +2098,69 @@ class MainActivity : Activity() {
                 "• die Glaseffekte und Animationen\n\n" +
                 "Das braucht mehr Speicher (RAM) und Prozessorleistung.\nEinschalten?")) {
             setPerfMode(false)
+            handler.postDelayed({ extrasMenu() }, 300)
         }
+    }
+
+    /** Add-ons for the full look: SofaDrop wallpapers, TMDB, Shizuku (CPU %) – fetched and installed by LEAD */
+    private fun extrasMenu() {
+        val items = mutableListOf<GlassMenu.Item>()
+        val sofa = Extras.installed(this, Extras.SOFADROP)
+        items.add(GlassMenu.Item(
+            if (sofa) T.s("Use SofaDrop as wallpaper", "Koristi SofaDrop kao pozadinu", "SofaDrop als Hintergrund nutzen")
+            else T.s("Install SofaDrop (film & series wallpapers)", "Instaliraj SofaDrop (pozadine filmova i serija)", "SofaDrop installieren (Film- & Serien-Hintergründe)"),
+            R.drawable.lc_image, value = if (sofa) "✓" else null) {
+            if (sofa) useSofadrop()
+            else {
+                getSharedPreferences("glass_global", Context.MODE_PRIVATE).edit().putBoolean("pendingSofa", true).apply()
+                toast(T.s("Downloading SofaDrop…", "Skidam SofaDrop…", "Lade SofaDrop…"))
+                Extras.install(this, Extras.SOFADROP, Extras.SOFADROP_APK) { toast("SofaDrop: $it") }
+            }
+        })
+        items.add(GlassMenu.Item(T.s("Films & series from TMDB (needs your API key)", "Filmovi i serije sa TMDB (treba tvoj API ključ)",
+            "Filme & Serien von TMDB (braucht deinen API-Schlüssel)"), R.drawable.lc_image) { wallpaperMenu() })
+        val shz = Extras.installed(this, Extras.SHIZUKU)
+        items.add(GlassMenu.Item(
+            when {
+                !shz -> T.s("Install Shizuku (for CPU %)", "Instaliraj Shizuku (za CPU %)", "Shizuku installieren (für CPU %)")
+                ShizukuCpu.running() -> T.s("Shizuku is running", "Shizuku radi", "Shizuku läuft")
+                else -> T.s("Start Shizuku (pair once)", "Pokreni Shizuku (jednom upari)", "Shizuku starten (einmal koppeln)")
+            }, R.drawable.lc_cpu, value = if (shz && ShizukuCpu.running()) "✓" else null) {
+            when {
+                !shz -> { toast(T.s("Downloading Shizuku…", "Skidam Shizuku…", "Lade Shizuku…"))
+                    Extras.install(this, Extras.SHIZUKU, null) { toast("Shizuku: $it") } }
+                !ShizukuCpu.running() -> shizukuHowTo()
+                else -> toast(T.s("Shizuku is running – CPU % works", "Shizuku radi – CPU % radi", "Shizuku läuft – CPU % funktioniert"))
+            }
+        })
+        menu.show(T.s("Add-ons", "Dodaci", "Erweiterungen"), R.drawable.lc_plus, items,
+            T.s("LEAD downloads them from their official pages and keeps them up to date.",
+                "LEAD ih skida sa njihovih službenih stranica i sam ih ažurira.",
+                "LEAD lädt sie von ihren offiziellen Seiten und hält sie aktuell."))
+    }
+
+    private fun shizukuHowTo() {
+        menu.show("Shizuku", R.drawable.lc_cpu, listOf(
+            GlassMenu.Item(T.s("1. Switch on Wireless debugging", "1. Uključi Wireless debugging", "1. Drahtloses Debugging einschalten"), R.drawable.lc_wifi) { setAdbWifi(true) },
+            GlassMenu.Item(T.s("2. Open Shizuku → pair → Start", "2. Otvori Shizuku → upari → Start", "2. Shizuku öffnen → koppeln → Start"), R.drawable.lc_cpu) {
+                packageManager.getLeanbackLaunchIntentForPackage(Extras.SHIZUKU)?.let { startActivity(it) }
+                    ?: packageManager.getLaunchIntentForPackage(Extras.SHIZUKU)?.let { startActivity(it) }
+            },
+        ), T.s("Android needs one pairing before Shizuku can start. In Shizuku also switch on \"Start on boot\".",
+            "Android traži jedno uparivanje prije prvog pokretanja Shizukua. U Shizukuu uključi i \"Start on boot\".",
+            "Android braucht einmal eine Kopplung, bevor Shizuku starten kann. In Shizuku auch \"Start on boot\" einschalten."))
+    }
+
+    /** SofaDrop installed: make it the wallpaper source and open its setup */
+    private fun useSofadrop() {
+        val p = Plugins.list(this).firstOrNull { it.pkg == Extras.SOFADROP }
+        if (p == null) { toast(T.s("SofaDrop is not ready yet", "SofaDrop još nije spreman", "SofaDrop ist noch nicht bereit")); return }
+        if (prefs.perfMode) setPerfMode(false)
+        prefs.wpPlugin = p.id
+        prefs.wpMode = 3
+        applyLook()
+        toast(T.s("SofaDrop is your wallpaper", "SofaDrop je tvoja pozadina", "SofaDrop ist dein Hintergrund"))
+        handler.postDelayed({ Plugins.openSettings(this, p) }, 800)
     }
 
     private fun setPerfMode(on: Boolean) {
