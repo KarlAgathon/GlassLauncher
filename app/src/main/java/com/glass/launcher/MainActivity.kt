@@ -1169,6 +1169,9 @@ class MainActivity : Activity() {
             GlassMenu.Item("Private DNS", R.drawable.lc_shield_check, value = dnsLabel()) { dnsMenu() },
             GlassMenu.Item(T.s("Auto-start apps", "Auto-start aplikacije", "Autostart-Apps"), R.drawable.lc_rocket) { autostartMenu() },
             GlassMenu.Item(T.s("Backup and restore", "Backup i vraćanje", "Sichern und wiederherstellen"), R.drawable.lc_archive) { backupMenu() },
+            GlassMenu.Item(T.s("Speed test", "Test brzine", "Speedtest"), R.drawable.lc_gauge) {
+                startActivity(Intent(this, SpeedTestActivity::class.java))
+            },
             GlassMenu.Item(T.s("Wireless debugging", "Wireless debugging", "Drahtloses Debugging"), R.drawable.lc_wifi,
                 checked = adbWifiOn(), toggle = true) { setAdbWifi(it.checked) },
             GlassMenu.Item(T.s("Developer options", "Opcije za programere", "Entwickleroptionen"), R.drawable.lc_code) { openDeveloperOptions() },

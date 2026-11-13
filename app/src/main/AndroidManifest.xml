@@ -89,6 +89,12 @@
             android:theme="@style/LauncherTheme" />
 
         <activity
+            android:name=".SpeedTestActivity"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:theme="@style/LauncherTheme" />
+
+        <activity
             android:name=".StorageActivity"
             android:exported="false"
             android:screenOrientation="landscape"
