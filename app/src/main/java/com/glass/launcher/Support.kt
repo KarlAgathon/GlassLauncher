@@ -241,7 +241,13 @@ class Prefs(ctx: Context) {
 
     /** small corner overlay while a film / other app is open (needs the accessibility service) */
     var overlayVpn: Boolean get() = bool("ovVpn", true); set(v) = putBool("ovVpn", v)
-    var overlayClock: Boolean get() = bool("ovClock", false); set(v) = putBool("ovClock", v)
+    /** clock while other apps run: switched off for good – only the VPN key shows over other apps */
+    var overlayClock: Boolean get() = false; set(@Suppress("UNUSED_PARAMETER") v) {}
+    /** screensaver pictures: 0 own wallpaper, 1 folder, 2 Reddit, 3 Bing picture of the day */
+    var saverSrc: Int get() = int("saverSrc", 0); set(v) = putInt("saverSrc", v)
+    var saverFolder: String get() = str("saverFolder", ""); set(v) = putStr("saverFolder", v)
+    var saverReddit: String get() = str("saverReddit", "EarthPorn"); set(v) = putStr("saverReddit", v)
+    var saverInterval: Int get() = int("saverInt", 30); set(v) = putInt("saverInt", v)
     /** Home button of the remote opens LEAD Launcher (needs the accessibility service) */
     var homeRedirect: Boolean get() = bool("homeRedir", true); set(v) = putBool("homeRedir", v)
 
@@ -251,6 +257,12 @@ class Prefs(ctx: Context) {
 }
 
 object ClockFmt {
+    fun is24(ctx: Context, p: Prefs): Boolean = when (p.clockFormat) {
+        1 -> true
+        2 -> false
+        else -> android.text.format.DateFormat.is24HourFormat(ctx)
+    }
+
     fun pattern(ctx: Context, p: Prefs): String {
         val is24 = when (p.clockFormat) {
             1 -> true

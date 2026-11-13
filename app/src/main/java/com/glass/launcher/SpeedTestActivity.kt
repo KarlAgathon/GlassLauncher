@@ -237,6 +237,20 @@ class SpeedTestActivity : Activity() {
                         0 -> card.status.text = T.s("Finding address…", "Tražim adresu…", "Suche Adresse…")
                         1 -> card.status.text = "Ping…"
                         2 -> {
+                            if (!b.getBoolean("vpn")) {
+                                // VPN is off (or the helper is not on its list): don't measure, warn instead
+                                probeConn?.let { runCatching { unbindService(it) } }; probeConn = null
+                                card.running = false
+                                card.showWhere(b.getString("ip"), b.getString("cc"))
+                                card.big.text = "–"
+                                card.status.text = T.s("⛔ VPN is OFF – you are not protected. Not measuring.",
+                                    "⛔ VPN NIJE UKLJUČEN – nisi zaštićen. Ne mjerim.",
+                                    "⛔ VPN ist AUS – du bist nicht geschützt. Keine Messung.")
+                                hint.text = T.s("Switch the VPN on (and keep \"LEAD VPN test\" on its app list), then press OK again.",
+                                    "Uključi VPN (i neka je \"LEAD VPN test\" na njegovoj listi aplikacija), pa ponovo pritisni OK.",
+                                    "VPN einschalten (\"LEAD VPN test\" in seiner App-Liste lassen), dann erneut OK drücken.")
+                                return
+                            }
                             card.showWhere(b.getString("ip"), b.getString("cc"))
                             card.ping.text = "Ping: ${b.getInt("ping")} ms"
                             card.status.text = if (b.getBoolean("vpn")) T.s("Download… (VPN active ✓)", "Preuzimanje… (VPN aktivan ✓)", "Download… (VPN aktiv ✓)")

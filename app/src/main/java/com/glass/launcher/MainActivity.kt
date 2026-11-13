@@ -1954,11 +1954,6 @@ class MainActivity : Activity() {
             },
             GlassMenu.Item(T.s("Show seconds", "Prikaži sekunde", "Sekunden anzeigen"), R.drawable.lc_clock,
                 checked = prefs.clockSeconds, toggle = true) { prefs.clockSeconds = it.checked; updateClock() },
-            GlassMenu.Item(T.s("Clock always visible (also in films/apps)", "Sat uvijek vidljiv (i u filmu/aplikacijama)",
-                "Uhr immer sichtbar (auch in Filmen/Apps)"), R.drawable.lc_tv, checked = prefs.overlayClock, toggle = true) {
-                prefs.overlayClock = it.checked
-                if (it.checked && !HomeService.isEnabled(this)) serviceNeeded()
-            },
             GlassMenu.Item(T.s("Time zone automatically", "Vremenska zona automatski", "Zeitzone automatisch"), R.drawable.lc_globe,
                 value = onOff(autoZone())) { toggleAutoZone() },
         ))
@@ -1982,11 +1977,6 @@ class MainActivity : Activity() {
             GlassMenu.Item(T.s("VPN key in the corner", "VPN ključ u ćošku", "VPN-Schlüssel in der Ecke"), R.drawable.lc_key_round,
                 checked = prefs.overlayVpn, toggle = true) {
                 prefs.overlayVpn = it.checked
-                if (it.checked && !HomeService.isEnabled(this)) serviceNeeded()
-            },
-            GlassMenu.Item(T.s("Clock in the corner", "Sat u ćošku", "Uhr in der Ecke"), R.drawable.lc_clock,
-                checked = prefs.overlayClock, toggle = true) {
-                prefs.overlayClock = it.checked
                 if (it.checked && !HomeService.isEnabled(this)) serviceNeeded()
             },
             GlassMenu.Item(T.s("Switch on the helper service", "Uključi pomoćni servis", "Hilfsdienst einschalten"), R.drawable.lc_shield_check,
@@ -2326,6 +2316,27 @@ class MainActivity : Activity() {
                 choose(T.s("After", "Nakon", "Nach"), R.drawable.lc_clock,
                     listOf(2, 5, 10, 15, 30, 60, 120).map { "$it min" to it }, prefs.idleMinutes) { prefs.idleMinutes = it }
             },
+            GlassMenu.Item(T.s("Pictures", "Slike", "Bilder"), R.drawable.lc_image, value = saverSources().first { it.second == prefs.saverSrc }.first) {
+                choose(T.s("Screensaver pictures", "Slike za screensaver", "Bilder für den Bildschirmschoner"), R.drawable.lc_image,
+                    saverSources(), prefs.saverSrc) { v ->
+                    when (v) {
+                        SaverPictures.FOLDER -> {
+                            pendingPick = { f -> prefs.saverFolder = f.absolutePath; prefs.saverSrc = SaverPictures.FOLDER; screensaverMenu() }
+                            @Suppress("DEPRECATION")
+                            startActivityForResult(Intent(this, FileBrowserActivity::class.java)
+                                .putExtra(FileBrowserActivity.EXTRA_PICK, "folder"), REQ_FILES)
+                        }
+                        SaverPictures.REDDIT -> choose("Reddit", R.drawable.lc_image, SaverPictures.REDDITS.map { "r/$it" to it }, prefs.saverReddit) { r ->
+                            prefs.saverReddit = r; prefs.saverSrc = SaverPictures.REDDIT; screensaverMenu()
+                        }
+                        else -> { prefs.saverSrc = v; screensaverMenu() }
+                    }
+                }
+            },
+            GlassMenu.Item(T.s("Change picture every", "Mijenjaj sliku svakih", "Bild wechseln alle"), R.drawable.lc_clock, value = "${prefs.saverInterval} s") {
+                choose(T.s("Change picture every", "Mijenjaj sliku svakih", "Bild wechseln alle"), R.drawable.lc_clock,
+                    listOf(15, 30, 60, 120, 300).map { "$it s" to it }, prefs.saverInterval) { prefs.saverInterval = it; screensaverMenu() }
+            },
             GlassMenu.Item(T.s("Start screensaver now", "Pokreni screensaver sada", "Bildschirmschoner jetzt starten"), R.drawable.lc_monitor) { startSaver() },
             GlassMenu.Item(T.s("Android screensaver settings", "Android postavke screensavera", "Android-Bildschirmschoner-Einstellungen"), R.drawable.lc_settings) {
                 safeStart(Intent(Settings.ACTION_DREAM_SETTINGS))
@@ -2334,6 +2345,13 @@ class MainActivity : Activity() {
             "Savjet: u Android postavkama screensavera možeš izabrati i \"LEAD Launcher\" – tada se samuraj sat prikazuje u svakoj aplikaciji.",
             "Tipp: In den Android-Einstellungen kannst du auch \"LEAD Launcher\" als Bildschirmschoner wählen."))
     }
+
+    private fun saverSources() = listOf(
+        T.s("My wallpaper", "Moja pozadina", "Mein Hintergrund") to SaverPictures.OWN,
+        T.s("Folder on the box / USB", "Folder na boxu / USB", "Ordner auf der Box / USB") to SaverPictures.FOLDER,
+        T.s("Reddit (nature, space, cities…)", "Reddit (priroda, svemir, gradovi…)", "Reddit (Natur, Weltall, Städte…)") to SaverPictures.REDDIT,
+        T.s("Bing picture of the day", "Bing slika dana", "Bing-Bild des Tages") to SaverPictures.BING,
+    )
 
     private fun checkIdle() {
         val act = prefs.idleAction
