@@ -108,6 +108,18 @@ class HomeService : AccessibilityService() {
         super.onServiceConnected()
         instance = this
         createOverlay()
+        // right after a LEAD update Android shows Google TV: come back to LEAD by ourselves
+        val g = getSharedPreferences("glass_global", MODE_PRIVATE)
+        val upd = g.getLong("justUpdated", 0L)
+        if (upd > 0 && System.currentTimeMillis() - upd < 3 * 60_000L) {
+            g.edit().remove("justUpdated").apply()
+            if (Prefs(this).homeRedirect) h.postDelayed({
+                runCatching {
+                    startActivity(Intent(this, MainActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED))
+                }
+            }, 800)
+        }
     }
 
     private fun createOverlay() {
@@ -349,9 +361,20 @@ class BootReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent?) {
         // only react to the real start of the box (other apps can't use this to stop apps)
         val a = intent?.action ?: return
+        val app = ctx.applicationContext
+        if (a == Intent.ACTION_MY_PACKAGE_REPLACED) {
+            // LEAD was just updated: the helper service brings LEAD back to the front once it reconnects
+            app.getSharedPreferences("glass_global", Context.MODE_PRIVATE).edit()
+                .putLong("justUpdated", System.currentTimeMillis()).apply()
+            runCatching { if (!HomeService.isEnabled(app)) HomeService.enableWithSecureSettings(app) }
+            HomeService.instance?.let { s ->
+                runCatching { s.startActivity(Intent(s, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            }
+            runCatching { Updater.schedule(app) }
+            return
+        }
         if (a != Intent.ACTION_BOOT_COMPLETED && a != "android.intent.action.QUICKBOOT_POWERON" &&
             a != Intent.ACTION_LOCKED_BOOT_COMPLETED) return
-        val app = ctx.applicationContext
         // after a restart: helper service back on (needs WRITE_SECURE_SETTINGS, given once over ADB)
         runCatching { if (!HomeService.isEnabled(app)) HomeService.enableWithSecureSettings(app) }
         Autostart.apply(app)
