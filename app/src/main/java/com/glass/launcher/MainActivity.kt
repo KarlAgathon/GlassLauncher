@@ -298,7 +298,41 @@ class MainActivity : Activity() {
 
     override fun onStart() {
         super.onStart()
-        if (wallpaperFreed) { wallpaperFreed = false; loadWallpaper() }
+        if (wallpaperFreed) {
+            wallpaperFreed = false
+            // straight back to the last picture (saved small on disk); the slideshow simply goes on from there
+            if (!showLastPicture()) loadWallpaper()
+        }
+    }
+
+    private val lastPictureFile get() = File(cacheDir, "last_wallpaper.jpg")
+
+    /** keeps a copy of the picture on screen, so coming back home never shows an empty background */
+    private fun keepLastPicture(b: Bitmap) {
+        Thread { runCatching { lastPictureFile.outputStream().use { b.compress(Bitmap.CompressFormat.JPEG, 88, it) } } }.start()
+    }
+
+    private fun showLastPicture(): Boolean {
+        val f = lastPictureFile
+        if (!f.exists()) return false
+        val (w, h) = screenSize()
+        val b = runCatching { Bitmaps.decodeScaled(f, w, h) }.getOrNull() ?: return false
+        wallpaper.setImageBitmap(b)
+        lastShown = b
+        adaptStatus(b)
+        return true
+    }
+
+    private var pictureFails = 0
+
+    private fun pictureFailed() {
+        if (wallpaper.drawable == null && !showLastPicture()) showOwnWallpaper()
+        if (prefs.wpMode !in 1..3) return
+        pictureFails++
+        handler.removeCallbacks(rotate)
+        // next picture in 3 s; after many misses in a row ask the plugin / TMDB for a fresh list
+        if (pictureFails >= 5) { pictureFails = 0; movies = emptyList(); moviesKey = ""; startRotation() }
+        else handler.postDelayed(rotate, 3000)
     }
 
     override fun onTrimMemory(level: Int) {
@@ -448,7 +482,11 @@ class MainActivity : Activity() {
         val blur = prefs.blurWallpaper
         val (w, h) = screenSize()
         Thread {
-            val src = runCatching { load() }.getOrNull() ?: return@Thread
+            val src = runCatching { load() }.getOrNull() ?: run {
+                // picture could not be fetched (plugin busy / network): try the next one soon, never stay black
+                handler.post { pictureFailed() }
+                return@Thread
+            }
             val crop = Bitmaps.centerCrop(src, w, h)
             if (src !== crop) runCatching { src.recycle() }   // the full-size original is not needed any more
             val frosted = if (prefs.perfMode) null else Bitmaps.frosted(crop)
@@ -459,6 +497,8 @@ class MainActivity : Activity() {
                     Backdrop.w = w
                     Backdrop.h = h
                     wallpaper.setImageBitmap(shown)
+                    keepLastPicture(shown)
+                    pictureFails = 0
                     showMovieInfo(movie)
                     adaptStatus(shown)
                     invalidateGlass()
