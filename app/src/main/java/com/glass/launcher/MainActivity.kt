@@ -83,7 +83,17 @@ class MainActivity : Activity() {
     private val wallpaperFile get() = File(filesDir, Profiles.wallpaperName(prefs.profile))
 
     private val packageReceiver = object : BroadcastReceiver() {
-        override fun onReceive(c: Context?, i: Intent?) = reloadApps()
+        override fun onReceive(c: Context?, i: Intent?) {
+            reloadApps()
+            if (i?.action != Intent.ACTION_PACKAGE_REMOVED) pluginUpdated(i?.data?.schemeSpecificPart)
+            // SofaDrop just installed from "Add-ons" (quietly via Shizuku): make it the wallpaper
+            val pkg = i?.data?.schemeSpecificPart
+            val g = getSharedPreferences("glass_global", Context.MODE_PRIVATE)
+            if (pkg == Extras.SOFADROP && i?.action != Intent.ACTION_PACKAGE_REMOVED && g.getBoolean("pendingSofa", false)) {
+                g.edit().remove("pendingSofa").apply()
+                handler.postDelayed({ useSofadrop() }, 2000)
+            }
+        }
     }
 
     private val ticker = object : Runnable {
@@ -186,6 +196,7 @@ class MainActivity : Activity() {
 
         val filter = IntentFilter().apply {
             addAction(Intent.ACTION_PACKAGE_ADDED)
+            addAction(Intent.ACTION_PACKAGE_REPLACED)
             addAction(Intent.ACTION_PACKAGE_REMOVED)
             addAction(Intent.ACTION_PACKAGE_CHANGED)
             addDataScheme("package")
@@ -222,6 +233,13 @@ class MainActivity : Activity() {
             HomeService.enableWithSecureSettings(this)
         // newer Android: CPU % only via Shizuku – ask once for its permission when Shizuku runs
         if (prefs.showCpu && !ShizukuCpu.permitted()) handler.postDelayed({ ShizukuCpu.ask() }, 1500)
+        if (prefs.wpMode == 3) runCatching {
+            val pkg = prefs.wpPlugin.substringBefore('/')
+            @Suppress("DEPRECATION")
+            val v = packageManager.getPackageInfo(pkg, 0).let { "${it.versionCode}/${it.lastUpdateTime}" }
+            val g = getSharedPreferences("glass_global", Context.MODE_PRIVATE)
+            if (g.getString("pluginVer", "") != v) { g.edit().putString("pluginVer", v).apply(); if (!firstLoad) pluginUpdated(pkg) }
+        }
         getSharedPreferences("glass_global", Context.MODE_PRIVATE).let { g ->
             if (g.getBoolean("pendingSofa", false) && Extras.installed(this, Extras.SOFADROP)) {
                 g.edit().remove("pendingSofa").apply()
@@ -494,6 +512,11 @@ class MainActivity : Activity() {
     private fun loadWallpaper() {
         if (prefs.wpMode != 0) { startRotation(); return }
         stopRotation()
+        showOwnWallpaper()
+    }
+
+    /** your own picture (also the stand-in while a plugin is being updated) */
+    private fun showOwnWallpaper() {
         val f = wallpaperFile
         val (w, h) = screenSize()
         showPicture({
@@ -522,6 +545,25 @@ class MainActivity : Activity() {
         showMovieInfo(null)
     }
 
+    private var pluginRetries = 0
+    private val pluginRetry = Runnable { if (prefs.wpMode == 3) { movies = emptyList(); moviesKey = ""; startRotation() } }
+
+    /** tries the wallpaper plugin again: after 10 s, 20 s, 40 s … at most every 5 minutes */
+    private fun retryPlugin() {
+        handler.removeCallbacks(pluginRetry)
+        val wait = (10_000L shl pluginRetries.coerceAtMost(5)).coerceAtMost(300_000L)
+        pluginRetries++
+        handler.postDelayed(pluginRetry, wait)
+    }
+
+    /** the wallpaper plugin was installed / updated: start it again by itself */
+    private fun pluginUpdated(pkg: String?) {
+        if (pkg == null || prefs.wpMode != 3 || !prefs.wpPlugin.startsWith("$pkg/")) return
+        pluginRetries = 0
+        handler.removeCallbacks(pluginRetry)
+        handler.postDelayed(pluginRetry, 3000)   // give the new version a moment to start
+    }
+
     private fun startRotation() {
         handler.removeCallbacks(rotate)
         when (prefs.wpMode) {
@@ -537,8 +579,11 @@ class MainActivity : Activity() {
             3 -> {
                 val p = Plugins.find(this, prefs.wpPlugin)
                 if (p == null) {
-                    toast(T.s("Wallpaper plugin not found", "Plugin za pozadinu nije pronađen", "Hintergrund-Plugin nicht gefunden"))
-                    prefs.wpMode = 0; loadWallpaper(); return
+                    // plugin missing – often only for a moment while it updates. Keep the setting,
+                    // show your own picture meanwhile and try again by itself.
+                    if (movies.isEmpty()) showOwnWallpaper()
+                    retryPlugin()
+                    return
                 }
                 val cacheKey = "plugin:" + p.id
                 if (cacheKey == moviesKey && moviesMode == 3 && movies.isNotEmpty()) { handler.post(rotate); return }
@@ -548,12 +593,12 @@ class MainActivity : Activity() {
                     handler.post {
                         if (prefs.wpMode != 3) return@post   // switched to something else meanwhile
                         if (list.isEmpty()) {
-                            toast(T.s("The plugin sent no pictures – open its settings and try again",
-                                "Plugin nije poslao slike – otvori njegove postavke pa pokušaj ponovo",
-                                "Das Plugin hat keine Bilder geliefert – Einstellungen öffnen und erneut versuchen"))
-                            if (movies.isEmpty()) { prefs.wpMode = 0; loadWallpaper() }
+                            // plugin not ready (just updated / still starting): own picture for now, try again soon
+                            if (movies.isEmpty()) showOwnWallpaper()
+                            retryPlugin()
                             return@post
                         }
+                        pluginRetries = 0
                         movies = list; moviesKey = cacheKey; moviesMode = 3; slideIndex = 0
                         handler.removeCallbacks(rotate); handler.post(rotate)
                     }

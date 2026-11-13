@@ -31,6 +31,9 @@ object ShizukuCpu {
         m.invoke(null, arrayOf(*cmd), null, null) as Process
     }.getOrNull()
 
+    /** a shell process through Shizuku (null without permission) */
+    fun process(vararg cmd: String): Process? = if (!permitted()) null else shell(*cmd)
+
     /** Runs a shell command through Shizuku; true if it could be started and ended with 0. */
     fun run(vararg cmd: String): Boolean {
         if (!permitted()) return false

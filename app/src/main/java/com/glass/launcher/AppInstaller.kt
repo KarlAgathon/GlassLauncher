@@ -32,6 +32,12 @@ object AppInstaller {
             return
         }
         Thread {
+            // with Shizuku: install quietly in the background, no "Install?" question
+            if (item.second.size == 1 && item.first != ctx.packageName && silent(item.second[0])) {
+                done++
+                next(ctx)
+                return@Thread
+            }
             try {
                 val pi = ctx.packageManager.packageInstaller
                 val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
@@ -53,6 +59,18 @@ object AppInstaller {
                 next(ctx)
             }
         }.start()
+    }
+
+    /** "pm install" through Shizuku (shell rights), the APK is fed in through stdin */
+    private fun silent(f: File): Boolean {
+        if (!ShizukuCpu.permitted()) return false
+        return runCatching {
+            val p = ShizukuCpu.process("pm", "install", "-r", "-S", f.length().toString()) ?: return false
+            p.outputStream.use { out -> f.inputStream().use { it.copyTo(out) } }
+            val txt = p.inputStream.bufferedReader().use { it.readText() }
+            p.waitFor()
+            txt.contains("Success")
+        }.getOrDefault(false)
     }
 
     fun finished(ctx: Context, ok: Boolean) {
