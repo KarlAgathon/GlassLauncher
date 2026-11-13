@@ -39,12 +39,37 @@ class GlassMenu(
     private var overlay: FrameLayout? = null
     val isOpen get() = overlay != null
 
+    /** the menu on screen, and the menus it was opened from (Back goes one step back) */
+    private class Snap(val title: String, val icon: Int?, val items: List<Item>, val subtitle: String?)
+    private var current: Snap? = null
+    private val stack = ArrayList<Pair<Snap, Int>>()
+
+    /** Back: to the menu this one was opened from (on the same row), or close */
+    fun back() {
+        if (stack.isEmpty()) { close(); return }
+        val (s, i) = stack.removeAt(stack.size - 1)
+        build(s.title, s.icon, s.items, s.subtitle, i)
+    }
+
+    /** runs a row's action; when it opens another menu, remember this one for Back */
+    private fun runFrom(index: Int, action: () -> Unit) {
+        val parent = current
+        closeKeep()
+        action()
+        val now = current
+        if (overlay != null && parent != null && now !== parent && now?.title != parent.title) stack.add(parent to index)
+        else if (overlay == null) stack.clear()
+    }
+
     private fun dp(v: Int) = (v * act.resources.displayMetrics.density).toInt()
 
     fun message(title: String, icon: Int?, text: String) =
         show(title, icon, listOf(Item("OK", R.drawable.lc_check)), text)
 
-    fun show(title: String, icon: Int?, items: List<Item>, subtitle: String? = null) {
+    fun show(title: String, icon: Int?, items: List<Item>, subtitle: String? = null) = build(title, icon, items, subtitle, 0)
+
+    private fun build(title: String, icon: Int?, items: List<Item>, subtitle: String?, focusIndex: Int) {
+        current = Snap(title, icon, items, subtitle)
         removeOverlay()
         val ov = FrameLayout(act).apply {
             setBackgroundColor(Color.argb(110, 0, 0, 0))
@@ -86,7 +111,7 @@ class GlassMenu(
         }
 
         val list = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
-        val rows = items.map { makeRow(it) }
+        val rows = items.mapIndexed { i, it -> makeRow(it, i) }
         rows.forEach { list.addView(it) }
         val scroll = ScrollView(act).apply { isVerticalScrollBarEnabled = false; addView(list) }
         val maxRows = 8
@@ -98,10 +123,11 @@ class GlassMenu(
         root.addView(ov, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         overlay = ov
         onOpenChange(true)
-        rows.firstOrNull()?.post { rows.first().requestFocus() }
+        val focusRow = rows.getOrNull(focusIndex) ?: rows.firstOrNull()
+        focusRow?.post { focusRow.requestFocus() }
     }
 
-    private fun makeRow(item: Item): View {
+    private fun makeRow(item: Item, index: Int): View {
         val d = act.resources.displayMetrics.density
         val row = LinearLayout(act).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -156,8 +182,8 @@ class GlassMenu(
         }
 
         item.longAction?.let { la ->
-            row.setOnLongClickListener { close(); la(item); true }
-            row.setOnContextClickListener { close(); la(item); true }
+            row.setOnLongClickListener { runFrom(index) { la(item) }; true }
+            row.setOnContextClickListener { runFrom(index) { la(item) }; true }
         }
         row.setOnClickListener {
             if (item.toggle) {
@@ -165,8 +191,7 @@ class GlassMenu(
                 check?.visibility = if (item.checked) View.VISIBLE else View.INVISIBLE
                 item.action(item)
             } else {
-                close()
-                item.action(item)
+                runFrom(index) { item.action(item) }
             }
         }
         return row
@@ -178,8 +203,14 @@ class GlassMenu(
     }
 
     fun close() {
+        stack.clear()
+        closeKeep()
+    }
+
+    private fun closeKeep() {
         if (overlay == null) return
         removeOverlay()
+        current = null
         onOpenChange(false)
     }
 }

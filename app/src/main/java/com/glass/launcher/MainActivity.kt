@@ -125,6 +125,7 @@ class MainActivity : Activity() {
         Backdrop.lite = prefs.perfMode
 
         menu = GlassMenu(this, root) { open ->
+            if (open && menuOpener == null) menuOpener = currentFocus?.takeIf { it !== grid && !isInGrid(it) }
             grid.descendantFocusability =
                 if (open) ViewGroup.FOCUS_BLOCK_DESCENDANTS else ViewGroup.FOCUS_AFTER_DESCENDANTS
             profileBtn.isFocusable = !open
@@ -132,10 +133,7 @@ class MainActivity : Activity() {
             updateBtn.isFocusable = !open
             powerBtn.isFocusable = !open
             statusGroups().forEach { it.isFocusable = !open }
-            if (open) {
-                // remember where the menu was opened from (settings, profile, power, status icon …)
-                if (menuOpener == null) menuOpener = currentFocus?.takeIf { it !== grid && !isInGrid(it) }
-            } else {
+            if (!open) {
                 val back = menuOpener
                 menuOpener = null
                 if (back != null && back.isShown && back.isFocusable) { back.requestFocus(); return@GlassMenu }
@@ -1121,7 +1119,7 @@ class MainActivity : Activity() {
         lastInput = SystemClock.elapsedRealtime()
         val k = event.keyCode
         if (menu.isOpen && k == KeyEvent.KEYCODE_BACK) {
-            if (event.action == KeyEvent.ACTION_UP) menu.close()
+            if (event.action == KeyEvent.ACTION_UP) menu.back()
             return true
         }
         if (!menu.isOpen && movingPos < 0 && event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
