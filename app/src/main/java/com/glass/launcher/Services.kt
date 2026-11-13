@@ -276,7 +276,10 @@ class HomeService : AccessibilityService() {
         // our own windows are handled by the activities themselves (setHome); a late event from
         // the launcher must not hide the key in an app that opened right after it (e.g. TizenTube)
         if (pkg == packageName) return
+        val prev = lastPkg
         lastPkg = pkg
+        // learn which apps are used most (for the "All apps" list)
+        if (pkg != prev && pkg !in STOCK && launchable(pkg)) runCatching { Usage.add(this, pkg) }
         if (pkg in STOCK) {
             setShown(false)
             if (!Prefs(this).homeRedirect) return
@@ -298,6 +301,35 @@ class HomeService : AccessibilityService() {
     /** Key is shown whenever any app other than our home screen / stock launcher is on top. */
     fun reevaluate() {
         setShown(!homeVisible && lastPkg != null && lastPkg !in STOCK)
+    }
+
+    private val launchCache = HashMap<String, Boolean>()
+    private fun launchable(pkg: String): Boolean = launchCache.getOrPut(pkg) {
+        packageManager.getLeanbackLaunchIntentForPackage(pkg) != null || packageManager.getLaunchIntentForPackage(pkg) != null
+    }
+
+    private var homeDown = 0L
+
+    /**
+     * Home button on the remote: open LEAD straight away instead of letting Google TV show its own home
+     * first. Held long (over 0.7 s) = Android settings. If LEAD ever hangs, Android stops waiting for this
+     * answer after a moment and Home goes to Google TV as usual – that is the safety net.
+     */
+    override fun onKeyEvent(event: android.view.KeyEvent): Boolean {
+        if (event.keyCode != android.view.KeyEvent.KEYCODE_HOME) return false
+        if (!Prefs(this).homeRedirect) return false
+        when (event.action) {
+            android.view.KeyEvent.ACTION_DOWN -> { if (event.repeatCount == 0) homeDown = event.eventTime }
+            android.view.KeyEvent.ACTION_UP -> {
+                val held = event.eventTime - homeDown
+                runCatching {
+                    if (held > 700) startActivity(Intent(android.provider.Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    else startActivity(Intent(this, MainActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED))
+                }
+            }
+        }
+        return true
     }
 
     override fun onInterrupt() {}

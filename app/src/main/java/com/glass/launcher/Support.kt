@@ -322,9 +322,12 @@ object AppLoader {
         val pm = ctx.packageManager
         val list = launchable(ctx).map { (p, ri) ->
             Triple(p, ri.loadLabel(pm).toString(), runCatching { ri.loadIcon(pm) }.getOrNull())
-        }.sortedBy { it.second.lowercase() }
-        return listOf(Triple(AppEntry.FILES, T.s("Files", "Fajlovi", "Dateien"),
-            ctx.getDrawable(R.drawable.lc_folder))) + list
+        }
+        val all = listOf(Triple(AppEntry.FILES, T.s("Files", "Fajlovi", "Dateien"), ctx.getDrawable(R.drawable.lc_folder))) + list
+        // the apps you open most often come first, the rest alphabetically
+        val use = Usage.counts(ctx)
+        return all.sortedWith(compareByDescending<Triple<String, String, Drawable?>> { use[it.first] ?: 0 }
+            .thenBy { it.second.lowercase() })
     }
 
     /** Installed user apps that start themselves when the box boots. */
@@ -339,6 +342,28 @@ object AppLoader {
             p to pm.getApplicationLabel(ai).toString()
         }.sortedBy { it.second.lowercase() }
     }
+}
+
+/** How often each app was opened – the "All apps" list learns from it. Older use slowly counts less. */
+object Usage {
+    private fun sp(ctx: Context) = ctx.getSharedPreferences("app_usage", Context.MODE_PRIVATE)
+
+    fun add(ctx: Context, pkg: String) {
+        val p = sp(ctx)
+        val all = p.all
+        val e = p.edit()
+        e.putInt(pkg, (p.getInt(pkg, 0) + 10))
+        // every 200 starts: halve everything, so what you use now beats what you used months ago
+        val total = p.getInt("_starts", 0) + 1
+        if (total >= 200) {
+            for ((k, v) in all) if (k != "_starts" && v is Int) e.putInt(k, v / 2)
+            e.putInt("_starts", 0)
+        } else e.putInt("_starts", total)
+        e.apply()
+    }
+
+    fun counts(ctx: Context): Map<String, Int> =
+        sp(ctx).all.filter { it.key != "_starts" }.mapNotNull { (k, v) -> (v as? Int)?.let { k to it } }.toMap()
 }
 
 /** Stops the background processes of apps the user blocked from auto-starting. */
@@ -882,7 +907,7 @@ object Weather {
 data class Movie(val title: String, val year: String, val rating: String, val kind: String, val overview: String, val image: String)
 
 object Movies {
-    private fun lang() = when (T.lang) { "bs" -> "bs-BA"; "de" -> "de-DE"; else -> "en-US" }
+    private fun lang() = when (T.lang) { "bs" -> "bs-BA"; "hr" -> "hr-HR"; "sr" -> "sr-RS"; "de" -> "de-DE"; else -> "en-US" }
 
     private fun get(key: String, path: String): org.json.JSONArray {
         val v4 = key.length > 40

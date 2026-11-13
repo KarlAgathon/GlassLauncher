@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Serbia: red, blue, white (with a simplified coat of arms) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="30dp" android:height="20dp" android:viewportWidth="60" android:viewportHeight="40">
+    <clip-path android:pathData="M7,0h46a7,7 0 0 1 7,7v26a7,7 0 0 1 -7,7h-46a7,7 0 0 1 -7,-7v-26a7,7 0 0 1 7,-7z" />
+    <path android:fillColor="#FFC6363C" android:pathData="M0,0h60v13.4h-60z" />
+    <path android:fillColor="#FF0C4076" android:pathData="M0,13.3h60v13.4h-60z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M0,26.6h60v13.4h-60z" />
+    <path android:fillColor="#FFC6363C" android:strokeColor="#FFEDB92E" android:strokeWidth="0.8"
+        android:pathData="M15,9h9v11c0,3.5 -2.2,5.5 -4.5,6.5c-2.3,-1 -4.5,-3 -4.5,-6.5z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M19,11h1v12h-1zM16.5,15h6v1h-6z" />
+</vector>

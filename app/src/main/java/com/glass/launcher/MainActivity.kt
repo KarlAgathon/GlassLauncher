@@ -760,6 +760,8 @@ class MainActivity : Activity() {
     private fun launch(pkg: String, label: String) {
         val i = packageManager.getLeanbackLaunchIntentForPackage(pkg) ?: packageManager.getLaunchIntentForPackage(pkg)
         if (i == null) { toast(T.s("Can't open $label", "Ne mogu otvoriti $label", "$label lässt sich nicht öffnen")); return }
+        // the helper service counts app starts itself (also outside LEAD); without it count here
+        if (HomeService.instance == null) Usage.add(this, pkg)
         try { startActivity(i) } catch (ex: Exception) { toast(T.s("Can't open $label", "Ne mogu otvoriti $label", "$label lässt sich nicht öffnen")) }
     }
 
@@ -862,13 +864,13 @@ class MainActivity : Activity() {
                     list.map { (pkg, label, icon) ->
                         GlassMenu.Item(label, drawable = icon,
                             longAction = if (pkg == AppEntry.FILES) null else ({ _: GlassMenu.Item -> appOptions(pkg, label) })) {
-                            if (pkg == AppEntry.FILES) startActivity(Intent(this, FileBrowserActivity::class.java))
+                            if (pkg == AppEntry.FILES) { Usage.add(this, pkg); startActivity(Intent(this, FileBrowserActivity::class.java)) }
                             else launch(pkg, label)
                         }
                     },
-                    T.s("OK opens · hold OK (or right click) for app options",
-                        "OK otvara · drži OK (ili desni klik) za opcije aplikacije",
-                        "OK öffnet · OK halten (oder Rechtsklick) für App-Optionen"))
+                    T.s("Most used first · hold OK (or right click) for app options",
+                        "Najkorištenije prve · drži OK (ili desni klik) za opcije aplikacije",
+                        "Meistgenutzte zuerst · OK halten (oder Rechtsklick) für App-Optionen"))
             }
         }.start()
     }
@@ -1083,9 +1085,9 @@ class MainActivity : Activity() {
             GlassMenu.Item(T.s("File browser", "File browser", "Dateimanager"), R.drawable.lc_folder) {
                 startActivity(Intent(this, FileBrowserActivity::class.java))
             },
-            GlassMenu.Item(T.s("Update", "Ažuriranje", "Update"), R.drawable.lc_refresh_cw, value = "v" + Updater.currentName(this)) { updateMenu() },
             GlassMenu.Item(T.s("App updates", "Ažuriranja aplikacija", "App-Updates"), R.drawable.lc_download,
                 value = AppUpdates.list(this).size.takeIf { it > 0 }?.toString()) { appUpdatesMenu() },
+            GlassMenu.Item(T.s("Update", "Ažuriranje", "Update"), R.drawable.lc_refresh_cw, value = "v" + Updater.currentName(this)) { updateMenu() },
         ))
     }
 

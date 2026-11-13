@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Croatia: red, white, blue with the red-white checkerboard shield -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="30dp" android:height="20dp" android:viewportWidth="60" android:viewportHeight="40">
+    <clip-path android:pathData="M7,0h46a7,7 0 0 1 7,7v26a7,7 0 0 1 -7,7h-46a7,7 0 0 1 -7,-7v-26a7,7 0 0 1 7,-7z" />
+    <path android:fillColor="#FFFF0000" android:pathData="M0,0h60v13.4h-60z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M0,13.3h60v13.4h-60z" />
+    <path android:fillColor="#FF171796" android:pathData="M0,26.6h60v13.4h-60z" />
+    <path android:fillColor="#FFFFFFFF" android:strokeColor="#FF171796" android:strokeWidth="0.6"
+        android:pathData="M24,9h12v12c0,4 -3,6.5 -6,7.5c-3,-1 -6,-3.5 -6,-7.5z" />
+    <path android:fillColor="#FFFF0000"
+        android:pathData="M24,9h3v3h-3zM30,9h3v3h-3zM27,12h3v3h-3zM33,12h3v3h-3zM24,15h3v3h-3zM30,15h3v3h-3zM27,18h3v3h-3zM33,18h3v3h-3zM24,21h3v3h-3zM30,21h3v3h-3zM27,24h3v3h-3z" />
+</vector>
