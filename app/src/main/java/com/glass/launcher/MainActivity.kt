@@ -1811,16 +1811,34 @@ class MainActivity : Activity() {
                 if (n.isNotBlank()) { Profiles.rename(this, cur, n); applyLook() }
             }
         })
-        if (cur != Profiles.MAIN) {
-            items.add(GlassMenu.Item(T.s("Delete this profile", "Obriši ovaj profil", "Dieses Profil löschen"), R.drawable.lc_trash_2) {
-                Profiles.delete(this, cur); recreate()
-            })
-        }
+        items.add(GlassMenu.Item(T.s("Delete a profile…", "Obriši profil…", "Profil löschen…"), R.drawable.lc_trash_2) { deleteProfileMenu() })
         items.add(GlassMenu.Item(T.s("Google accounts", "Google računi", "Google-Konten"), R.drawable.lc_log_in,
             value = Profiles.savedAccount(this)) { accountsMenu() })
         val acc = Profiles.savedAccount(this)
         menu.show(T.s("Profile", "Profil", "Profil") + ": " + Profiles.name(this, cur), R.drawable.lc_user, items,
             if (acc != null) "Google: $acc" else null)
+    }
+
+    /** pick a profile to delete (the main profile stays – it holds the box's basic setup) */
+    private fun deleteProfileMenu() {
+        val others = Profiles.list(this).filter { it.first != Profiles.MAIN }
+        if (others.isEmpty()) {
+            toast(T.s("There is only the main profile – it can't be deleted", "Postoji samo glavni profil – on se ne može obrisati",
+                "Es gibt nur das Hauptprofil – es kann nicht gelöscht werden")); return
+        }
+        menu.show(T.s("Delete a profile", "Obriši profil", "Profil löschen"), R.drawable.lc_trash_2, others.map { (id, name) ->
+            GlassMenu.Item(name, R.drawable.lc_user, checked = id == prefs.profile) {
+                confirm(T.s("Delete profile", "Obriši profil", "Profil löschen"), R.drawable.lc_trash_2,
+                    T.s("Delete \"$name\" with its apps, wallpaper and settings?", "Obrisati \"$name\" sa njegovim aplikacijama, pozadinom i postavkama?",
+                        "\"$name\" mit Apps, Hintergrund und Einstellungen löschen?")) {
+                    val wasCurrent = id == prefs.profile
+                    Profiles.delete(this, id)
+                    toast(T.s("Profile deleted", "Profil obrisan", "Profil gelöscht"))
+                    if (wasCurrent) recreate() else deleteProfileMenu()
+                }
+            }
+        }, T.s("The main profile can be renamed but not deleted.", "Glavni profil se može preimenovati, ali ne i obrisati.",
+            "Das Hauptprofil kann umbenannt, aber nicht gelöscht werden."))
     }
 
     /** Google accounts on the box: which ones, which this profile uses, add / remove / switch. Stays open. */
