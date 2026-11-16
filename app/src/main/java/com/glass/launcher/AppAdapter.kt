@@ -86,7 +86,8 @@ class AppAdapter(
         if (wide) {
             ilp.width = ViewGroup.LayoutParams.MATCH_PARENT
             ilp.height = ViewGroup.LayoutParams.MATCH_PARENT
-            val pad = if (stretch) 0 else (hPx * 0.14f).toInt()
+            // Light (four logos across the screen): the logo almost fills its place
+            val pad = if (stretch) 0 else (hPx * if (prefs.fitScreen) 0.04f else 0.14f).toInt()
             h.icon.setPadding(pad * 2, pad, pad * 2, pad)
             h.icon.scaleType = if (stretch) ImageView.ScaleType.CENTER_CROP else ImageView.ScaleType.FIT_CENTER
         } else {

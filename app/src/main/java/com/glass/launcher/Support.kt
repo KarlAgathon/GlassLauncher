@@ -117,6 +117,9 @@ object Profiles {
 
 class Prefs(ctx: Context) {
     companion object {
+        /** tile size worked out from the screen width (Light: four logos fill the screen), in dp */
+        @Volatile var fitDp: Pair<Int, Int>? = null
+
         /** settings of another profile (e.g. a brand-new one) */
         fun forProfile(ctx: Context, id: String, block: (Prefs) -> Unit) {
             val old = Profiles.current(ctx)
@@ -227,6 +230,16 @@ class Prefs(ctx: Context) {
     /** GitHub apps (TizenTube, PRETORIAN, SofaDrop …) update themselves at night (needs Shizuku) */
     var nightUpdates: Boolean get() = bool("nightUpd", true); set(v) = putBool("nightUpd", v)
 
+    /** Light: four logos fill the width of the screen, bigger and evenly spread (any TV size) */
+    var fitScreen: Boolean get() = bool("fitScreen", false); set(v) = putBool("fitScreen", v)
+    /** profile / settings / power / VPN key / bell: 0 always, 1 auto-hide, 2 on demand */
+    var buttonsMode: Int get() = int("btnMode", 0); set(v) = putInt("btnMode", v)
+    var showProfileBtn: Boolean get() = bool("showProfileBtn", true); set(v) = putBool("showProfileBtn", v)
+    var showSettingsBtn: Boolean get() = bool("showSettingsBtn", true); set(v) = putBool("showSettingsBtn", v)
+    var showPowerBtn: Boolean get() = bool("showPowerBtn", true); set(v) = putBool("showPowerBtn", v)
+    /** Light's "everything on demand" was put on this profile once */
+    var lightDemandSet: Boolean get() = bool("lightDemand", false); set(v) = putBool("lightDemand", v)
+
     /** clock and date: 0 always, 1 auto-hide (appear when you go to the top), 2 on demand (one more Up at the top) */
     var clockMode: Int get() = int("clockMode", 0); set(v) = putInt("clockMode", v)
     /** in the evening and at night (20–7 h) the logos and the clock are a little dimmer */
@@ -251,15 +264,18 @@ class Prefs(ctx: Context) {
         pinned = DefaultApps.putTizenTube(pinned); tizenTubeSet = true
         when (v) {
             2 -> { tileShape = 0; logoWhite = false; logoNoBg = true; tileAlpha = 0; tileBorder = 0; tileClean = true; tileFrost = false
-                dock = false; showLabels = false; reflect = true; tileSize = 2; tileGap = 48; focusScale = 30; focusFrame = false
+                dock = false; showLabels = false; reflect = true; tileSize = 2; tileGap = 48; focusScale = 35; focusFrame = false
                 gridPosition = 1; gridAlign = 1; gridOffX = 0; gridOffY = 0; clockSide = 1; singleRow = true; showAddTile = false
-                statusMode = 1; showDate = true; dim = 0 }
+                statusMode = 2; clockMode = 2; buttonsMode = 2; fitScreen = true; lightDemandSet = true
+                showDate = true; dim = 0 }
             1 -> { tileShape = 0; logoWhite = false; logoNoBg = true; tileAlpha = 6; tileBorder = 0; tileClean = true; tileFrost = false
                 dock = false; showLabels = false; reflect = false; tileSize = 2; tileGap = 12; focusScale = 30; focusFrame = true
-                gridPosition = 2; gridAlign = 0; clockSide = 1; showAddTile = true; showDate = true; dim = 10 }
+                gridPosition = 2; gridAlign = 0; clockSide = 1; showAddTile = true; showDate = true; dim = 10
+                statusMode = 1; clockMode = 0; buttonsMode = 0; fitScreen = false }
             0 -> { tileShape = 0; logoWhite = false; logoNoBg = true; tileAlpha = 10; tileBorder = 0; tileClean = true; tileFrost = false
                 dock = false; showLabels = false; reflect = false; tileSize = 2; tileGap = 12; focusScale = 30; focusFrame = true
-                gridPosition = 2; gridAlign = 0; clockSide = 1; showAddTile = true; showDate = true; dim = 10 }
+                gridPosition = 2; gridAlign = 0; clockSide = 1; showAddTile = true; showDate = true; dim = 10
+                statusMode = 1; clockMode = 0; buttonsMode = 0; fitScreen = false }
         }
     }
 
@@ -268,6 +284,7 @@ class Prefs(ctx: Context) {
 
     /** tile size in dp: (width, height) */
     fun tileDp(): Pair<Int, Int> {
+        if (fitScreen) fitDp?.let { return it }
         val wide = listOf(150 to 84, 184 to 104, 220 to 124, 260 to 146)
         val sq = listOf(88, 108, 128, 152)
         val i = tileSize.coerceIn(0, 3)

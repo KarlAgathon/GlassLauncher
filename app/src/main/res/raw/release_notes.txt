@@ -1,4 +1,7 @@
 LEAD Launcher 9.1.1 BETA
+- Light: only the wallpaper and the apps; status bar, buttons, VPN key, clock and date come on demand (Up)
+- Light: four logos fill the screen width on any TV, bigger; the selected one grows 35 %
+- Status bar settings: switches for clock, date, profile, settings, power, VPN key, and when the buttons / clock show
 - Clock and date: Always / Auto-hide / On demand, like the status bar
 - Evening and night (20–7 h): logos and clock a little softer (can be switched off)
 - The small line at the top glows briefly when something new arrives

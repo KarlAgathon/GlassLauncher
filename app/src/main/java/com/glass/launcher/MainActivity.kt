@@ -154,8 +154,12 @@ class MainActivity : Activity() {
         }
         // TizenTube is LEAD's YouTube: put it on the home screen once (official YouTube off it, can be added again)
         if (!prefs.tizenTubeSet) { prefs.pinned = DefaultApps.putTizenTube(prefs.pinned); prefs.tizenTubeSet = true }
+        if (prefs.visualLook == 2 && !prefs.lightDemandSet) {
+            prefs.statusMode = 2; prefs.clockMode = 2; prefs.buttonsMode = 2; prefs.fitScreen = true; prefs.lightDemandSet = true
+            prefs.focusScale = 35
+        }
         // Light from the first 9.0 beta grew only 15 %: now 30 % like asked
-        if (prefs.visualLook == 2 && prefs.focusScale == 15) prefs.focusScale = 30
+        if (prefs.visualLook == 2 && prefs.focusScale == 15) prefs.focusScale = 35
         // Light: buttons go to the far right, time and date one row lower (was next to the buttons in the first beta)
         if (prefs.visualLook == 2 && prefs.clockSide == 2 && !prefs.clockMoved) { prefs.clockSide = 1; prefs.showDate = true; prefs.clockMoved = true }
         // a crash is written down; 3 crashes within 10 minutes = safe start (see safeStart)
@@ -422,6 +426,16 @@ class MainActivity : Activity() {
     /** Size, columns, alignment and dock of the app row(s). */
     private fun layoutGrid() {
         val d = resources.displayMetrics.density
+        // Light: four logos share the width of the screen (works on every TV size); 20 % of each place stays free
+        // so the selected logo can grow 30 % without touching its neighbours
+        if (prefs.fitScreen) {
+            val w = if (gridArea.width > 0) gridArea.width else resources.displayMetrics.widthPixels - (80 * d).toInt()
+            val place = w / 4f / d
+            val tw = (place * 0.82f).toInt()
+            Prefs.fitDp = tw to (tw * 0.56f).toInt()
+            val gap = (place - tw).toInt()
+            if (prefs.tileGap != gap) prefs.tileGap = gap
+        }
         val (tw, _) = prefs.tileDp()
         val cell = ((tw + prefs.tileGap) * d).toInt()
         val avail = if (gridArea.width > 0) gridArea.width else resources.displayMetrics.widthPixels - (80 * d).toInt()
@@ -836,7 +850,6 @@ class MainActivity : Activity() {
         // the VPN key sits next to the buttons and is always visible: green = VPN on, red = off
         findViewById<View>(R.id.vpnBox).visibility = View.GONE
         findViewById<ImageView>(R.id.vpnKey).let {
-            it.visibility = if (prefs.showVpn) View.VISIBLE else View.GONE
             it.setColorFilter(if (net.vpn) Color.rgb(52, 212, 122) else Color.rgb(255, 80, 80))
         }
 
@@ -1289,6 +1302,13 @@ class MainActivity : Activity() {
         if (!menu.isOpen && movingPos < 0 && k == KeyEvent.KEYCODE_DPAD_UP && event.action == KeyEvent.ACTION_DOWN) {
             val f = currentFocus
             if (f != null && (f === clock || isInGrid(f))) {
+                if (!shownBy(prefs.buttonsMode) || !shownBy(prefs.statusMode) || !shownBy(prefs.clockMode)) {
+                    // Light: the top is empty – Up brings everything in, then the cursor goes up
+                    setReveal(true)
+                    val again = KeyEvent(event)
+                    root.postDelayed({ dispatchKeyEvent(again) }, 60)
+                    return true
+                }
                 val loc = IntArray(2); f.getLocationOnScreen(loc)
                 val cx = loc[0] + f.width / 2
                 val sw = screenSize().first
@@ -1311,7 +1331,7 @@ class MainActivity : Activity() {
             }
             return true
         }
-        if (!menu.isOpen && !demandReveal && (prefs.statusMode == 2 || prefs.clockMode == 2) && k == KeyEvent.KEYCODE_DPAD_UP &&
+        if (!menu.isOpen && !demandReveal && (prefs.statusMode == 2 || prefs.clockMode == 2 || prefs.buttonsMode == 2) && k == KeyEvent.KEYCODE_DPAD_UP &&
             event.action == KeyEvent.ACTION_DOWN && inTopRow(currentFocus)) {
             // on demand: one more Up at the top shows the status bar and / or the clock
             setReveal(true)
@@ -1815,6 +1835,21 @@ class MainActivity : Activity() {
                     (0..2).map { statusModeName(it) to it }, prefs.statusMode) { prefs.statusMode = it; setReveal(false); applyLook() }
             },
             t(T.s("Icons only (no numbers)", "Samo ikone (bez brojeva)", "Nur Symbole (ohne Zahlen)"), R.drawable.lc_image, prefs.statusIconsOnly) { prefs.statusIconsOnly = it },
+            GlassMenu.header(T.s("Top of the screen", "Vrh ekrana", "Oben am Bildschirm")),
+            GlassMenu.Item(T.s("Buttons show", "Dugmad se prikazuju", "Knöpfe erscheinen"), R.drawable.lc_eye, value = statusModeName(prefs.buttonsMode)) {
+                choose(T.s("Buttons show", "Dugmad se prikazuju", "Knöpfe erscheinen"), R.drawable.lc_eye,
+                    (0..2).map { statusModeName(it) to it }, prefs.buttonsMode) { prefs.buttonsMode = it; setReveal(false); showPill() }
+            },
+            GlassMenu.Item(T.s("Clock and date show", "Sat i datum se prikazuju", "Uhr und Datum erscheinen"), R.drawable.lc_clock, value = statusModeName(prefs.clockMode)) {
+                choose(T.s("Clock and date show", "Sat i datum se prikazuju", "Uhr und Datum erscheinen"), R.drawable.lc_clock,
+                    (0..2).map { statusModeName(it) to it }, prefs.clockMode) { prefs.clockMode = it; setReveal(false); showPill() }
+            },
+            t(T.s("Clock", "Sat", "Uhr"), R.drawable.lc_clock, prefs.showClock) { prefs.showClock = it },
+            t(T.s("Date", "Datum", "Datum"), R.drawable.lc_type, prefs.showDate) { prefs.showDate = it },
+            t(T.s("Profile", "Profil", "Profil"), R.drawable.lc_user, prefs.showProfileBtn) { prefs.showProfileBtn = it },
+            t(T.s("Settings", "Postavke", "Einstellungen"), R.drawable.lc_settings, prefs.showSettingsBtn) { prefs.showSettingsBtn = it },
+            t(T.s("Power", "Napajanje", "Energie"), R.drawable.lc_power, prefs.showPowerBtn) { prefs.showPowerBtn = it },
+            t(T.s("VPN key", "VPN ključ", "VPN-Schlüssel"), R.drawable.lc_key_round, prefs.showVpn) { prefs.showVpn = it },
             GlassMenu.Item(T.s("Status bar transparency", "Providnost statusne trake", "Transparenz der Statusleiste"), R.drawable.lc_layers,
                 value = "${prefs.statusClear}%") {
                 choose(T.s("Status bar transparency (0 % = solid, 100 % = clear)", "Providnost statusne trake (0 % = puna, 100 % = providna)",
@@ -1825,10 +1860,8 @@ class MainActivity : Activity() {
                 R.drawable.lc_layers, prefs.statusLikeTiles) { prefs.statusLikeTiles = it },
             t(T.s("Adaptive (follows the wallpaper)", "Adaptivno (prati pozadinu)", "Adaptiv (passt sich dem Hintergrund an)"),
                 R.drawable.lc_sun_dim, prefs.statusAdaptive) { prefs.statusAdaptive = it },
-            t(T.s("Clock", "Sat", "Uhr"), R.drawable.lc_clock, prefs.showClock) { prefs.showClock = it },
             t(T.s("Weather", "Vrijeme", "Wetter"), R.drawable.lc_cloud_sun, prefs.showWeather) { prefs.showWeather = it; lastWeather = 0 },
             t("Wi-Fi / LAN", R.drawable.lc_wifi, prefs.showNetwork) { prefs.showNetwork = it },
-            t("VPN", R.drawable.lc_key_round, prefs.showVpn) { prefs.showVpn = it },
             t("Bluetooth", R.drawable.lc_bluetooth, prefs.showBluetooth) { prefs.showBluetooth = it },
             t(T.s("Notifications", "Obavještenja", "Benachrichtigungen"), R.drawable.lc_bell, prefs.showNotifs) { prefs.showNotifs = it },
             t("CPU %", R.drawable.lc_cpu, prefs.showCpu) { prefs.showCpu = it },
@@ -1903,6 +1936,13 @@ class MainActivity : Activity() {
             }
         }
         (clock.parent as? View)?.let { col -> fade(col, shownBy(prefs.clockMode)) { shownBy(prefs.clockMode) } }
+        // round buttons, VPN key and bell: each can be switched off; all follow "When the buttons show"
+        val btnShow = shownBy(prefs.buttonsMode)
+        for ((v, want) in listOf(profileBtn to prefs.showProfileBtn, settingsBtn to prefs.showSettingsBtn, powerBtn to prefs.showPowerBtn,
+                findViewById<View>(R.id.vpnKey) to prefs.showVpn, (bellBadge ?: profileBtn) to (bellBadge != null && bellCount() > 0))) {
+            if (v === profileBtn && bellBadge == null && want == false) continue
+            if (!want) { v.animate().cancel(); v.visibility = View.GONE } else fade(v, btnShow) { shownBy(prefs.buttonsMode) }
+        }
         if (!pillWanted) { statusPill.visibility = View.GONE; statusHandle?.visibility = View.GONE; return }
         val show = shownBy(prefs.statusMode)
         statusHandle?.visibility = if (show) View.GONE else View.VISIBLE
@@ -1983,7 +2023,7 @@ class MainActivity : Activity() {
         val c = bellCount()
         if (lastBell >= 0 && c > lastBell) glowHandle()
         lastBell = c
-        b.visibility = if (c > 0) View.VISIBLE else View.GONE
+        showPill()
         bellText?.text = c.toString()
     }
 
