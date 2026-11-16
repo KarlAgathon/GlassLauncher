@@ -31,6 +31,8 @@ object AppUpdates {
         "com.liskovsoft.smarttubetv.beta" to "yuliskov/SmartTube",
         "com.teamsmart.videomanager.tv" to "yuliskov/SmartTube",
         "moe.shizuku.privileged.api" to "thedjchi/Shizuku",
+        "io.gh.reisxd.tizentube.cobalt" to "reisxd/TizenTubeCobalt",
+        "com.pretorian.tv" to "KarlAgathon/PRETORIAN",
         "com.rfmarcos.sofadrop" to "rfmarcos/sofadrop",
     )
 

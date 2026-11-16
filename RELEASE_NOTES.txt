@@ -1,4 +1,7 @@
-LEAD Launcher 9.0.1 BETA
+LEAD Launcher 9.0.2 BETA
+- TizenTube is LEAD's YouTube in every look, with the YouTube Premium icon; official YouTube taken off the home screen (can be added again)
+- TizenTube and PRETORIAN install and update from their GitHub (newest stable)
+- Fresh install checks LEAD and all apps for updates right after the first start
 - No frame and no dark shadow box around the selected icon (Light); it just grows 30 %
 - Icons and tiles: new switch "Frame around the selected icon"
 - Visual Look: Light (floating logos with reflections), Semi (glass tiles), Modern (SofaDrop)

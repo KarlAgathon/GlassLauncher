@@ -144,10 +144,14 @@ class MainActivity : Activity() {
                     // a fresh LEAD: Light look on the LEAD wallpaper, with PRETORIAN IPTV, YouTube, Disney+ and Netflix
                     prefs.applyVisualLook(2)
                     prefs.pinned = DefaultApps.list(this)
+                    // a fresh box: look for updates of LEAD and all apps right after the first start
+                    handler.postDelayed({ firstUpdateCheck() }, 20_000)
                 }
                 g.edit().putBoolean("installSeen", true).apply()
             }
         }
+        // TizenTube is LEAD's YouTube: put it on the home screen once (official YouTube off it, can be added again)
+        if (!prefs.tizenTubeSet) { prefs.pinned = DefaultApps.putTizenTube(prefs.pinned); prefs.tizenTubeSet = true }
         // Light from the first 9.0 beta grew only 15 %: now 30 % like asked
         if (prefs.visualLook == 2 && prefs.focusScale == 15) prefs.focusScale = 30
         // icons that come with LEAD (TiviMate, YouTube, Disney+ …)
@@ -1372,14 +1376,15 @@ class MainActivity : Activity() {
 
     /** a default app (PRETORIAN, Netflix …) is not on the box yet: install it from its official place */
     private fun installMissing(e: AppEntry) {
-        if (e.pkg == DefaultApps.PRETORIAN) {
-            confirm(e.label, R.drawable.lc_download, T.s("PRETORIAN IPTV is not installed yet. Install the newest stable version from GitHub?",
-                "PRETORIAN IPTV još nije instaliran. Instalirati najnoviju stabilnu verziju sa GitHuba?",
-                "PRETORIAN IPTV ist noch nicht installiert. Neueste stabile Version von GitHub installieren?")) {
-                toast(T.s("Downloading PRETORIAN…", "Preuzimam PRETORIAN…", "Lade PRETORIAN…"))
+        if (DefaultApps.repo(e.pkg) != null) {
+            val n = if (e.pkg == DefaultApps.TIZENTUBE) "TizenTube (YouTube)" else "PRETORIAN IPTV"
+            confirm(e.label, R.drawable.lc_download, T.s("$n is not installed yet. Install the newest stable version from GitHub?",
+                "$n još nije instaliran. Instalirati najnoviju stabilnu verziju sa GitHuba?",
+                "$n ist noch nicht installiert. Neueste stabile Version von GitHub installieren?")) {
+                toast(T.s("Downloading ", "Preuzimam ", "Lade ") + n + "…")
                 Extras.install(this, e.pkg, null) { m ->
                     val pct = m.removeSuffix("%").trim().toIntOrNull()
-                    if (pct == null || pct % 25 == 0) toast(if (pct != null) "PRETORIAN $m" else m)
+                    if (pct == null || pct % 25 == 0) toast(if (pct != null) "$n $m" else m)
                 }
             }
         } else {
@@ -1387,6 +1392,16 @@ class MainActivity : Activity() {
                 "${e.label} još nije instaliran. Otvoriti ga u Google Play prodavnici?",
                 "${e.label} ist noch nicht installiert. In Google Play öffnen?")) { openStore(e.pkg) }
         }
+    }
+
+    /** first start: LEAD update + all apps (TizenTube, PRETORIAN … from GitHub, the rest from Play) */
+    private fun firstUpdateCheck() {
+        maybeCheckUpdate(0)
+        Thread {
+            val l = runCatching { AppUpdates.checkAll(this) }.getOrDefault(emptyList())
+            if (l.isNotEmpty()) runCatching { AppUpdates.notify(this, l) }
+            handler.post { showUpdateChip(animate = l.isNotEmpty()) }
+        }.start()
     }
 
     private fun openStore(pkg: String) {

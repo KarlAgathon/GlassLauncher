@@ -65,19 +65,34 @@ object DefaultApps {
     const val PRETORIAN_REPO = "KarlAgathon/PRETORIAN"
     const val NETFLIX = "com.netflix.ninja"
     const val DISNEY = "com.disney.disneyplus"
-    private val YOUTUBES = listOf("io.gh.reisxd.tizentube.cobalt", "com.teamsmart.videomanager.tv",
-        "com.liskovsoft.smarttubetv.beta", "com.liskovsoft.smarttubetv", "com.google.android.youtube.tv")
+    /** the YouTube of LEAD: TizenTube (no ads), always with the YouTube Premium icon */
+    const val TIZENTUBE = "io.gh.reisxd.tizentube.cobalt"
+    const val TIZENTUBE_REPO = "reisxd/TizenTubeCobalt"
+    const val YOUTUBE_OFFICIAL = "com.google.android.youtube.tv"
 
-    fun isDefault(pkg: String) = pkg == PRETORIAN || pkg == NETFLIX || pkg == DISNEY || pkg in YOUTUBES
+    fun isDefault(pkg: String) = pkg == PRETORIAN || pkg == NETFLIX || pkg == DISNEY || pkg == TIZENTUBE
 
     fun name(pkg: String) = when (pkg) {
         PRETORIAN -> "PRETORIAN IPTV"; NETFLIX -> "Netflix"; DISNEY -> "Disney+"; else -> "YouTube"
     }
 
-    /** the YouTube that is on the box (TizenTube / SmartTube / the official one) */
-    fun youtube(ctx: Context) = YOUTUBES.firstOrNull { Extras.installed(ctx, it) } ?: "com.google.android.youtube.tv"
+    /** GitHub repo a default app is installed from (newest stable release), or null = Google Play */
+    fun repo(pkg: String) = when (pkg) { PRETORIAN -> PRETORIAN_REPO; TIZENTUBE -> TIZENTUBE_REPO; else -> null }
 
-    fun list(ctx: Context) = listOf(PRETORIAN, youtube(ctx), DISNEY, NETFLIX)
+    @Suppress("UNUSED_PARAMETER")
+    fun list(ctx: Context) = listOf(PRETORIAN, TIZENTUBE, DISNEY, NETFLIX)
+
+    /**
+     * TizenTube is LEAD's YouTube in every look: it takes the official YouTube's place on the home screen
+     * (the official one is only taken off the home screen – you can add it again any time).
+     */
+    fun putTizenTube(pinned: List<String>): List<String> {
+        val l = pinned.toMutableList()
+        val at = l.indexOf(YOUTUBE_OFFICIAL)
+        l.remove(YOUTUBE_OFFICIAL)
+        if (TIZENTUBE !in l) l.add(if (at >= 0) at.coerceAtMost(l.size) else 1.coerceAtMost(l.size), TIZENTUBE)
+        return l
+    }
 }
 
 /** Add-ons LEAD can fetch and install by itself (from their official GitHub releases). */
@@ -94,9 +109,8 @@ object Extras {
             try {
                 val real = url ?: when (pkg) {
                     SHIZUKU -> AppUpdates.github("thedjchi/Shizuku")?.second
-                    // PRETORIAN: always the newest STABLE release (GitHub's "latest" never points to a beta)
-                    DefaultApps.PRETORIAN -> AppUpdates.github(DefaultApps.PRETORIAN_REPO)?.second
-                    else -> null
+                    // PRETORIAN / TizenTube: always the newest STABLE release (GitHub's "latest" never points to a beta)
+                    else -> DefaultApps.repo(pkg)?.let { AppUpdates.github(it)?.second }
                 }
                 if (real.isNullOrBlank()) throw IllegalStateException()
                 val f = File(act.cacheDir, "$pkg.apk")

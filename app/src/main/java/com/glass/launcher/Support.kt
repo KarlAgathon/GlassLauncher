@@ -164,9 +164,13 @@ class Prefs(ctx: Context) {
     /** status bar: icons only, no numbers or names */
     var statusIconsOnly: Boolean get() = bool("sIconsOnly", false); set(v) = putBool("sIconsOnly", v)
 
-    /** one of the three looks: changes only how things look, never your apps */
+    /** TizenTube (with the YouTube Premium icon) put on the home screen once in place of the official YouTube */
+    var tizenTubeSet: Boolean get() = bool("ttSet", false); set(v) = putBool("ttSet", v)
+
+    /** one of the three looks: changes only how things look; TizenTube is the YouTube in every look */
     fun applyVisualLook(v: Int) {
         visualLook = v
+        pinned = DefaultApps.putTizenTube(pinned); tizenTubeSet = true
         when (v) {
             2 -> { tileShape = 0; logoWhite = false; logoNoBg = true; tileAlpha = 0; tileBorder = 0; tileClean = true; tileFrost = false
                 dock = false; showLabels = false; reflect = true; tileSize = 2; tileGap = 48; focusScale = 30; focusFrame = false
