@@ -67,17 +67,63 @@ object Profiles {
         g(ctx).edit().putString("ids", ids.joinToString(",")).remove("name_$id").apply()
         ctx.getSharedPreferences(prefsName(id), Context.MODE_PRIVATE).edit().clear().apply()
         File(ctx.filesDir, wallpaperName(id)).delete()
+        photo(ctx, id).delete()
         if (current(ctx) == id) setCurrent(ctx, MAIN)
     }
 
     fun prefsName(id: String) = if (id == MAIN) "glass" else "glass_$id"
     fun wallpaperName(id: String) = if (id == MAIN) "wallpaper" else "wallpaper_$id"
 
+    /** picture on the round profile button (instead of the letter) */
+    fun photo(ctx: Context, id: String) = File(ctx.filesDir, "profile_photo_$id")
+
+    /** what can be copied from one profile to a new one */
+    val GROUPS = listOf("apps", "look", "wallpaper", "status", "weather", "saver", "lang", "other")
+
+    fun groupOf(k: String): String = when {
+        k == "pinned" || k.startsWith("label_") -> "apps"
+        k.startsWith("wp") || k.startsWith("tmdb") || k in setOf("blur", "movieInfo", "leadWp", "nightDim") -> "wallpaper"
+        k in setOf("city", "lat", "lon", "weatherMin", "wF", "wIcons") -> "weather"
+        k.startsWith("saver") || k.startsWith("idle") -> "saver"
+        k == "lang" -> "lang"
+        k.startsWith("clock") || (k.length > 1 && k[0] == 's' && k[1].isUpperCase()) -> "status"
+        k in setOf("vLook", "dim2", "iconStyle2", "columns2", "gridPos", "labels3", "glassAlpha2", "gridAlign", "gridOffX", "gridOffY",
+            "oneRow2", "addTileEnd", "perfMode", "perfPrevWp", "nameFocus", "numKeys") ||
+            (k.length > 1 && k[0] == 't' && k[1].isUpperCase()) -> "look"
+        else -> "other"
+    }
+
+    /** copies the chosen parts of profile [from] into the new profile [to] */
+    fun copy(ctx: Context, from: String, to: String, groups: Set<String>) {
+        val src = ctx.getSharedPreferences(prefsName(from), Context.MODE_PRIVATE).all
+        val e = ctx.getSharedPreferences(prefsName(to), Context.MODE_PRIVATE).edit()
+        for ((k, v) in src) {
+            if (groupOf(k) !in groups) continue
+            when (v) {
+                is Boolean -> e.putBoolean(k, v); is Int -> e.putInt(k, v); is Long -> e.putLong(k, v)
+                is Float -> e.putFloat(k, v); is String -> e.putString(k, v)
+                is Set<*> -> e.putStringSet(k, v.filterIsInstance<String>().toSet())
+            }
+        }
+        e.apply()
+        if ("wallpaper" in groups) runCatching {
+            val f = File(ctx.filesDir, wallpaperName(from)); if (f.exists()) f.copyTo(File(ctx.filesDir, wallpaperName(to)), true)
+        }
+    }
+
     fun savedAccount(ctx: Context): String? = g(ctx).getString("google", null)
     fun saveAccount(ctx: Context, name: String) = g(ctx).edit().putString("google", name).apply()
 }
 
 class Prefs(ctx: Context) {
+    companion object {
+        /** settings of another profile (e.g. a brand-new one) */
+        fun forProfile(ctx: Context, id: String, block: (Prefs) -> Unit) {
+            val old = Profiles.current(ctx)
+            Profiles.setCurrent(ctx, id)
+            try { block(Prefs(ctx)) } finally { Profiles.setCurrent(ctx, old) }
+        }
+    }
     val profile: String = Profiles.current(ctx)
     private val sp = ctx.getSharedPreferences(Profiles.prefsName(profile), Context.MODE_PRIVATE)
 
@@ -163,6 +209,23 @@ class Prefs(ctx: Context) {
     var focusFrame: Boolean get() = bool("tFocusFrame", !(reflect && tileAlpha == 0)); set(v) = putBool("tFocusFrame", v)
     /** status bar: icons only, no numbers or names */
     var statusIconsOnly: Boolean get() = bool("sIconsOnly", false); set(v) = putBool("sIconsOnly", v)
+
+    /** LEAD wallpaper colour: 0 blue, 1 black, 2 green, 3 purple */
+    var leadWp: Int get() = int("leadWp", 0); set(v) = putInt("leadWp", v)
+    /** wallpaper a bit darker in the evening and at night (20–7 h) */
+    var nightDim: Boolean get() = bool("nightDim", false); set(v) = putBool("nightDim", v)
+    /** weather in °F instead of °C */
+    var weatherF: Boolean get() = bool("wF", false); set(v) = putBool("wF", v)
+    /** weather icon: 0 minimal, 1 outline, 2 filled (coloured) */
+    var weatherIcons: Int get() = int("wIcons", 1); set(v) = putInt("wIcons", v)
+    /** which notifications show at the bell: 0 important, 1 critical only, 2 all, 3 none */
+    var notifMode: Int get() = int("nMode", 2); set(v) = putInt("nMode", v)
+    /** number keys 1–9 of the remote open the first nine apps */
+    var numberKeys: Boolean get() = bool("numKeys", true); set(v) = putBool("numKeys", v)
+    /** the name of the selected app shows under its logo (also when names are off) */
+    var nameOnFocus: Boolean get() = bool("nameFocus", true); set(v) = putBool("nameFocus", v)
+    /** GitHub apps (TizenTube, PRETORIAN, SofaDrop …) update themselves at night (needs Shizuku) */
+    var nightUpdates: Boolean get() = bool("nightUpd", true); set(v) = putBool("nightUpd", v)
 
     /** the clock of the first 9.0 beta was moved below the buttons once */
     var clockMoved: Boolean get() = bool("clockMoved", false); set(v) = putBool("clockMoved", v)
@@ -516,6 +579,21 @@ object Bitmaps {
         }
         Canvas(moved).drawRect(0f, 0f, moved.width.toFloat(), outH.toFloat(), fade)
         return moved
+    }
+
+    /** a picture from the app itself, decoded no bigger than needed (less memory) */
+    fun decodeResScaled(ctx: Context, res: Int, reqW: Int, reqH: Int): Bitmap? {
+        val o = BitmapFactory.Options().apply { inJustDecodeBounds = true; inScaled = false }
+        BitmapFactory.decodeResource(ctx.resources, res, o)
+        var s = 1
+        while (o.outWidth / (s * 2) >= reqW && o.outHeight / (s * 2) >= reqH) s *= 2
+        return BitmapFactory.decodeResource(ctx.resources, res, BitmapFactory.Options().apply { inSampleSize = s; inScaled = false })
+    }
+
+    /** the LEAD wallpaper in the chosen colour */
+    fun leadWallpaper(colour: Int) = when (colour) {
+        1 -> R.drawable.wallpaper_lead_black; 2 -> R.drawable.wallpaper_lead_green; 3 -> R.drawable.wallpaper_lead_purple
+        else -> R.drawable.wallpaper_default
     }
 
     fun decodeScaled(f: File, reqW: Int, reqH: Int): Bitmap? {
@@ -955,9 +1033,13 @@ object Http {
 /* ================================================================ weather (Open-Meteo, no key) */
 
 object Weather {
+    /** °F instead of °C (Settings › Weather) */
+    @Volatile var fahrenheit = false
+    private fun unit() = if (fahrenheit) "&temperature_unit=fahrenheit" else ""
+
     /** (icon, "7°") or null. Call off the main thread. */
     fun current(lat: Float, lon: Float): Pair<Int, String>? = runCatching {
-        val json = JSONObject(Http.text("https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon&current=temperature_2m,weather_code,is_day"))
+        val json = JSONObject(Http.text("https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon&current=temperature_2m,weather_code,is_day" + unit()))
         val cur = json.getJSONObject("current")
         // at night: moon instead of sun
         icon(cur.getInt("weather_code"), cur.optInt("is_day", 1) == 1) to "${Math.round(cur.getDouble("temperature_2m"))}°"
@@ -965,7 +1047,7 @@ object Weather {
 
     /** Next days: (day name, icon, "max° / min°"). Call off the main thread. */
     fun forecast(lat: Float, lon: Float): List<Triple<String, Int, String>> = runCatching {
-        val j = JSONObject(Http.text("https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=5"))
+        val j = JSONObject(Http.text("https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=5" + unit()))
             .getJSONObject("daily")
         val days = j.getJSONArray("time"); val codes = j.getJSONArray("weather_code")
         val mx = j.getJSONArray("temperature_2m_max"); val mn = j.getJSONArray("temperature_2m_min")

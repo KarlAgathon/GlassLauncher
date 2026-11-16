@@ -190,7 +190,7 @@ object AppUpdates {
 
     // ------------------------------------------------------------------ notification
 
-    private const val CHANNEL = "updates"
+    private const val CHANNEL = "updates_quiet"
 
     fun notify(ctx: Context, l: List<Update>) {
         val st = store(ctx)
@@ -200,7 +200,7 @@ object AppUpdates {
         val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= 26) {
             nm.createNotificationChannel(NotificationChannel(CHANNEL,
-                T.s("Updates", "Ažuriranja", "Updates"), NotificationManager.IMPORTANCE_HIGH))
+                T.s("Updates", "Ažuriranja", "Updates"), NotificationManager.IMPORTANCE_DEFAULT))
         }
         val open = PendingIntent.getActivity(ctx, 3,
             Intent(ctx, MainActivity::class.java).putExtra(MainActivity.EXTRA_SHOW_APP_UPDATES, true)
@@ -219,9 +219,47 @@ object AppUpdates {
             .setAutoCancel(true)
             .build()
         runCatching { nm.notify(78, n) }
-        android.os.Handler(android.os.Looper.getMainLooper()).post {
-            HomeService.instance?.showBanner(title + " – " + l.take(3).joinToString(", ") { it.label })
+    }
+
+    // ------------------------------------------------------------------ at night
+
+    /**
+     * Between 3 and 5 at night: apps from GitHub (TizenTube, PRETORIAN, SofaDrop …) are updated quietly through Shizuku.
+     * In the morning one notification says what was updated. Play Store apps are only announced, never touched.
+     */
+    fun nightUpdate(ctx: Context) {
+        val p = Prefs(ctx)
+        if (!p.nightUpdates || !ShizukuCpu.permitted()) return
+        val h = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+        if (h !in 3..5) return
+        val today = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US).format(java.util.Date())
+        val st = store(ctx)
+        if (st.getString("nightDay", "") == today) return
+        st.edit().putString("nightDay", today).apply()
+        val todo = checkAll(ctx).filter { it.source == "github" && it.apk.isNotBlank() }
+        val done = mutableListOf<String>()
+        val dir = File(ctx.cacheDir, "night-updates").apply { mkdirs() }
+        for (u in todo) runCatching {
+            val f = File(dir, u.pkg + ".apk")
+            val c = URL(u.apk).openConnection() as HttpURLConnection
+            c.connectTimeout = 15_000; c.readTimeout = 60_000
+            c.inputStream.use { inp -> f.outputStream().use { inp.copyTo(it) } }
+            c.disconnect()
+            if (AppInstaller.silent(f)) done.add(u.label + " " + u.remote)
+            f.delete()
         }
+        if (done.isEmpty()) return
+        save(ctx, list(ctx).filter { u -> done.none { it.startsWith(u.label + " ") } })
+        val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (Build.VERSION.SDK_INT >= 26) nm.createNotificationChannel(NotificationChannel(CHANNEL,
+            T.s("Updates", "Ažuriranja", "Updates"), NotificationManager.IMPORTANCE_DEFAULT))
+        val title = T.s("Updated tonight: ", "Noćas ažurirano: ", "Heute Nacht aktualisiert: ") + done.size
+        @Suppress("DEPRECATION")
+        val b = if (Build.VERSION.SDK_INT >= 26) android.app.Notification.Builder(ctx, CHANNEL) else android.app.Notification.Builder(ctx)
+        runCatching { nm.notify(79, b.setSmallIcon(R.drawable.lc_download).setContentTitle(title)
+            .setContentText(done.joinToString(", ")).setStyle(android.app.Notification.BigTextStyle().bigText(done.joinToString("\n")))
+            .setAutoCancel(true).build()) }
+        ctx.getSharedPreferences("glass_global", Context.MODE_PRIVATE).edit().putString("nightDone", done.joinToString(", ")).apply()
     }
 
     // ------------------------------------------------------------------ updating one app

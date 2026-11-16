@@ -1,20 +1,17 @@
-LEAD Launcher 9.0.3 BETA
-- New language: Russian (Русский)
-- Light: profile, settings and power at the far right; time and date one row lower
-- VPN key lined up with the buttons; Date moved from Status bar to Clock settings
-- TizenTube is LEAD's YouTube in every look, with the YouTube Premium icon; official YouTube taken off the home screen (can be added again)
-- TizenTube and PRETORIAN install and update from their GitHub (newest stable)
-- Fresh install checks LEAD and all apps for updates right after the first start
-- No frame and no dark shadow box around the selected icon (Light); it just grows 30 %
-- Icons and tiles: new switch "Frame around the selected icon"
-- Visual Look: Light (floating logos with reflections), Semi (glass tiles), Modern (SofaDrop)
-- Fresh install: Light look, LEAD wallpaper, PRETORIAN IPTV, YouTube, Disney+, Netflix
-- Missing default apps keep their place: PRETORIAN from GitHub (stable), others via Google Play
-- Built-in icons: PRETORIAN IPTV, Netflix, YouTube, YouTube Premium, Disney+, TiviMate, Nuvio
-- Status bar hides itself (Always / Auto-hide / On demand), sharper, icons-only option
-- VPN key, profile, settings, power and clock always visible
-- Settings as a glass sheet on the right, new order with groups, green sliders like PRETORIAN
-- Text size for the whole launcher
-- Long press › Change icon: own picture, search the internet, link, LEAD icon, original
-- App updates checked 4 times a day; notification opens the update screen directly
-- Beta / Stable channel, SHA-256 check of every LEAD download
+LEAD Launcher 9.1 BETA
+- Updates and notifications are never written on the screen: a small bell with a number appears in the top row; OK opens the notification center, every entry leads straight to its place (LEAD update, app update, the app itself)
+- Notification center: which notifications (Important / Critical / All / None), hidden apps, Clear all with a question
+- Light: profile, settings and power at the far right, time and date one row lower; VPN key in line with the buttons
+- Performance / Normal mode are now part of Visual Look (Light = fastest)
+- New profile: start fresh or copy from another profile with switches (Select all / Deselect all); picture as profile icon
+- Weather: °C / °F and icon style Minimal / Outline / Filled; long press on the weather = weather settings, OK on the clock = clock settings
+- LEAD wallpapers in blue, black, green and purple; darker at night (optional); decoded only as big as the screen
+- Screensaver: start after 1 min – 1 h, change pictures every 30 s – 15 min, Preview
+- Remote: number keys 1–9 open the first apps; after Home the cursor stays on the app you opened
+- The selected app's name shows softly under its logo
+- Reflections kept on disk (faster start)
+- GitHub apps (TizenTube, PRETORIAN, SofaDrop) update themselves at night with Shizuku
+- Updates: What's new, Mark as Stable from the TV (GitHub token once)
+- Safe start after 3 crashes in 10 minutes
+- New language: Russian; settings sheet no longer lets the home screen show through
+- TizenTube with the YouTube Premium icon is LEAD's YouTube in every look

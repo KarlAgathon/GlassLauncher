@@ -82,7 +82,8 @@ object SaverWeather {
     fun load(lat: Float, lon: Float): Pair<Now, List<Day>>? = runCatching {
         val j = JSONObject(Http.text("https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon" +
             "&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code,is_day" +
-            "&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=7"))
+            "&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=7" +
+            (if (Weather.fahrenheit) "&temperature_unit=fahrenheit" else "")))
         val c = j.getJSONObject("current"); val d = j.getJSONObject("daily")
         val days = d.getJSONArray("time"); val codes = d.getJSONArray("weather_code")
         val mx = d.getJSONArray("temperature_2m_max"); val mn = d.getJSONArray("temperature_2m_min")
@@ -139,6 +140,7 @@ object SaverWeather {
  */
 class SaverView(ctx: Context) : FrameLayout(ctx) {
     private val prefs = Prefs(ctx)
+    init { Weather.fahrenheit = prefs.weatherF }
     private val h = Handler(Looper.getMainLooper())
     private val imgA = ImageView(ctx).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
     private val imgB = ImageView(ctx).apply { scaleType = ImageView.ScaleType.CENTER_CROP; alpha = 0f }
@@ -231,7 +233,7 @@ class SaverView(ctx: Context) : FrameLayout(ctx) {
         Thread {
             val b: Bitmap? = runCatching {
                 if (f.exists()) Bitmaps.decodeScaled(f, dm.widthPixels, dm.heightPixels)
-                else BitmapFactory.decodeResource(resources, R.drawable.wallpaper_default)
+                else Bitmaps.decodeResScaled(context, Bitmaps.leadWallpaper(prefs.leadWp), dm.widthPixels, dm.heightPixels)
             }.getOrNull()
             h.post { if (b != null) crossfade(b) }
         }.start()

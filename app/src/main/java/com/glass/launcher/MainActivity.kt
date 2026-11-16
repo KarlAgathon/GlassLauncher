@@ -105,6 +105,7 @@ class MainActivity : Activity() {
                 updateStatus()
                 if (System.currentTimeMillis() - lastWeather > prefs.weatherMin * 60 * 1000L) updateWeather()
                 if (SystemClock.elapsedRealtime() < 3 * 60 * 1000L) Autostart.apply(this@MainActivity)
+                if (prefs.nightDim && tickCount % 60 == 1) applyDim()
             }
             checkIdle()
             handler.postDelayed(this, 1_000)
@@ -156,6 +157,10 @@ class MainActivity : Activity() {
         if (prefs.visualLook == 2 && prefs.focusScale == 15) prefs.focusScale = 30
         // Light: buttons go to the far right, time and date one row lower (was next to the buttons in the first beta)
         if (prefs.visualLook == 2 && prefs.clockSide == 2 && !prefs.clockMoved) { prefs.clockSide = 1; prefs.showDate = true; prefs.clockMoved = true }
+        // a crash is written down; 3 crashes within 10 minutes = safe start (see safeStart)
+        CrashWatch.install(this)
+        Weather.fahrenheit = prefs.weatherF
+        NotifListener.mode = prefs.notifMode
         // icons that come with LEAD (TiviMate, YouTube, Disney+ …)
         runCatching { BuiltinIcons.seed(this) }
         Backdrop.lite = prefs.perfMode
@@ -231,6 +236,8 @@ class MainActivity : Activity() {
         askLocationOnce()
         setupStatusClicks()
         setupAutoHide()
+        setupTopExtras()
+        if (CrashWatch.tooMany(this)) handler.postDelayed({ safeStart() }, 1500)
         runCatching { Updater.schedule(this) }
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), REQ_NOTIF)
@@ -271,6 +278,11 @@ class MainActivity : Activity() {
         }
         resumed = true
         showUpdateChip(animate = false)
+        getSharedPreferences("glass_global", Context.MODE_PRIVATE).let { g ->
+            val night = g.getString("nightDone", "") ?: ""
+            if (night.isNotBlank()) { g.edit().remove("nightDone").apply()
+                handler.postDelayed({ toast(T.s("Updated tonight: ", "Noćas ažurirano: ", "Heute Nacht aktualisiert: ") + night) }, 2500) }
+        }
         val every = 60 * 60 * 1000L
         if (prefs.updateUrl.isNotBlank() && System.currentTimeMillis() - prefs.lastUpdateCheck > every) {
             prefs.lastUpdateCheck = System.currentTimeMillis()
@@ -368,7 +380,7 @@ class MainActivity : Activity() {
         // Home pressed while we are already open
         menu.close()
         if (movingPos >= 0) finishMove()
-        focusTile(0)
+        focusTile(lastPos)
         if (intent?.getBooleanExtra(EXTRA_SHOW_UPDATE, false) == true) handler.postDelayed({ installPendingOrCheck() }, 500)
         if (intent?.getBooleanExtra(EXTRA_SHOW_APP_UPDATES, false) == true) handler.postDelayed({ openAppUpdates() }, 500)
     }
@@ -387,7 +399,8 @@ class MainActivity : Activity() {
     }
 
     private fun applyLook() {
-        dim.setBackgroundColor(Color.argb(prefs.dim * 255 / 100, 0, 0, 0))
+        applyDim()
+        showProfilePhoto()
         adaptStatus()
         profileLetter.text = Profiles.name(this, prefs.profile).take(1).uppercase()
         (hint.layoutParams as FrameLayout.LayoutParams).gravity = when (prefs.gridPosition) {
@@ -574,7 +587,7 @@ class MainActivity : Activity() {
         val (w, h) = screenSize()
         showPicture({
             if (f.exists()) Bitmaps.decodeScaled(f, w, h)
-            else BitmapFactory.decodeResource(resources, R.drawable.wallpaper_default)
+            else Bitmaps.decodeResScaled(this, Bitmaps.leadWallpaper(prefs.leadWp), w, h)
         }, fade = false)
     }
 
@@ -812,8 +825,8 @@ class MainActivity : Activity() {
         }
 
         findViewById<View>(R.id.notifBox).visibility = if (prefs.showNotifs) View.VISIBLE else View.GONE
-        findViewById<TextView>(R.id.notifCount).text =
-            if (NotifListener.connected) NotifListener.current().size.toString() else "–"
+        findViewById<TextView>(R.id.notifCount).text = bellCount().toString()
+        updateBell()
 
         // newer Android (Google TV Streamer …) gives apps no CPU numbers at all: then the CPU field hides itself
         // CPU is measured on a background thread (it can take a moment on some boxes) – never block the remote
@@ -927,7 +940,14 @@ class MainActivity : Activity() {
             handler.post {
                 if (w != null) {
                     weatherFails = 0
-                    findViewById<ImageView>(R.id.weatherIcon).setImageResource(w.first)
+                    findViewById<ImageView>(R.id.weatherIcon).let { iv ->
+                        iv.setImageResource(w.first)
+                        when (prefs.weatherIcons) {
+                            0 -> { iv.clearColorFilter(); iv.alpha = 0.6f }
+                            2 -> { iv.setColorFilter(weatherColour(w.first)); iv.alpha = 1f }
+                            else -> { iv.clearColorFilter(); iv.alpha = 1f }
+                        }
+                    }
                     findViewById<TextView>(R.id.weatherText).text = w.second
                     updateStatus()   // the bar got wider: fit it again
                 } else {
@@ -1238,6 +1258,13 @@ class MainActivity : Activity() {
             if (event.action == KeyEvent.ACTION_UP) menu.back()
             return true
         }
+        if (!menu.isOpen && movingPos < 0 && prefs.numberKeys && k in KeyEvent.KEYCODE_1..KeyEvent.KEYCODE_9) {
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                val real = apps.withIndex().filter { !it.value.isAdd }
+                real.getOrNull(k - KeyEvent.KEYCODE_1)?.let { onAppClick(it.index) }
+            }
+            return true
+        }
         if (!menu.isOpen && prefs.statusMode == 2 && !statusReveal && k == KeyEvent.KEYCODE_DPAD_UP &&
             event.action == KeyEvent.ACTION_DOWN && inTopRow(currentFocus) && pillWanted) {
             setReveal(true)
@@ -1311,7 +1338,7 @@ class MainActivity : Activity() {
             GlassMenu.Item(T.s("Icons and tiles", "Ikone i pločice", "Symbole und Kacheln"), R.drawable.lc_layout_grid) { lookMenu() },
             GlassMenu.Item(T.s("Text size", "Veličina teksta", "Textgröße"), R.drawable.lc_type, value = "${FontScale.percent(this)}%") { textSizeMenu() },
             GlassMenu.Item(T.s("Clock", "Sat", "Uhr"), R.drawable.lc_clock) { clockMenu() },
-            GlassMenu.Item(T.s("Weather city", "Grad za vrijeme", "Wetter-Stadt"), R.drawable.lc_map_pin, value = prefs.city) { setCity() },
+            GlassMenu.Item(T.s("Weather", "Vrijeme", "Wetter"), R.drawable.lc_cloud_sun, value = prefs.city) { weatherMenu() },
             GlassMenu.Item(T.s("Screensaver and idle", "Screensaver i mirovanje", "Bildschirmschoner und Leerlauf"), R.drawable.lc_monitor) { screensaverMenu() },
 
             GlassMenu.header(T.s("Profile and system", "Profil i sistem", "Profil und System")),
@@ -1545,9 +1572,15 @@ class MainActivity : Activity() {
                     download(url, wallpaperFile) { prefs.wpMode = 0; applyLook() }
                 }
             },
-            GlassMenu.Item(T.s("Samurai (default)", "Samuraj (zadana)", "Samurai (Standard)"), R.drawable.lc_rotate_ccw) {
-                wallpaperFile.delete(); prefs.wpMode = 0; applyLook()
+            GlassMenu.Item(T.s("LEAD wallpaper", "LEAD pozadina", "LEAD-Hintergrund"), R.drawable.lc_wallpaper,
+                value = leadWpNames()[prefs.leadWp.coerceIn(0, 3)]) {
+                choose(T.s("LEAD wallpaper", "LEAD pozadina", "LEAD-Hintergrund"), R.drawable.lc_wallpaper,
+                    leadWpNames().mapIndexed { i, n -> n to i }, prefs.leadWp) {
+                    prefs.leadWp = it; wallpaperFile.delete(); prefs.wpMode = 0; applyLook()
+                }
             },
+            GlassMenu.Item(T.s("Darker at night (20–7 h)", "Noću tamnije (20–7 h)", "Nachts dunkler (20–7 Uhr)"), R.drawable.lc_moon,
+                checked = prefs.nightDim, toggle = true) { prefs.nightDim = it.checked; applyDim() },
             GlassMenu.Item(T.s("Blur wallpaper", "Zamuti pozadinu", "Hintergrund weichzeichnen"), R.drawable.lc_eye,
                 checked = prefs.blurWallpaper, toggle = true) { prefs.blurWallpaper = it.checked; loadWallpaper() },
             GlassMenu.Item(T.s("Darken", "Zatamnjenje", "Abdunkeln"), R.drawable.lc_sun_dim, value = "${prefs.dim}%") {
@@ -1681,6 +1714,10 @@ class MainActivity : Activity() {
             },
             GlassMenu.Item(T.s("Frame around the selected icon", "Okvir oko odabrane ikone", "Rahmen um das ausgewählte Symbol"), R.drawable.lc_layout_grid,
                 checked = prefs.focusFrame, toggle = true) { prefs.focusFrame = it.checked; relayout() },
+            GlassMenu.Item(T.s("Name under the selected icon", "Ime ispod odabrane ikone", "Name unter dem ausgewählten Symbol"), R.drawable.lc_type,
+                checked = prefs.nameOnFocus, toggle = true) { prefs.nameOnFocus = it.checked; relayout() },
+            GlassMenu.Item(T.s("Number keys 1–9 open apps", "Tipke 1–9 otvaraju aplikacije", "Zifferntasten 1–9 öffnen Apps"), R.drawable.lc_layout_grid,
+                checked = prefs.numberKeys, toggle = true) { prefs.numberKeys = it.checked },
             GlassMenu.Item(T.s("Focus zoom", "Fokus uvećanje", "Fokus-Zoom"), R.drawable.lc_eye, value = "+${prefs.focusScale}%") {
                 choose(T.s("Focus zoom", "Fokus uvećanje", "Fokus-Zoom"), R.drawable.lc_eye,
                     listOf(0, 10, 20, 30, 40, 50).map { "+$it%" to it }, prefs.focusScale) { prefs.focusScale = it; relayout() }
@@ -1764,7 +1801,8 @@ class MainActivity : Activity() {
 
     private fun inTopRow(v: View?): Boolean {
         if (v == null) return false
-        if (v === profileBtn || v === settingsBtn || v === powerBtn || v === updateBtn || v.id == R.id.vpnKey) return true
+        if (v === profileBtn || v === settingsBtn || v === powerBtn || v === updateBtn || v.id == R.id.vpnKey ||
+            v === clock || v === bellBadge) return true
         var p = v.parent
         while (p != null) { if (p === statusPill) return true; p = p.parent }
         return false
@@ -1812,6 +1850,219 @@ class MainActivity : Activity() {
                 if (!(prefs.statusMode == 0 || statusReveal)) statusPill.visibility = View.INVISIBLE
             }.start()
         }
+    }
+
+    // ------------------------------------------------------------------ 9.1: bell number, profiles, weather, safety
+
+    /** round bell in the top row with the number of notifications + updates; hidden when there is nothing */
+    private var bellBadge: GlassFrame? = null
+    private var bellText: TextView? = null
+
+    private fun setupTopExtras() {
+        val d = resources.displayMetrics.density
+        val row = profileBtn.parent as? LinearLayout ?: return
+        val badge = GlassFrame(this).apply {
+            radiusDp = 21f; isFocusable = true; isClickable = true
+            if (Build.VERSION.SDK_INT >= 26) defaultFocusHighlightEnabled = false
+            visibility = View.GONE
+        }
+        val inner = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER
+            setPadding((12 * d).toInt(), 0, (14 * d).toInt(), 0)
+        }
+        inner.addView(ImageView(this).apply { setImageResource(R.drawable.lc_bell) }, LinearLayout.LayoutParams((18 * d).toInt(), (18 * d).toInt()))
+        val txt = TextView(this).apply {
+            setTextColor(Color.WHITE); setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f); typeface = Fonts.medium(this@MainActivity)
+            setPadding((6 * d).toInt(), 0, 0, 0)
+        }
+        inner.addView(txt)
+        badge.addView(inner, FrameLayout.LayoutParams(-2, -1))
+        badge.setOnFocusChangeListener { v, has ->
+            (v as GlassFrame).focusedLook = has
+            v.animate().scaleX(if (has) 1.12f else 1f).scaleY(if (has) 1.12f else 1f).setDuration(if (Backdrop.lite) 0L else 140L).start()
+        }
+        badge.setOnClickListener { notificationsPanel() }
+        row.addView(badge, row.indexOfChild(findViewById(R.id.vpnKey)), LinearLayout.LayoutParams(-2, (42 * d).toInt()).apply { marginStart = (10 * d).toInt() })
+        bellBadge = badge; bellText = txt
+        // OK on the clock = clock settings; long press on the weather = city
+        clock.isFocusable = true; clock.isClickable = true
+        if (Build.VERSION.SDK_INT >= 26) clock.defaultFocusHighlightEnabled = false
+        clock.setOnFocusChangeListener { v, has -> v.background = if (has) GlassDrawable(d, 14, true, 12f) else null }
+        clock.setOnClickListener { clockMenu() }
+        clock.setOnLongClickListener { clockMenu(); true }
+        findViewById<View>(R.id.weatherBox).setOnLongClickListener { weatherMenu(); true }
+        updateBell()
+    }
+
+    /** notifications + LEAD update + app updates */
+    private fun bellCount(): Int {
+        val n = if (NotifListener.connected) NotifListener.current().size else 0
+        val lead = if (Updater.pending(this) != null) 1 else 0
+        val appsN = if (prefs.appUpdates) AppUpdates.list(this).size else 0
+        return n + lead + appsN
+    }
+
+    private fun updateBell() {
+        val b = bellBadge ?: return
+        val c = bellCount()
+        b.visibility = if (c > 0) View.VISIBLE else View.GONE
+        bellText?.text = c.toString()
+    }
+
+    private fun applyDim() {
+        val h = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+        val night = prefs.nightDim && (h >= 20 || h < 7)
+        val v = (prefs.dim + if (night) 30 else 0).coerceAtMost(75)
+        dim.setBackgroundColor(Color.argb(v * 255 / 100, 0, 0, 0))
+    }
+
+    private fun leadWpNames() = listOf(T.s("Blue", "Plava", "Blau"), T.s("Black", "Crna", "Schwarz"),
+        T.s("Green", "Zelena", "Grün"), T.s("Purple", "Ljubičasta", "Lila"))
+
+    private fun weatherColour(res: Int) = when (res) {
+        R.drawable.lc_sun -> Color.rgb(255, 200, 60)
+        R.drawable.lc_cloud_sun -> Color.rgb(255, 214, 120)
+        R.drawable.lc_moon, R.drawable.lc_cloud_moon -> Color.rgb(200, 210, 255)
+        R.drawable.lc_cloud_rain -> Color.rgb(110, 180, 255)
+        R.drawable.lc_cloud_snow -> Color.rgb(235, 245, 255)
+        R.drawable.lc_cloud_lightning -> Color.rgb(255, 220, 80)
+        else -> Color.rgb(200, 210, 225)
+    }
+
+    private fun weatherMenu() {
+        val styles = listOf(T.s("Minimal", "Minimalna", "Minimal") to 0, T.s("Outline", "Obris", "Umriss") to 1,
+            T.s("Filled (colour)", "Popunjena (u boji)", "Gefüllt (farbig)") to 2)
+        menu.show(T.s("Weather", "Vrijeme", "Wetter"), R.drawable.lc_cloud_sun, listOf(
+            GlassMenu.Item(T.s("City", "Grad", "Stadt"), R.drawable.lc_map_pin, value = prefs.city) { setCity() },
+            GlassMenu.Item(T.s("Unit", "Jedinica", "Einheit"), R.drawable.lc_cloud_sun, value = if (prefs.weatherF) "°F" else "°C") {
+                choose(T.s("Unit", "Jedinica", "Einheit"), R.drawable.lc_cloud_sun, listOf("°C" to 0, "°F" to 1), if (prefs.weatherF) 1 else 0) {
+                    prefs.weatherF = it == 1; Weather.fahrenheit = prefs.weatherF; lastWeather = 0; updateWeather()
+                }
+            },
+            GlassMenu.Item(T.s("Icon style", "Stil ikone", "Symbolstil"), R.drawable.lc_image, value = styles[prefs.weatherIcons.coerceIn(0, 2)].first) {
+                choose(T.s("Icon style", "Stil ikone", "Symbolstil"), R.drawable.lc_image, styles, prefs.weatherIcons) {
+                    prefs.weatherIcons = it; lastWeather = 0; updateWeather()
+                }
+            },
+        ))
+    }
+
+    // ---- profiles: copy from another one, picture
+
+    private fun groupName(g: String) = when (g) {
+        "apps" -> T.s("Apps on the home screen", "Aplikacije na početnom ekranu", "Apps auf dem Startbildschirm")
+        "look" -> T.s("Look and icons", "Izgled i ikone", "Aussehen und Symbole")
+        "wallpaper" -> T.s("Wallpaper", "Pozadina", "Hintergrund")
+        "status" -> T.s("Status bar and clock", "Statusna traka i sat", "Statusleiste und Uhr")
+        "weather" -> T.s("Weather", "Vrijeme", "Wetter")
+        "saver" -> T.s("Screensaver and idle", "Screensaver i mirovanje", "Bildschirmschoner und Leerlauf")
+        "lang" -> T.s("Language", "Jezik", "Sprache")
+        else -> T.s("Everything else", "Sve ostalo", "Alles andere")
+    }
+
+    private fun newProfileFrom(name: String) {
+        val items = mutableListOf(GlassMenu.Item(T.s("Empty profile (start fresh)", "Prazan profil (ispočetka)", "Leeres Profil (neu anfangen)"), R.drawable.lc_user_plus) {
+            val id = Profiles.add(this, name)
+            Prefs.forProfile(this, id) { it.applyVisualLook(2); it.pinned = DefaultApps.list(this) }
+            Profiles.setCurrent(this, id); recreate()
+        })
+        for ((id, n) in Profiles.list(this)) items.add(GlassMenu.Item(T.s("Copy from: ", "Kopiraj iz: ", "Kopieren aus: ") + n, R.drawable.lc_copy) {
+            copyChoiceMenu(name, id, n, Profiles.GROUPS.toMutableSet())
+        })
+        menu.show(T.s("New profile: ", "Novi profil: ", "Neues Profil: ") + name, R.drawable.lc_user_plus, items)
+    }
+
+    private fun copyChoiceMenu(name: String, from: String, fromName: String, chosen: MutableSet<String>) {
+        val items = mutableListOf(
+            GlassMenu.Item(T.s("Select all", "Označi sve", "Alle auswählen"), R.drawable.lc_check) {
+                chosen.addAll(Profiles.GROUPS); copyChoiceMenu(name, from, fromName, chosen)
+            },
+            GlassMenu.Item(T.s("Deselect all", "Odznači sve", "Alle abwählen"), R.drawable.lc_x) {
+                chosen.clear(); copyChoiceMenu(name, from, fromName, chosen)
+            },
+        )
+        for (g in Profiles.GROUPS) items.add(GlassMenu.Item(groupName(g), checked = g in chosen, toggle = true) {
+            if (it.checked) chosen.add(g) else chosen.remove(g)
+        })
+        items.add(GlassMenu.Item(T.s("Create profile", "Napravi profil", "Profil erstellen"), R.drawable.lc_user_plus) {
+            val id = Profiles.add(this, name)
+            Profiles.copy(this, from, id, chosen)
+            Profiles.setCurrent(this, id); recreate()
+        })
+        menu.show(T.s("Copy from ", "Kopiraj iz ", "Kopieren aus ") + fromName, R.drawable.lc_copy, items,
+            T.s("Green = copied into \"$name\".", "Zeleno = kopira se u \"$name\".", "Grün = wird in \"$name\" kopiert.", "Зелёное = копируется в \"$name\"."))
+    }
+
+    private fun profilePhotoMenu() {
+        val id = prefs.profile
+        val items = mutableListOf(GlassMenu.Item(T.s("Choose a picture", "Izaberi sliku", "Bild auswählen"), R.drawable.lc_image) {
+            pickImage { f -> runCatching { f.copyTo(Profiles.photo(this, id), true) }; showProfilePhoto() }
+        })
+        if (Profiles.photo(this, id).exists()) items.add(GlassMenu.Item(T.s("Letter instead of a picture", "Slovo umjesto slike", "Buchstabe statt Bild"), R.drawable.lc_type) {
+            Profiles.photo(this, id).delete(); showProfilePhoto()
+        })
+        menu.show(T.s("Profile picture", "Slika profila", "Profilbild"), R.drawable.lc_image, items)
+    }
+
+    private var profilePic: ImageView? = null
+
+    private fun showProfilePhoto() {
+        val f = Profiles.photo(this, prefs.profile)
+        val iv = profilePic ?: ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP }.also {
+            profilePic = it; profileBtn.addView(it, 0, FrameLayout.LayoutParams(-1, -1))
+        }
+        val b = if (f.exists()) runCatching { Bitmaps.decodeScaled(f, 160, 160) }.getOrNull() else null
+        iv.setImageBitmap(b)
+        iv.visibility = if (b != null) View.VISIBLE else View.GONE
+        profileLetter.visibility = if (b != null) View.GONE else View.VISIBLE
+    }
+
+    // ---- updates: what's new, Mark as Stable
+
+    private fun whatsNew() {
+        val txt = runCatching { resources.openRawResource(R.raw.release_notes).bufferedReader().readText().trim() }.getOrDefault("")
+        menu.message(T.s("What's new", "Šta je novo", "Was ist neu") + " · " + Updater.currentName(this), R.drawable.lc_info, txt.ifBlank { "–" })
+    }
+
+    private fun markStable() {
+        if (!Updater.hasToken(this)) {
+            askText(T.s("GitHub token (only once)", "GitHub token (samo jednom)", "GitHub-Token (nur einmal)"), "") { t ->
+                if (t.isNotBlank()) { Updater.setToken(this, t); markStable() }
+            }
+            return
+        }
+        val name = Updater.pending(this)?.takeIf { it.code > Updater.stableCode(this) }?.name ?: Updater.currentName(this)
+        confirm(T.s("Mark as Stable", "Označi kao Stable", "Als Stable markieren"), R.drawable.lc_shield_check,
+            T.s("Make the Beta the Stable version for every box?", "Napraviti Betu Stable verzijom za sve boxove?",
+                "Die Beta zur Stable-Version für alle Boxen machen?", "Сделать бету стабильной версией для всех приставок?") + "\n\n" + name) {
+            toast(T.s("Working…", "Radim…", "Arbeite…"))
+            Thread {
+                val err = Updater.promote(this)
+                handler.post {
+                    if (err == null) toast(T.s("Done – GitHub is building the Stable version (a few minutes)", "Gotovo – GitHub pravi Stable verziju (par minuta)",
+                        "Fertig – GitHub baut die Stable-Version (ein paar Minuten)", "Готово – GitHub собирает стабильную версию (несколько минут)"))
+                    else toast(err)
+                }
+            }.start()
+        }
+    }
+
+    /** three crashes within ten minutes: start with the safe look and say so */
+    private fun safeStart() {
+        CrashWatch.clear(this)
+        if (prefs.wpMode == 2 || prefs.wpMode == 3) prefs.wpMode = 0
+        menu.show(T.s("Safe start", "Siguran start", "Sicherer Start", "Безопасный запуск"), R.drawable.lc_shield_check, listOf(
+            GlassMenu.Item(T.s("Light look (fastest)", "Light izgled (najbrži)", "Light-Look (am schnellsten)"), R.drawable.lc_image) {
+                setPerfMode(true, quiet = true); prefs.applyVisualLook(2); reloadApps(); applyLook()
+            },
+            GlassMenu.Item(T.s("Stop getting Beta versions", "Ne primaj više Beta verzije", "Keine Beta-Versionen mehr", "Не получать бета-версии"), R.drawable.lc_flask_conical) {
+                Updater.setBeta(this, false); updateMenu()
+            },
+            GlassMenu.Item(T.s("Continue", "Nastavi", "Weiter", "Продолжить"), R.drawable.lc_check),
+        ), T.s("LEAD stopped 3 times in a short time. Picture plugins were switched off. Android can't go back to an older version without uninstalling; the next update fixes it.",
+            "LEAD se 3 puta zaustavio u kratkom vremenu. Plugini za slike su isključeni. Android ne može vratiti stariju verziju bez deinstalacije; sljedeći update to popravlja.",
+            "LEAD wurde 3-mal kurz hintereinander beendet. Bild-Plugins wurden ausgeschaltet. Android kann ohne Deinstallation nicht auf eine ältere Version zurück; das nächste Update behebt es.",
+            "LEAD 3 раза завершился за короткое время. Плагины картинок отключены. Android не может вернуться к старой версии без удаления; следующее обновление это исправит."))
     }
 
     private fun setCity() {
@@ -2016,10 +2267,10 @@ class MainActivity : Activity() {
             })
         }
         items.add(GlassMenu.Item(T.s("New profile…", "Novi profil…", "Neues Profil…"), R.drawable.lc_user_plus) {
-            askText(T.s("Profile name", "Ime profila", "Profilname"), "") { n ->
-                if (n.isNotBlank()) { Profiles.setCurrent(this, Profiles.add(this, n)); recreate() }
-            }
+            askText(T.s("Profile name", "Ime profila", "Profilname"), "") { n -> if (n.isNotBlank()) newProfileFrom(n) }
         })
+        items.add(GlassMenu.Item(T.s("Profile picture", "Slika profila", "Profilbild"), R.drawable.lc_image,
+            value = if (Profiles.photo(this, cur).exists()) "✓" else prefs.let { Profiles.name(this, cur).take(1).uppercase() }) { profilePhotoMenu() })
         items.add(GlassMenu.Item(T.s("Rename this profile", "Preimenuj ovaj profil", "Dieses Profil umbenennen"), R.drawable.lc_pencil) {
             askText(T.s("Profile name", "Ime profila", "Profilname"), Profiles.name(this, cur)) { n ->
                 if (n.isNotBlank()) { Profiles.rename(this, cur, n); applyLook() }
@@ -2557,7 +2808,7 @@ class MainActivity : Activity() {
             },
             GlassMenu.Item(T.s("After", "Nakon", "Nach"), R.drawable.lc_clock, value = "${prefs.idleMinutes} min") {
                 choose(T.s("After", "Nakon", "Nach"), R.drawable.lc_clock,
-                    listOf(2, 5, 10, 15, 30, 60, 120).map { "$it min" to it }, prefs.idleMinutes) { prefs.idleMinutes = it }
+                    listOf(1, 5, 10, 15, 30, 60).map { (if (it < 60) "$it min" else "1 h") to it }, prefs.idleMinutes) { prefs.idleMinutes = it }
             },
             GlassMenu.Item(T.s("Pictures", "Slike", "Bilder"), R.drawable.lc_image, value = saverSources().first { it.second == prefs.saverSrc }.first) {
                 choose(T.s("Screensaver pictures", "Slike za screensaver", "Bilder für den Bildschirmschoner"), R.drawable.lc_image,
@@ -2577,11 +2828,11 @@ class MainActivity : Activity() {
                     }
                 }
             },
-            GlassMenu.Item(T.s("Change picture every", "Mijenjaj sliku svakih", "Bild wechseln alle"), R.drawable.lc_clock, value = "${prefs.saverInterval} s") {
+            GlassMenu.Item(T.s("Change picture every", "Mijenjaj sliku svakih", "Bild wechseln alle"), R.drawable.lc_clock, value = intervalLabel(prefs.saverInterval)) {
                 choose(T.s("Change picture every", "Mijenjaj sliku svakih", "Bild wechseln alle"), R.drawable.lc_clock,
-                    listOf(15, 30, 60, 120, 300).map { "$it s" to it }, prefs.saverInterval) { prefs.saverInterval = it; screensaverMenu() }
+                    listOf(30, 60, 300, 600, 900).map { intervalLabel(it) to it }, prefs.saverInterval) { prefs.saverInterval = it; screensaverMenu() }
             },
-            GlassMenu.Item(T.s("Start screensaver now", "Pokreni screensaver sada", "Bildschirmschoner jetzt starten"), R.drawable.lc_monitor) { startSaver() },
+            GlassMenu.Item(T.s("Preview screensaver", "Pregled screensavera", "Bildschirmschoner-Vorschau"), R.drawable.lc_eye) { startSaver() },
             GlassMenu.Item(T.s("Android screensaver settings", "Android postavke screensavera", "Android-Bildschirmschoner-Einstellungen"), R.drawable.lc_settings) {
                 safeStart(Intent(Settings.ACTION_DREAM_SETTINGS))
             },
@@ -2720,43 +2971,78 @@ class MainActivity : Activity() {
         menu.show("Bluetooth", R.drawable.lc_bluetooth, items, sub)
     }
 
+    private fun notifModeName(m: Int) = when (m) {
+        0 -> T.s("Important", "Važna", "Wichtige", "Важные")
+        1 -> T.s("Critical only", "Samo kritična", "Nur kritische", "Только критичные")
+        2 -> T.s("All", "Sva", "Alle", "Все")
+        else -> T.s("None", "Nijedno", "Keine", "Нет")
+    }
+
+    /** notification center: updates first (a click goes straight to the update), then the apps' notifications */
     private fun notificationsPanel() {
-        if (!NotifListener.connected) {
-            menu.show(T.s("Notifications", "Obavještenja", "Benachrichtigungen"), R.drawable.lc_bell, listOf(
-                GlassMenu.Item(T.s("Allow notification access", "Dozvoli pristup obavještenjima", "Benachrichtigungszugriff erlauben"), R.drawable.lc_check) { notificationAccess() },
-            ), T.s("LEAD Launcher needs permission to show and clear notifications.",
-                "LEAD Launcher treba dozvolu da prikazuje i briše obavještenja.",
-                "LEAD Launcher braucht die Erlaubnis, Benachrichtigungen anzuzeigen und zu löschen."))
-            return
-        }
-        val list = NotifListener.current()
-        if (list.isEmpty()) { toast(T.s("No notifications", "Nema obavještenja", "Keine Benachrichtigungen")); return }
         val pm = packageManager
-        val items = mutableListOf(GlassMenu.Item(T.s("Clear all", "Obriši sve", "Alle löschen"), R.drawable.lc_trash_2) {
-            NotifListener.clearAll(); handler.postDelayed({ updateStatus() }, 400)
-        })
+        val items = mutableListOf<GlassMenu.Item>()
+        Updater.pending(this)?.let { p ->
+            items.add(GlassMenu.Item(T.s("New LEAD version ", "Nova LEAD verzija ", "Neue LEAD-Version ") + p.name, R.drawable.lc_download) { updateMenu() })
+        }
+        if (prefs.appUpdates) for (u in AppUpdates.list(this)) {
+            items.add(GlassMenu.Item(T.s("Update: ", "Ažuriranje: ", "Update: ") + u.label, drawable = runCatching { pm.getApplicationIcon(u.pkg) }.getOrNull(),
+                value = u.local + " → " + u.remote) { appUpdateScreen(u) })
+        }
+        val list = if (NotifListener.connected) NotifListener.current() else emptyList()
         for (sbn in list) {
             val ex = sbn.notification.extras
             val app = runCatching { pm.getApplicationLabel(pm.getApplicationInfo(sbn.packageName, 0)).toString() }.getOrDefault(sbn.packageName)
             val title = ex.getCharSequence(Notification.EXTRA_TITLE)?.toString() ?: app
             val txt = ex.getCharSequence(Notification.EXTRA_TEXT)?.toString()
+            // OK = opens what the notification is about; long press = clear / hide this app
             items.add(GlassMenu.Item(if (txt != null) "$title – $txt" else title,
-                drawable = runCatching { pm.getApplicationIcon(sbn.packageName) }.getOrNull()) {
-                menu.show(title, R.drawable.lc_bell, listOf(
-                    GlassMenu.Item(T.s("Open", "Otvori", "Öffnen"), R.drawable.lc_play) { runCatching { sbn.notification.contentIntent?.send() } },
-                    GlassMenu.Item(T.s("Clear", "Obriši", "Löschen"), R.drawable.lc_x) {
-                        NotifListener.clear(sbn); handler.postDelayed({ updateStatus(); notificationsPanel() }, 300)
-                    },
-                    GlassMenu.Item(T.s("Never show from ", "Nikad ne prikazuj od ", "Nie mehr anzeigen von ") + app, R.drawable.lc_eye) {
-                        prefs.mutedNotifs = prefs.mutedNotifs + sbn.packageName
-                        NotifListener.muted = prefs.mutedNotifs
-                        updateStatus(); handler.postDelayed({ notificationsPanel() }, 200)
-                    },
-                ), txt)
+                drawable = runCatching { pm.getApplicationIcon(sbn.packageName) }.getOrNull(),
+                longAction = { _: GlassMenu.Item ->
+                    menu.show(title, R.drawable.lc_bell, listOf(
+                        GlassMenu.Item(T.s("Clear", "Obriši", "Löschen"), R.drawable.lc_x) {
+                            NotifListener.clear(sbn); handler.postDelayed({ updateStatus(); notificationsPanel() }, 300)
+                        },
+                        GlassMenu.Item(T.s("Never show from ", "Nikad ne prikazuj od ", "Nie mehr anzeigen von ") + app, R.drawable.lc_eye) {
+                            prefs.mutedNotifs = prefs.mutedNotifs + sbn.packageName
+                            NotifListener.muted = prefs.mutedNotifs
+                            updateStatus(); handler.postDelayed({ notificationsPanel() }, 200)
+                        },
+                    ), txt)
+                }) {
+                val opened = runCatching { sbn.notification.contentIntent?.send(); sbn.notification.contentIntent != null }.getOrDefault(false)
+                if (!opened) launch(sbn.packageName, app)
+                if (sbn.notification.flags and Notification.FLAG_AUTO_CANCEL != 0) NotifListener.clear(sbn)
             })
         }
-        menu.show(T.s("Notifications", "Obavještenja", "Benachrichtigungen") + " (${list.size})", R.drawable.lc_bell, items)
+        if (items.isEmpty()) items.add(GlassMenu.Item(T.s("No notifications", "Nema obavještenja", "Keine Benachrichtigungen"), R.drawable.lc_check))
+        items.add(GlassMenu.header(T.s("Settings", "Postavke", "Einstellungen")))
+        if (list.isNotEmpty()) items.add(GlassMenu.Item(T.s("Clear all", "Obriši sve", "Alle löschen"), R.drawable.lc_trash_2) {
+            confirm(T.s("Clear all", "Obriši sve", "Alle löschen"), R.drawable.lc_trash_2,
+                T.s("Delete all notifications?", "Obrisati sva obavještenja?", "Alle Benachrichtigungen löschen?", "Удалить все уведомления?")) {
+                NotifListener.clearAll(); handler.postDelayed({ updateStatus() }, 400)
+            }
+        })
+        items.add(GlassMenu.Item(T.s("Which notifications", "Koja obavještenja", "Welche Benachrichtigungen"), R.drawable.lc_bell, value = notifModeName(prefs.notifMode)) {
+            choose(T.s("Which notifications", "Koja obavještenja", "Welche Benachrichtigungen"), R.drawable.lc_bell,
+                (0..3).map { notifModeName(it) to it }, prefs.notifMode) { prefs.notifMode = it; NotifListener.mode = it; updateStatus(); notificationsPanel() }
+        })
+        val muted = prefs.mutedNotifs
+        if (muted.isNotEmpty()) items.add(GlassMenu.Item(T.s("Hidden apps", "Skrivene aplikacije", "Ausgeblendete Apps"), R.drawable.lc_eye, value = muted.size.toString()) {
+            menu.show(T.s("Hidden apps", "Skrivene aplikacije", "Ausgeblendete Apps"), R.drawable.lc_eye, muted.map { pkg ->
+                val n = runCatching { pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString() }.getOrDefault(pkg)
+                GlassMenu.Item(n, drawable = runCatching { pm.getApplicationIcon(pkg) }.getOrNull(), checked = false, toggle = true) {
+                    prefs.mutedNotifs = if (it.checked) prefs.mutedNotifs - pkg else prefs.mutedNotifs + pkg
+                    NotifListener.muted = prefs.mutedNotifs; updateStatus()
+                }
+            }, T.s("Green = show again", "Zeleno = ponovo prikazuj", "Grün = wieder anzeigen"))
+        })
+        if (!NotifListener.connected) items.add(GlassMenu.Item(T.s("Allow notification access", "Dozvoli pristup obavještenjima", "Benachrichtigungszugriff erlauben"),
+            R.drawable.lc_check) { notificationAccess() })
+        menu.show(T.s("Notifications", "Obavještenja", "Benachrichtigungen") + " (${bellCount()})", R.drawable.lc_bell, items,
+            T.s("OK = open · long press = clear or hide", "OK = otvori · dugi pritisak = obriši ili sakrij", "OK = öffnen · lange drücken = löschen oder ausblenden"))
     }
+
 
     // ------------------------------------------------------------------ update
 
@@ -2789,6 +3075,8 @@ class MainActivity : Activity() {
                 GlassMenu.Item("$h h", checked = h == every) { with(AppUpdates) { this@MainActivity.intervalHours = h }; appUpdatesMenu() }
             })
         })
+        items.add(GlassMenu.Item(T.s("Update GitHub apps at night (Shizuku)", "Noću ažuriraj GitHub aplikacije (Shizuku)", "GitHub-Apps nachts aktualisieren (Shizuku)"),
+            R.drawable.lc_moon, checked = prefs.nightUpdates, toggle = true) { prefs.nightUpdates = it.checked })
         items.add(GlassMenu.Item(T.s("Check automatically", "Automatska provjera", "Automatisch prüfen"), R.drawable.lc_bell,
             checked = prefs.appUpdates, toggle = true) { prefs.appUpdates = it.checked; showUpdateChip(false) })
         menu.show(T.s("App updates", "Ažuriranja aplikacija", "App-Updates"), R.drawable.lc_download, items,
@@ -2834,6 +3122,10 @@ class MainActivity : Activity() {
         items.add(GlassMenu.Item(T.s("Check now", "Provjeri sada", "Jetzt prüfen"), R.drawable.lc_refresh_cw) { checkUpdate(manual = true) })
         items.add(GlassMenu.Item(T.s("Beta versions on this box", "Beta verzije na ovom boxu", "Beta-Versionen auf dieser Box"), R.drawable.lc_flask_conical,
             checked = Updater.beta(this), toggle = true) { Updater.setBeta(this, it.checked) })
+        items.add(GlassMenu.Item(T.s("What's new", "Šta je novo", "Was ist neu"), R.drawable.lc_info) { whatsNew() })
+        if (isBeta || (p != null && p.code > Updater.stableCode(this)))
+            items.add(GlassMenu.Item(T.s("Mark as Stable (for all boxes)", "Označi kao Stable (za sve boxove)", "Als Stable markieren (für alle Boxen)"),
+                R.drawable.lc_shield_check, tint = gold) { markStable() })
         items.add(GlassMenu.header(T.s("Advanced", "Napredno", "Erweitert")))
         items.add(GlassMenu.Item(T.s("Update address (URL)", "Adresa za update (link)", "Update-Adresse (URL)"), R.drawable.lc_link,
             value = if (url.isBlank()) "–" else url.substringAfter("://").take(24)) {
@@ -2912,37 +3204,12 @@ class MainActivity : Activity() {
     private var chipPulse: android.animation.ValueAnimator? = null
 
     /** "New version" chip in the top bar: pops in with a little bounce, then glows softly. */
+    /** updates are never written on the screen: they only count at the bell (number in the top row) */
+    @Suppress("UNUSED_PARAMETER")
     private fun showUpdateChip(animate: Boolean) {
-        val info = Updater.pending(this)
-        val apps = if (info == null && prefs.appUpdates) AppUpdates.list(this).size else 0
-        if (info == null && apps == 0) {
-            chipPulse?.cancel(); chipPulse = null
-            updateBtn.visibility = View.GONE
-            return
-        }
-        findViewById<TextView>(R.id.updateText).text =
-            if (info != null) T.s("New Update Available", "Novo ažuriranje dostupno", "Neues Update verfügbar")
-            else T.s("App Updates Available", "Ažuriranja aplikacija dostupna", "App-Updates verfügbar") + " ($apps)"
-        val wasHidden = updateBtn.visibility != View.VISIBLE
-        updateBtn.visibility = View.VISIBLE
-        if (animate || wasHidden) {
-            updateBtn.scaleX = 0.3f; updateBtn.scaleY = 0.3f; updateBtn.alpha = 0f
-            updateBtn.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(550)
-                .setInterpolator(android.view.animation.OvershootInterpolator(2.2f)).start()
-        }
-        if (chipPulse == null && !Backdrop.lite) {
-            chipPulse = android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
-                duration = 1600
-                repeatMode = android.animation.ValueAnimator.REVERSE
-                // glow a few times, then stay still: an endless animation redraws the screen all the time
-                repeatCount = 5
-                addUpdateListener { a ->
-                    if (!updateBtn.isFocused) updateBtn.tint = 0.06f + 0.16f * (a.animatedValue as Float)
-                    updateBtn.invalidate()
-                }
-                start()
-            }
-        }
+        chipPulse?.cancel(); chipPulse = null
+        updateBtn.visibility = View.GONE
+        updateBell()
     }
 
     /** Notification, chip and "Install": one click – download and open the installer straight away. */
@@ -2970,17 +3237,12 @@ class MainActivity : Activity() {
         if (ready != null) { Updater.install(this, ready); return }
         installing = true
         handler.postDelayed({ installing = false }, 120_000)
-        val chipText = findViewById<TextView>(R.id.updateText)
-        updateBtn.visibility = View.VISIBLE
-        chipText.text = T.s("Downloading ", "Preuzimam ", "Lade ") + info.name + "…"
+        toast(T.s("Downloading ", "Preuzimam ", "Lade ") + info.name + "…")
         Thread {
             try {
-                val f = Updater.download(this, info) { pct ->
-                    handler.post { chipText.text = T.s("Downloading ", "Preuzimam ", "Lade ") + info.name + "  $pct %" }
-                }
+                val f = Updater.download(this, info)
                 handler.post {
                     installing = false
-                    chipText.text = T.s("Install ", "Instaliraj ", "Installieren ") + info.name
                     // ask only while the home screen is on top; otherwise the chip / next return asks
                     if (resumed) Updater.install(this, f) else promptedCode = 0L
                 }

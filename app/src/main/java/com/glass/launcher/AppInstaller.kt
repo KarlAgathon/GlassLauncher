@@ -62,7 +62,7 @@ object AppInstaller {
     }
 
     /** "pm install" through Shizuku (shell rights), the APK is fed in through stdin */
-    private fun silent(f: File): Boolean {
+    fun silent(f: File): Boolean {
         if (!ShizukuCpu.permitted()) return false
         return runCatching {
             val p = ShizukuCpu.process("pm", "install", "-r", "-S", f.length().toString()) ?: return false

@@ -107,7 +107,16 @@ class AppAdapter(
         if (prefs.reflect && e.icon != null && !e.isAdd) {
             val rh = (hPx * 0.42f).toInt()
             val key = "${System.identityHashCode(e.icon)}:$wPx:$hPx:${prefs.logoFit}"
-            val m = mirrors.getOrPut(key) { Bitmaps.mirror(e.icon, wPx, hPx, h.icon.paddingLeft, h.icon.paddingTop, rh, stretch) }
+            val m = mirrors.getOrPut(key) {
+                // kept on disk too: after a restart the mirrors are there at once
+                val stamp = IconStore.file(ctx, e.pkg).lastModified()
+                val f = java.io.File(java.io.File(ctx.cacheDir, "mirrors").apply { mkdirs() },
+                    "${e.pkg}_${wPx}_${hPx}_${prefs.logoFit}_$stamp.png")
+                (if (f.exists() && !e.missing) android.graphics.BitmapFactory.decodeFile(f.absolutePath) else null)
+                    ?: Bitmaps.mirror(e.icon, wPx, hPx, h.icon.paddingLeft, h.icon.paddingTop, rh, stretch).also { b ->
+                        if (!e.missing && stamp > 0) Thread { runCatching { f.outputStream().use { b.compress(android.graphics.Bitmap.CompressFormat.PNG, 90, it) } } }.start()
+                    }
+            }
             h.reflect.setImageBitmap(m)
             h.reflect.layoutParams = (h.reflect.layoutParams as LinearLayout.LayoutParams).also { it.width = wPx; it.height = rh; it.topMargin = (2 * d).toInt() }
             h.reflect.visibility = View.VISIBLE
@@ -117,7 +126,8 @@ class AppAdapter(
         h.badge.visibility = if (e.missing) View.VISIBLE else View.GONE
 
         h.label.text = e.label
-        h.label.visibility = if (prefs.showLabels) View.VISIBLE else View.GONE
+        // names off: the selected app's name still shows softly under its logo
+        h.label.visibility = if (prefs.showLabels || prefs.nameOnFocus) View.VISIBLE else View.GONE
         (h.label.layoutParams as LinearLayout.LayoutParams).width = wPx
         style(h, h.itemView.hasFocus())
     }
@@ -140,6 +150,9 @@ class AppAdapter(
         h.itemView.translationZ = z
         h.label.typeface = if (focused) Fonts.medium(h.itemView.context) else Fonts.regular(h.itemView.context)
         h.label.setTextColor(if (focused) Color.WHITE else Color.argb(215, 255, 255, 255))
+        if (!prefs.showLabels && prefs.nameOnFocus)
+            h.label.animate().alpha(if (focused) 1f else 0f).setDuration(if (Backdrop.lite) 0L else 150L).start()
+        else h.label.alpha = 1f
         h.label.translationY = if (focused) h.tile.height * prefs.focusScale / 200f else 0f
         if (h.reflect.visibility == View.VISIBLE) {
             // the selected logo shines more in its mirror and moves down with the zoom

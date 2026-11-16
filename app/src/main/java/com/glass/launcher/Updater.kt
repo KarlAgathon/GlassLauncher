@@ -68,6 +68,34 @@ object Updater {
         if (best.code > currentCode(ctx)) best else null
     }.getOrNull()
 
+    /**
+     * Mark as Stable from the TV: the beta branch becomes master on GitHub, GitHub then builds the Stable release
+     * for every box. Needs a GitHub token (saved once). Returns null when it worked, otherwise the reason.
+     */
+    fun promote(ctx: Context): String? {
+        val tok = (g(ctx).getString("ghToken", "") ?: "").trim()
+        if (tok.isBlank()) return T.s("No GitHub token", "Nema GitHub tokena", "Kein GitHub-Token")
+        fun call(method: String, path: String, body: String? = null): Pair<Int, String> {
+            val c = java.net.URL("https://api.github.com/repos/KarlAgathon/GlassLauncher$path").openConnection() as java.net.HttpURLConnection
+            c.requestMethod = method
+            c.setRequestProperty("Authorization", "Bearer $tok"); c.setRequestProperty("Accept", "application/vnd.github+json")
+            c.connectTimeout = 15_000; c.readTimeout = 20_000
+            if (body != null) { c.doOutput = true; c.setRequestProperty("Content-Type", "application/json"); c.outputStream.use { it.write(body.toByteArray()) } }
+            val code = c.responseCode
+            val text = runCatching { (if (code < 400) c.inputStream else c.errorStream)?.bufferedReader()?.readText() ?: "" }.getOrDefault("")
+            c.disconnect(); return code to text
+        }
+        return try {
+            val (c1, t1) = call("GET", "/git/ref/heads/beta")
+            if (c1 != 200) return "GitHub: $c1"
+            val sha = JSONObject(t1).getJSONObject("object").getString("sha")
+            val (c2, t2) = call("PATCH", "/git/refs/heads/master", JSONObject().put("sha", sha).put("force", false).toString())
+            if (c2 !in 200..299) "GitHub: $c2 " + runCatching { JSONObject(t2).optString("message") }.getOrDefault("") else null
+        } catch (e: Exception) { e.message ?: "?" }
+    }
+    fun hasToken(ctx: Context) = !(g(ctx).getString("ghToken", "") ?: "").isBlank()
+    fun setToken(ctx: Context, t: String) = g(ctx).edit().putString("ghToken", t.trim()).apply()
+
     /** SHA-256 of a file as hex */
     fun sha256(f: File): String {
         val md = java.security.MessageDigest.getInstance("SHA-256")
@@ -154,7 +182,7 @@ object Updater {
 
     // ------------------------------------------------------------------ "new version" notification
 
-    private const val CHANNEL = "updates"
+    private const val CHANNEL = "updates_quiet"
 
     /** Remembers the newest version found, so the home screen can show the "new version" chip. */
     fun remember(ctx: Context, info: Info) {
@@ -180,7 +208,7 @@ object Updater {
         val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= 26) {
             nm.createNotificationChannel(NotificationChannel(CHANNEL,
-                T.s("Updates", "Ažuriranja", "Updates"), NotificationManager.IMPORTANCE_HIGH))
+                T.s("Updates", "Ažuriranja", "Updates"), NotificationManager.IMPORTANCE_DEFAULT))
         }
         val open = PendingIntent.getActivity(ctx, 1,
             Intent(ctx, MainActivity::class.java).putExtra(MainActivity.EXTRA_SHOW_UPDATE, true)
@@ -196,11 +224,6 @@ object Updater {
             .setAutoCancel(true)
             .build()
         runCatching { nm.notify(77, n) }
-        // also pop up a small banner on top of whatever is on screen (films, other apps)
-        android.os.Handler(android.os.Looper.getMainLooper()).post {
-            HomeService.instance?.showBanner(
-                T.s("New version", "Nova verzija", "Neue Version") + " – LEAD Launcher " + info.name)
-        }
     }
 
     /** Checks for a new version every hour, also when the launcher is not open. */
@@ -232,6 +255,7 @@ class UpdateCheckReceiver : BroadcastReceiver() {
                 // the other apps on the box (low priority, so the remote stays quick)
                 android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
                 runCatching { AppUpdates.checkIfDue(app) }
+                runCatching { AppUpdates.nightUpdate(app) }
             } finally {
                 pending.finish()
             }
