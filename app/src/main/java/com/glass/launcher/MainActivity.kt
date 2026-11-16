@@ -154,6 +154,8 @@ class MainActivity : Activity() {
         if (!prefs.tizenTubeSet) { prefs.pinned = DefaultApps.putTizenTube(prefs.pinned); prefs.tizenTubeSet = true }
         // Light from the first 9.0 beta grew only 15 %: now 30 % like asked
         if (prefs.visualLook == 2 && prefs.focusScale == 15) prefs.focusScale = 30
+        // Light: buttons go to the far right, time and date one row lower (was next to the buttons in the first beta)
+        if (prefs.visualLook == 2 && prefs.clockSide == 2 && !prefs.clockMoved) { prefs.clockSide = 1; prefs.showDate = true; prefs.clockMoved = true }
         // icons that come with LEAD (TiviMate, YouTube, Disney+ …)
         runCatching { BuiltinIcons.seed(this) }
         Backdrop.lite = prefs.perfMode
@@ -994,10 +996,10 @@ class MainActivity : Activity() {
 
     private fun launch(pkg: String, label: String) {
         val i = packageManager.getLeanbackLaunchIntentForPackage(pkg) ?: packageManager.getLaunchIntentForPackage(pkg)
-        if (i == null) { toast(T.s("Can't open $label", "Ne mogu otvoriti $label", "$label lässt sich nicht öffnen")); return }
+        if (i == null) { toast(T.s("Can't open $label", "Ne mogu otvoriti $label", "$label lässt sich nicht öffnen", "Не удаётся открыть $label")); return }
         // the helper service counts app starts itself (also outside LEAD); without it count here
         if (HomeService.instance == null) Usage.add(this, pkg)
-        try { startActivity(i) } catch (ex: Exception) { toast(T.s("Can't open $label", "Ne mogu otvoriti $label", "$label lässt sich nicht öffnen")) }
+        try { startActivity(i) } catch (ex: Exception) { toast(T.s("Can't open $label", "Ne mogu otvoriti $label", "$label lässt sich nicht öffnen", "Не удаётся открыть $label")) }
     }
 
     private fun onAppLongClick(pos: Int) {
@@ -1380,7 +1382,8 @@ class MainActivity : Activity() {
             val n = if (e.pkg == DefaultApps.TIZENTUBE) "TizenTube (YouTube)" else "PRETORIAN IPTV"
             confirm(e.label, R.drawable.lc_download, T.s("$n is not installed yet. Install the newest stable version from GitHub?",
                 "$n još nije instaliran. Instalirati najnoviju stabilnu verziju sa GitHuba?",
-                "$n ist noch nicht installiert. Neueste stabile Version von GitHub installieren?")) {
+                "$n ist noch nicht installiert. Neueste stabile Version von GitHub installieren?",
+                "$n ещё не установлен. Установить последнюю стабильную версию с GitHub?")) {
                 toast(T.s("Downloading ", "Preuzimam ", "Lade ") + n + "…")
                 Extras.install(this, e.pkg, null) { m ->
                     val pct = m.removeSuffix("%").trim().toIntOrNull()
@@ -1390,7 +1393,8 @@ class MainActivity : Activity() {
         } else {
             confirm(e.label, R.drawable.lc_shopping_bag, T.s("${e.label} is not installed yet. Open it in Google Play?",
                 "${e.label} još nije instaliran. Otvoriti ga u Google Play prodavnici?",
-                "${e.label} ist noch nicht installiert. In Google Play öffnen?")) { openStore(e.pkg) }
+                "${e.label} ist noch nicht installiert. In Google Play öffnen?",
+                "${e.label} ещё не установлен. Открыть в Google Play?")) { openStore(e.pkg) }
         }
     }
 
@@ -1734,7 +1738,6 @@ class MainActivity : Activity() {
             t(T.s("Adaptive (follows the wallpaper)", "Adaptivno (prati pozadinu)", "Adaptiv (passt sich dem Hintergrund an)"),
                 R.drawable.lc_sun_dim, prefs.statusAdaptive) { prefs.statusAdaptive = it },
             t(T.s("Clock", "Sat", "Uhr"), R.drawable.lc_clock, prefs.showClock) { prefs.showClock = it },
-            t(T.s("Date", "Datum", "Datum"), R.drawable.lc_type, prefs.showDate) { prefs.showDate = it },
             t(T.s("Weather", "Vrijeme", "Wetter"), R.drawable.lc_cloud_sun, prefs.showWeather) { prefs.showWeather = it; lastWeather = 0 },
             t("Wi-Fi / LAN", R.drawable.lc_wifi, prefs.showNetwork) { prefs.showNetwork = it },
             t("VPN", R.drawable.lc_key_round, prefs.showVpn) { prefs.showVpn = it },
@@ -1782,7 +1785,6 @@ class MainActivity : Activity() {
         val key = findViewById<ImageView>(R.id.vpnKey)
         key.isFocusable = true; key.isClickable = true
         if (Build.VERSION.SDK_INT >= 26) key.defaultFocusHighlightEnabled = false
-        key.setPadding((2 * d).toInt(), (2 * d).toInt(), (2 * d).toInt(), (2 * d).toInt())
         key.setOnFocusChangeListener { v, has -> v.background = if (has) GlassDrawable(d, 12, true, 10f) else null }
         key.setOnClickListener { vpnPanel() }
     }
@@ -2190,6 +2192,8 @@ class MainActivity : Activity() {
                     prefs.clockSide = it; applyLook()
                 }
             },
+            GlassMenu.Item(T.s("Show date", "Prikaži datum", "Datum anzeigen"), R.drawable.lc_type,
+                checked = prefs.showDate, toggle = true) { prefs.showDate = it.checked; applyLook() },
             GlassMenu.Item(T.s("Show seconds", "Prikaži sekunde", "Sekunden anzeigen"), R.drawable.lc_clock,
                 checked = prefs.clockSeconds, toggle = true) { prefs.clockSeconds = it.checked; updateClock() },
             GlassMenu.Item(T.s("Time zone automatically", "Vremenska zona automatski", "Zeitzone automatisch"), R.drawable.lc_globe,

@@ -1,4 +1,7 @@
-LEAD Launcher 9.0.2 BETA
+LEAD Launcher 9.0.3 BETA
+- New language: Russian (Русский)
+- Light: profile, settings and power at the far right; time and date one row lower
+- VPN key lined up with the buttons; Date moved from Status bar to Clock settings
 - TizenTube is LEAD's YouTube in every look, with the YouTube Premium icon; official YouTube taken off the home screen (can be added again)
 - TizenTube and PRETORIAN install and update from their GitHub (newest stable)
 - Fresh install checks LEAD and all apps for updates right after the first start

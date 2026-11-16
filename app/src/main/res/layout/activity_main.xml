@@ -296,10 +296,11 @@
 
             <ImageView
                 android:id="@+id/vpnKey"
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:layout_gravity="center_vertical"
-                android:layout_marginStart="14dp"
+                android:layout_width="42dp"
+                android:layout_height="42dp"
+                android:layout_marginStart="8dp"
+                android:padding="9dp"
+                android:scaleType="fitCenter"
                 android:importantForAccessibility="no"
                 android:src="@drawable/lc_key_round"
                 android:visibility="gone" />

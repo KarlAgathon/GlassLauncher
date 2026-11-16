@@ -164,6 +164,8 @@ class Prefs(ctx: Context) {
     /** status bar: icons only, no numbers or names */
     var statusIconsOnly: Boolean get() = bool("sIconsOnly", false); set(v) = putBool("sIconsOnly", v)
 
+    /** the clock of the first 9.0 beta was moved below the buttons once */
+    var clockMoved: Boolean get() = bool("clockMoved", false); set(v) = putBool("clockMoved", v)
     /** TizenTube (with the YouTube Premium icon) put on the home screen once in place of the official YouTube */
     var tizenTubeSet: Boolean get() = bool("ttSet", false); set(v) = putBool("ttSet", v)
 
@@ -174,8 +176,8 @@ class Prefs(ctx: Context) {
         when (v) {
             2 -> { tileShape = 0; logoWhite = false; logoNoBg = true; tileAlpha = 0; tileBorder = 0; tileClean = true; tileFrost = false
                 dock = false; showLabels = false; reflect = true; tileSize = 2; tileGap = 48; focusScale = 30; focusFrame = false
-                gridPosition = 1; gridAlign = 1; gridOffX = 0; gridOffY = 0; clockSide = 2; singleRow = true; showAddTile = false
-                statusMode = 1; showDate = false; dim = 0 }
+                gridPosition = 1; gridAlign = 1; gridOffX = 0; gridOffY = 0; clockSide = 1; singleRow = true; showAddTile = false
+                statusMode = 1; showDate = true; dim = 0 }
             1 -> { tileShape = 0; logoWhite = false; logoNoBg = true; tileAlpha = 6; tileBorder = 0; tileClean = true; tileFrost = false
                 dock = false; showLabels = false; reflect = false; tileSize = 2; tileGap = 12; focusScale = 30; focusFrame = true
                 gridPosition = 2; gridAlign = 0; clockSide = 1; showAddTile = true; showDate = true; dim = 10 }

@@ -4,10 +4,11 @@ import java.util.Locale
 
 /**
  * Tiny translation helper: T.s("English", "Bosanski", "Deutsch").
- * Bulgarian, Romanian, Turkish and Arabic come from [I18nExtra] (looked up by the English text; English if missing).
+ * Bulgarian, Romanian, Turkish and Arabic come from [I18nExtra], Russian from [I18nRu]
+ * (looked up by the English text; English if missing). Texts with names inside pass their Russian as [ru].
  */
 object T {
-    /** "en", "bs", "hr", "sr" (Cyrillic), "de", "bg", "ro", "tr" or "ar" */
+    /** "en", "bs", "hr", "sr" (Cyrillic), "de", "ru", "bg", "ro", "tr" or "ar" */
     @Volatile var lang: String = "en"
 
     private val extra = listOf("bg", "ro", "tr", "ar")
@@ -18,6 +19,7 @@ object T {
             "bs", "sh" -> "bs"
             "hr" -> "hr"
             "sr" -> "sr"
+            "ru" -> "ru"
             "bg" -> "bg"
             "ro" -> "ro"
             "tr" -> "tr"
@@ -26,12 +28,13 @@ object T {
         }
     }
 
-    fun s(en: String, bs: String, de: String): String = when (lang) {
+    fun s(en: String, bs: String, de: String, ru: String? = null): String = when (lang) {
         "bs" -> bs
         "hr" -> Slavic.croatian(bs)
         "sr" -> Slavic.cyrillic(bs)
         "de" -> de
         "en" -> en
+        "ru" -> ru ?: I18nRu.map[en] ?: en
         else -> {
             val i = extra.indexOf(lang)
             if (i < 0) en else I18nExtra.map[en]?.getOrNull(i) ?: en
@@ -46,6 +49,7 @@ object T {
         Triple("hr", "Hrvatski", R.drawable.flag_hr),
         Triple("sr", "Српски (ћирилица)", R.drawable.flag_rs),
         Triple("de", "Deutsch", R.drawable.flag_de),
+        Triple("ru", "Русский", R.drawable.flag_ru),
         Triple("bg", "Български", R.drawable.flag_bg),
         Triple("ro", "Română", R.drawable.flag_ro),
         Triple("tr", "Türkçe", R.drawable.flag_tr),
