@@ -2020,8 +2020,11 @@ class MainActivity : Activity() {
     // ---- updates: what's new, Mark as Stable
 
     private fun whatsNew() {
-        val txt = runCatching { resources.openRawResource(R.raw.release_notes).bufferedReader().readText().trim() }.getOrDefault("")
-        menu.message(T.s("What's new", "Šta je novo", "Was ist neu") + " · " + Updater.currentName(this), R.drawable.lc_info, txt.ifBlank { "–" })
+        // the waiting new version first, then what the installed one brought
+        val mine = runCatching { resources.openRawResource(R.raw.release_notes).bufferedReader().readText().trim() }.getOrDefault("")
+        val next = Updater.pending(this)?.notes?.trim().orEmpty()
+        val txt = listOf(next, mine).filter { it.isNotBlank() }.distinct().joinToString("\n\n────────\n\n")
+        menu.page(T.s("What's new", "Šta je novo", "Was ist neu"), R.drawable.lc_info, txt.ifBlank { "–" })
     }
 
     private fun markStable() {
@@ -3146,8 +3149,11 @@ class MainActivity : Activity() {
             GlassMenu.Item(T.s("Update now", "Ažuriraj sada", "Jetzt aktualisieren"), R.drawable.lc_download,
                 value = Updater.currentName(this) + " → " + info.name) { installUpdate(info) },
             GlassMenu.Item(T.s("Later", "Kasnije", "Später"), R.drawable.lc_x),
+            GlassMenu.Item(T.s("What's new", "Šta je novo", "Was ist neu"), R.drawable.lc_info) {
+                menu.page(T.s("What's new", "Šta je novo", "Was ist neu") + " · " + info.name, R.drawable.lc_info, info.notes.ifBlank { "–" })
+            },
             GlassMenu.Item(T.s("Update settings", "Postavke ažuriranja", "Update-Einstellungen"), R.drawable.lc_settings) { updateMenu() },
-        ), info.notes.ifBlank { null })
+        ))
     }
 
     /** one app: one click on "Update now" */
@@ -3198,7 +3204,7 @@ class MainActivity : Activity() {
         menu.show(T.s("New version ", "Nova verzija ", "Neue Version ") + info.name, R.drawable.lc_download, listOf(
             GlassMenu.Item(T.s("Install now", "Instaliraj sada", "Jetzt installieren"), R.drawable.lc_download) { installUpdate(info) },
             GlassMenu.Item(T.s("Later", "Kasnije", "Später"), R.drawable.lc_x),
-        ), info.notes.ifBlank { null })
+        ))
     }
 
     private var chipPulse: android.animation.ValueAnimator? = null

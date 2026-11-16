@@ -1,3 +1,7 @@
+LEAD Launcher 9.1.1 BETA
+- The update screen no longer shows the long text: only Update now / Later / What's new
+- What's new opens over the whole screen, scrolls with Up / Down, Back closes it
+
 LEAD Launcher 9.1 BETA
 - Updates and notifications are never written on the screen: a small bell with a number appears in the top row; OK opens the notification center, every entry leads straight to its place (LEAD update, app update, the app itself)
 - Notification center: which notifications (Important / Critical / All / None), hidden apps, Clear all with a question

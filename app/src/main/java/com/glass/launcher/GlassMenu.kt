@@ -76,6 +76,48 @@ class GlassMenu(
 
     fun show(title: String, icon: Int?, items: List<Item>, subtitle: String? = null) = build(title, icon, items, subtitle, 0)
 
+    /** long text over the whole screen (What's new): Up / Down scroll, Back goes back */
+    fun page(title: String, icon: Int?, text: String) {
+        current = null
+        removeOverlay()
+        val ov = FrameLayout(act).apply { isClickable = true }
+        val panel = GlassFrame(act).apply { radiusDp = 0f; tint = 0.03f; solid = 0.92f; darken = 0.2f; backdropAlpha = 0.5f }
+        val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(80), dp(44), dp(80), dp(30)) }
+        val header = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, 0, 0, dp(18)) }
+        if (icon != null) header.addView(ImageView(act).apply { setImageResource(icon) }, LinearLayout.LayoutParams(dp(28), dp(28)).apply { marginEnd = dp(14) })
+        header.addView(TextView(act).apply { this.text = title; setTextColor(Color.WHITE); setTextSize(TypedValue.COMPLEX_UNIT_SP, 28f); typeface = Fonts.medium(act) })
+        col.addView(header)
+        val body = TextView(act).apply {
+            this.text = text; setTextColor(Color.argb(230, 255, 255, 255)); setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
+            typeface = Fonts.regular(act); setLineSpacing(0f, 1.4f)
+        }
+        val scroll = ScrollView(act).apply {
+            isFocusable = true; isVerticalScrollBarEnabled = true
+            if (Build.VERSION.SDK_INT >= 26) defaultFocusHighlightEnabled = false
+            addView(body)
+            setOnKeyListener { _, k, e ->
+                if (e.action != android.view.KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+                when (k) {
+                    android.view.KeyEvent.KEYCODE_DPAD_DOWN -> { smoothScrollBy(0, dp(160)); true }
+                    android.view.KeyEvent.KEYCODE_DPAD_UP -> { smoothScrollBy(0, -dp(160)); true }
+                    android.view.KeyEvent.KEYCODE_DPAD_LEFT, android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> true
+                    else -> false
+                }
+            }
+        }
+        col.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        col.addView(TextView(act).apply {
+            this.text = "▲ ▼   ·   Back"; setTextColor(Color.argb(140, 255, 255, 255)); setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setPadding(0, dp(12), 0, 0)
+        })
+        panel.addView(col, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        ov.addView(panel, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        root.addView(ov, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        overlay = ov
+        onOpenChange(true)
+        scroll.post { scroll.requestFocus() }
+    }
+
     private fun build(title: String, icon: Int?, items: List<Item>, subtitle: String?, focusIndex: Int) {
         current = Snap(title, icon, items, subtitle)
         removeOverlay()
