@@ -23,6 +23,8 @@ import java.io.File
 /** What fills the storage: a pie chart by kind of file (video, music, pictures, documents, apps, other). */
 class StorageActivity : Activity() {
 
+    override fun attachBaseContext(newBase: android.content.Context) = super.attachBaseContext(FontScale.wrap(newBase))
+
     companion object {
         const val EXTRA_ROOT = "root"
 

@@ -294,6 +294,16 @@
             </com.glass.launcher.GlassFrame>
 
 
+            <ImageView
+                android:id="@+id/vpnKey"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_gravity="center_vertical"
+                android:layout_marginStart="14dp"
+                android:importantForAccessibility="no"
+                android:src="@drawable/lc_key_round"
+                android:visibility="gone" />
+
             <com.glass.launcher.GlassFrame
                 android:id="@+id/profileBtn"
                 android:layout_width="42dp"

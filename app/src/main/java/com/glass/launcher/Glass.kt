@@ -196,3 +196,20 @@ class GlassFrame @JvmOverloads constructor(
         canvas.drawRoundRect(rect, ri, ri, rim)
     }
 }
+
+/** Text size for the whole launcher (Settings › Text size): every text and the menu width grow together. */
+object FontScale {
+    private fun g(ctx: Context) = ctx.getSharedPreferences("glass_global", Context.MODE_PRIVATE)
+    fun percent(ctx: Context) = g(ctx).getInt("fontPct", 100)
+    fun set(ctx: Context, pct: Int) = g(ctx).edit().putInt("fontPct", pct).apply()
+    fun factor(ctx: Context) = percent(ctx) / 100f
+
+    /** wraps an activity's context so all "sp" sizes follow the chosen text size */
+    fun wrap(base: Context): Context {
+        val pct = runCatching { percent(base) }.getOrDefault(100)
+        if (pct == 100) return base
+        val cfg = android.content.res.Configuration(base.resources.configuration)
+        cfg.fontScale = cfg.fontScale * pct / 100f
+        return base.createConfigurationContext(cfg)
+    }
+}

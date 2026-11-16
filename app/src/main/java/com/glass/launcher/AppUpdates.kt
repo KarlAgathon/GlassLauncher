@@ -53,8 +53,9 @@ object AppUpdates {
     }
 
     var Context.intervalHours: Int
-        get() = store(this).getInt("everyH", 1)
-        set(v) { store(this).edit().putInt("everyH", v).apply() }
+        // default: 4 times a day (every 6 hours)
+        get() = store(this).getInt("everyH2", 6)
+        set(v) { store(this).edit().putInt("everyH2", v).apply() }
 
     fun lastCheck(ctx: Context) = store(ctx).getLong("last", 0L)
 

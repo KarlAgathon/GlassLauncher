@@ -21,7 +21,31 @@ import java.io.File
  * { "versionCode": 2, "versionName": "1.1", "apk": "https://.../GlassLauncher.apk", "notes": "..." }
  */
 object Updater {
-    data class Info(val code: Long, val name: String, val apk: String, val notes: String)
+    data class Info(val code: Long, val name: String, val apk: String, val notes: String, val sha256: String = "")
+
+    /** Beta test versions: the pre-release "beta" on GitHub. Only boxes on the Beta channel look there. */
+    const val BETA_URL = "https://github.com/KarlAgathon/GlassLauncher/releases/download/beta/update.json"
+
+    private fun g(ctx: Context) = ctx.getSharedPreferences("glass_global", Context.MODE_PRIVATE)
+
+    /** true = this box also gets Beta versions (every new version starts as Beta) */
+    fun beta(ctx: Context): Boolean {
+        // a box that was pointed to the beta address by hand (to get the first Beta) joins the Beta channel
+        val p = Prefs(ctx)
+        if ("/download/beta/" in p.updateUrl) {
+            p.updateUrl = "https://github.com/KarlAgathon/GlassLauncher/releases/latest/download/update.json"
+            g(ctx).edit().putBoolean("updBeta", true).apply()
+        }
+        return g(ctx).getBoolean("updBeta", false)
+    }
+    fun setBeta(ctx: Context, on: Boolean) = g(ctx).edit().putBoolean("updBeta", on).apply()
+
+    /** last known Stable version (versionCode, name) */
+    fun stableCode(ctx: Context) = g(ctx).getLong("stableCode", 0L)
+    fun stableName(ctx: Context) = g(ctx).getString("stableName", "") ?: ""
+
+    /** the installed version is newer than the Stable one = it is a Beta */
+    fun installedIsBeta(ctx: Context): Boolean = stableCode(ctx) in 1 until currentCode(ctx)
 
     fun currentCode(ctx: Context): Long {
         val pi = ctx.packageManager.getPackageInfo(ctx.packageName, 0)
@@ -34,11 +58,22 @@ object Updater {
 
     /** Blocking. Returns the newer version, or null if there is none / on error. */
     fun check(ctx: Context, url: String): Info? = runCatching {
-        val j = JSONObject(Http.text(url))
-        val info = Info(j.getLong("versionCode"), j.optString("versionName", "?"),
-            j.getString("apk"), j.optString("notes", ""))
-        if (info.code > currentCode(ctx)) info else null
+        fun read(u: String): Info { val j = JSONObject(Http.text(u))
+            return Info(j.getLong("versionCode"), j.optString("versionName", "?"), j.getString("apk"),
+                j.optString("notes", ""), j.optString("sha256", "")) }
+        val stable = read(url)
+        g(ctx).edit().putLong("stableCode", stable.code).putString("stableName", stable.name).apply()
+        // Beta channel: the test version when it is newer than the Stable one
+        val best = if (beta(ctx)) runCatching { read(BETA_URL) }.getOrNull()?.takeIf { it.code > stable.code } ?: stable else stable
+        if (best.code > currentCode(ctx)) best else null
     }.getOrNull()
+
+    /** SHA-256 of a file as hex */
+    fun sha256(f: File): String {
+        val md = java.security.MessageDigest.getInstance("SHA-256")
+        f.inputStream().use { inp -> val buf = ByteArray(64 * 1024); while (true) { val n = inp.read(buf); if (n < 0) break; md.update(buf, 0, n) } }
+        return md.digest().joinToString("") { "%02x".format(it) }
+    }
 
     /** Blocking download of the new APK. */
     /** Where the APK of [info] is kept once downloaded. */
@@ -74,6 +109,11 @@ object Updater {
                     }
                 }
             }
+        }
+        // the file must be exactly the one GitHub built (SHA-256 from update.json) – otherwise it is thrown away
+        if (info.sha256.isNotBlank() && !sha256(tmp).equals(info.sha256, ignoreCase = true)) {
+            tmp.delete()
+            throw java.io.IOException("SHA-256 mismatch")
         }
         if (!tmp.renameTo(f)) { tmp.copyTo(f, true); tmp.delete() }
         return f
@@ -120,7 +160,7 @@ object Updater {
     fun remember(ctx: Context, info: Info) {
         ctx.getSharedPreferences("glass_global", Context.MODE_PRIVATE).edit()
             .putLong("pendingCode", info.code).putString("pendingName", info.name)
-            .putString("pendingApk", info.apk).putString("pendingNotes", info.notes).apply()
+            .putString("pendingApk", info.apk).putString("pendingNotes", info.notes).putString("pendingSha", info.sha256).apply()
     }
 
     /** The remembered newer version, or null when the installed one is up to date. */
@@ -128,7 +168,8 @@ object Updater {
         val g = ctx.getSharedPreferences("glass_global", Context.MODE_PRIVATE)
         val code = g.getLong("pendingCode", 0L)
         if (code <= currentCode(ctx)) return null
-        return Info(code, g.getString("pendingName", "?") ?: "?", g.getString("pendingApk", "") ?: "", g.getString("pendingNotes", "") ?: "")
+        return Info(code, g.getString("pendingName", "?") ?: "?", g.getString("pendingApk", "") ?: "", g.getString("pendingNotes", "") ?: "",
+            g.getString("pendingSha", "") ?: "")
     }
 
     fun notify(ctx: Context, info: Info) {

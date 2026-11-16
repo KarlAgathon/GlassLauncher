@@ -38,6 +38,8 @@ import java.util.Date
  */
 class FileBrowserActivity : Activity() {
 
+    override fun attachBaseContext(newBase: android.content.Context) = super.attachBaseContext(FontScale.wrap(newBase))
+
     companion object {
         const val EXTRA_PICK = "pick"   // "image", "backup" or "folder" = pick and return its path
         const val EXTRA_PATH = "path"

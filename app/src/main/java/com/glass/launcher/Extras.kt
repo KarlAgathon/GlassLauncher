@@ -9,29 +9,36 @@ import java.net.URL
 /** Icons that come with LEAD: put on the matching apps automatically (once – your own changes stay). */
 object BuiltinIcons {
     private val MAP = mapOf(
+        DefaultApps.PRETORIAN to R.drawable.builtin_pretorian_iptv,
+        DefaultApps.NETFLIX to R.drawable.builtin_netflix,
         "ar.tvplayer.tv" to R.drawable.builtin_tivimate,
         "com.google.android.youtube.tv" to R.drawable.builtin_youtube,
+        "com.teamsmart.videomanager.tv" to R.drawable.builtin_youtube,
+        "com.liskovsoft.smarttubetv" to R.drawable.builtin_youtube,
+        "com.liskovsoft.smarttubetv.beta" to R.drawable.builtin_youtube,
         "io.gh.reisxd.tizentube.cobalt" to R.drawable.builtin_youtube_premium,
         "com.disney.disneyplus" to R.drawable.builtin_disney,
         "com.nuvio.tv" to R.drawable.builtin_nuvio,
         "org.siloserver.silo" to R.drawable.builtin_silo,
     )
+    /** raise when the pictures in the app change: the new ones then replace the old built-in ones once */
+    private const val VERSION = 2
 
-    /** Copies each built-in icon to the app once, unless you already set your own. */
+    /** Copies each built-in icon to the app (new pictures replace older built-in ones). */
     fun seed(ctx: Context): Boolean {
         val g = ctx.getSharedPreferences("glass_global", Context.MODE_PRIVATE)
-        val done = (g.getString("seededIcons", "") ?: "").split(',').filter { it.isNotBlank() }.toMutableSet()
+        val key = "seededIcons$VERSION"
+        val done = (g.getString(key, "") ?: "").split(',').filter { it.isNotBlank() }.toMutableSet()
         var changed = false
         for ((pkg, res) in MAP) {
             if (pkg in done) continue
-            val f = IconStore.file(ctx, pkg)
-            if (!f.exists()) runCatching {
-                ctx.resources.openRawResource(res).use { inp -> f.outputStream().use { inp.copyTo(it) } }
+            runCatching {
+                ctx.resources.openRawResource(res).use { inp -> IconStore.file(ctx, pkg).outputStream().use { inp.copyTo(it) } }
                 changed = true
             }
             done.add(pkg)
         }
-        g.edit().putString("seededIcons", done.joinToString(",")).apply()
+        g.edit().putString(key, done.joinToString(",")).apply()
         return changed
     }
 
@@ -42,6 +49,35 @@ object BuiltinIcons {
     }
 
     fun has(pkg: String) = pkg in MAP
+
+    /** the built-in picture itself (for apps that are not installed yet) */
+    fun bitmap(ctx: Context, pkg: String, w: Int, h: Int): android.graphics.Bitmap? {
+        val f = IconStore.file(ctx, pkg)
+        if (f.exists()) Bitmaps.decodeScaled(f, w, h)?.let { return it }
+        val res = MAP[pkg] ?: return null
+        return runCatching { android.graphics.BitmapFactory.decodeResource(ctx.resources, res) }.getOrNull()
+    }
+}
+
+/** The four apps every fresh LEAD starts with. Missing ones keep their place: a click installs them from the official source. */
+object DefaultApps {
+    const val PRETORIAN = "com.pretorian.tv"
+    const val PRETORIAN_REPO = "KarlAgathon/PRETORIAN"
+    const val NETFLIX = "com.netflix.ninja"
+    const val DISNEY = "com.disney.disneyplus"
+    private val YOUTUBES = listOf("io.gh.reisxd.tizentube.cobalt", "com.teamsmart.videomanager.tv",
+        "com.liskovsoft.smarttubetv.beta", "com.liskovsoft.smarttubetv", "com.google.android.youtube.tv")
+
+    fun isDefault(pkg: String) = pkg == PRETORIAN || pkg == NETFLIX || pkg == DISNEY || pkg in YOUTUBES
+
+    fun name(pkg: String) = when (pkg) {
+        PRETORIAN -> "PRETORIAN IPTV"; NETFLIX -> "Netflix"; DISNEY -> "Disney+"; else -> "YouTube"
+    }
+
+    /** the YouTube that is on the box (TizenTube / SmartTube / the official one) */
+    fun youtube(ctx: Context) = YOUTUBES.firstOrNull { Extras.installed(ctx, it) } ?: "com.google.android.youtube.tv"
+
+    fun list(ctx: Context) = listOf(PRETORIAN, youtube(ctx), DISNEY, NETFLIX)
 }
 
 /** Add-ons LEAD can fetch and install by itself (from their official GitHub releases). */
@@ -56,7 +92,12 @@ object Extras {
     fun install(act: Activity, pkg: String, url: String?, msg: (String) -> Unit) {
         Thread {
             try {
-                val real = url ?: if (pkg == SHIZUKU) AppUpdates.github("thedjchi/Shizuku")?.second else null
+                val real = url ?: when (pkg) {
+                    SHIZUKU -> AppUpdates.github("thedjchi/Shizuku")?.second
+                    // PRETORIAN: always the newest STABLE release (GitHub's "latest" never points to a beta)
+                    DefaultApps.PRETORIAN -> AppUpdates.github(DefaultApps.PRETORIAN_REPO)?.second
+                    else -> null
+                }
                 if (real.isNullOrBlank()) throw IllegalStateException()
                 val f = File(act.cacheDir, "$pkg.apk")
                 var u = URL(real); var hops = 0

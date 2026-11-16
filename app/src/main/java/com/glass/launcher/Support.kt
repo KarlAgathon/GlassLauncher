@@ -153,6 +153,32 @@ class Prefs(ctx: Context) {
     var singleRow: Boolean get() = bool("oneRow2", true); set(v) = putBool("oneRow2", v)
     /** show the "+" tile at the end of the row (always shown while the home screen is empty) */
     var showAddTile: Boolean get() = bool("addTileEnd", true); set(v) = putBool("addTileEnd", v)
+    /** Visual Look: 0 Modern (SofaDrop pictures), 1 Semi (glass tiles), 2 Light (floating logos) */
+    var visualLook: Int get() = int("vLook", 1); set(v) = putInt("vLook", v)
+    /** mirror picture of the logos under the row (Light look) */
+    var reflect: Boolean get() = bool("tReflect", false); set(v) = putBool("tReflect", v)
+    /** status bar: 0 always shown, 1 auto-hide (appears when you go to the top), 2 on demand (one more Up at the top) */
+    var statusMode: Int get() = int("sMode", 1); set(v) = putInt("sMode", v)
+    /** status bar: icons only, no numbers or names */
+    var statusIconsOnly: Boolean get() = bool("sIconsOnly", false); set(v) = putBool("sIconsOnly", v)
+
+    /** one of the three looks: changes only how things look, never your apps */
+    fun applyVisualLook(v: Int) {
+        visualLook = v
+        when (v) {
+            2 -> { tileShape = 0; logoWhite = false; logoNoBg = true; tileAlpha = 0; tileBorder = 0; tileClean = true; tileFrost = false
+                dock = false; showLabels = false; reflect = true; tileSize = 2; tileGap = 48; focusScale = 15
+                gridPosition = 1; gridAlign = 1; gridOffX = 0; gridOffY = 0; clockSide = 2; singleRow = true; showAddTile = false
+                statusMode = 1; showDate = false; dim = 0 }
+            1 -> { tileShape = 0; logoWhite = false; logoNoBg = true; tileAlpha = 6; tileBorder = 0; tileClean = true; tileFrost = false
+                dock = false; showLabels = false; reflect = false; tileSize = 2; tileGap = 12; focusScale = 30
+                gridPosition = 2; gridAlign = 0; clockSide = 1; showAddTile = true; showDate = true; dim = 10 }
+            0 -> { tileShape = 0; logoWhite = false; logoNoBg = true; tileAlpha = 10; tileBorder = 0; tileClean = true; tileFrost = false
+                dock = false; showLabels = false; reflect = false; tileSize = 2; tileGap = 12; focusScale = 30
+                gridPosition = 2; gridAlign = 0; clockSide = 1; showAddTile = true; showDate = true; dim = 10 }
+        }
+    }
+
     /** status bar glass adapts to the brightness of the wallpaper behind it */
     var statusAdaptive: Boolean get() = bool("sAdaptive", true); set(v) = putBool("sAdaptive", v)
 
@@ -174,7 +200,7 @@ class Prefs(ctx: Context) {
     var wpFolder: String get() = str("wpFolder", ""); set(v) = putStr("wpFolder", v)
     /** file manager sort: 0 name, 1 size, 2 type (extension), 3 changed, 4 arrived on the box */
     var fileSort: Int get() = int("fSort", 0); set(v) = putInt("fSort", v)
-    /** clock & date: 0 top left, 1 top right (right keeps the left free for wallpapers with their own title) */
+    /** clock & date: 0 top left, 1 top right (under the bar), 2 in the top row next to the buttons */
     var clockSide: Int get() = int("clockSide", 1); set(v) = putInt("clockSide", v)
     var fileSortDesc: Boolean get() = bool("fSortDesc", false); set(v) = putBool("fSortDesc", v)
     /** wallpaper plugin (Projectivy plugins like SofaDrop): "package/serviceClass" */
@@ -276,7 +302,7 @@ object ClockFmt {
 
 /* ================================================================ apps */
 
-data class AppEntry(val pkg: String, val label: String, val icon: Bitmap?) {
+data class AppEntry(val pkg: String, val label: String, val icon: Bitmap?, val missing: Boolean = false) {
     val isAdd get() = pkg == ADD
     val isFiles get() = pkg == FILES
 
@@ -329,7 +355,12 @@ object AppLoader {
                 } else filesIcon(ctx, size)
                 return@mapNotNull AppEntry(p, name, icon)
             }
-            val ri = all[p] ?: return@mapNotNull null
+            val ri = all[p] ?: run {
+                // one of LEAD's default apps that is not installed yet: keep its place, a click installs it
+                if (!DefaultApps.isDefault(p)) return@mapNotNull null
+                val pic = BuiltinIcons.bitmap(ctx, p, wPx * 2, hPx * 2) ?: return@mapNotNull null
+                return@mapNotNull AppEntry(p, prefs.label(p) ?: DefaultApps.name(p), pic, missing = true)
+            }
             val label = prefs.label(p) ?: ri.loadLabel(pm).toString()
             val icon = own?.let { if (prefs.logoWhite) IconRender.whiten(it) else it }
                 ?: runCatching {
@@ -446,6 +477,39 @@ object IconStore {
 }
 
 object Bitmaps {
+    /**
+     * Mirror picture of a logo as it sits in a w×h tile (same padding / fit), flipped, fading out downwards.
+     * Only the top [outH] pixels of the mirror are kept.
+     */
+    fun mirror(src: Bitmap, w: Int, h: Int, padX: Int, padY: Int, outH: Int, stretch: Boolean): Bitmap {
+        val out = Bitmap.createBitmap(w.coerceAtLeast(1), outH.coerceAtLeast(1), Bitmap.Config.ARGB_8888)
+        val c = Canvas(out)
+        val aw = (w - 2 * padX).coerceAtLeast(1).toFloat()
+        val ah = (h - 2 * padY).coerceAtLeast(1).toFloat()
+        val sc = if (stretch) maxOf(aw / src.width, ah / src.height) else minOf(aw / src.width, ah / src.height)
+        val dw = src.width * sc; val dh = src.height * sc
+        val left = padX + (aw - dw) / 2f
+        val top = padY + (ah - dh) / 2f
+        // flipped: the bottom edge of the logo comes first
+        c.save()
+        c.scale(1f, -1f)
+        c.translate(0f, -h.toFloat())
+        c.drawBitmap(src, null, android.graphics.RectF(left, top, left + dw, top + dh), Paint(Paint.FILTER_BITMAP_FLAG))
+        c.restore()
+        // trim the empty space between the logo and its mirror (FIT leaves room under the logo)
+        val gap = (h - (top + dh)).toInt().coerceAtLeast(0)
+        val moved = if (gap > 0) {
+            val m = Bitmap.createBitmap(out.width, out.height, Bitmap.Config.ARGB_8888)
+            Canvas(m).drawBitmap(out, 0f, -gap.toFloat(), null); out.recycle(); m
+        } else out
+        val fade = Paint().apply {
+            shader = android.graphics.LinearGradient(0f, 0f, 0f, outH.toFloat(), Color.argb(115, 0, 0, 0), Color.argb(0, 0, 0, 0), android.graphics.Shader.TileMode.CLAMP)
+            xfermode = android.graphics.PorterDuffXfermode(PorterDuff.Mode.DST_IN)
+        }
+        Canvas(moved).drawRect(0f, 0f, moved.width.toFloat(), outH.toFloat(), fade)
+        return moved
+    }
+
     fun decodeScaled(f: File, reqW: Int, reqH: Int): Bitmap? {
         val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(f.absolutePath, o)

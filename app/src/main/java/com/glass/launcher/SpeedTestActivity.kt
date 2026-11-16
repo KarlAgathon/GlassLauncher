@@ -43,6 +43,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 class SpeedTestActivity : Activity() {
 
+    override fun attachBaseContext(newBase: android.content.Context) = super.attachBaseContext(FontScale.wrap(newBase))
+
     companion object {
         const val PROBE_APK = "https://github.com/KarlAgathon/GlassLauncher/releases/latest/download/LEAD-VPN-test.apk"
     }

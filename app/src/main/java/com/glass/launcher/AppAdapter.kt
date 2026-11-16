@@ -24,7 +24,13 @@ class AppAdapter(
         val tile: GlassFrame = v.findViewById(R.id.tile)
         val icon: ImageView = v.findViewById(R.id.icon)
         val label: TextView = v.findViewById(R.id.label)
+        val reflect: ImageView = v.findViewById(R.id.reflect)
+        val badge: ImageView = v.findViewById(R.id.badge)
     }
+
+    /** mirror pictures, made once per logo and size */
+    private val mirrors = HashMap<String, android.graphics.Bitmap>()
+    fun clearMirrors() = mirrors.clear()
 
     override fun getItemCount() = items.size
 
@@ -97,6 +103,19 @@ class AppAdapter(
         }
         h.icon.layoutParams = ilp
 
+        // Light look: the logo's mirror picture under it; apps that are not installed yet are dimmed with a ⬇
+        if (prefs.reflect && e.icon != null && !e.isAdd) {
+            val rh = (hPx * 0.42f).toInt()
+            val key = "${System.identityHashCode(e.icon)}:$wPx:$hPx:${prefs.logoFit}"
+            val m = mirrors.getOrPut(key) { Bitmaps.mirror(e.icon, wPx, hPx, h.icon.paddingLeft, h.icon.paddingTop, rh, stretch) }
+            h.reflect.setImageBitmap(m)
+            h.reflect.layoutParams = (h.reflect.layoutParams as LinearLayout.LayoutParams).also { it.width = wPx; it.height = rh; it.topMargin = (2 * d).toInt() }
+            h.reflect.visibility = View.VISIBLE
+        } else h.reflect.visibility = View.GONE
+        h.icon.alpha = if (e.missing) 0.45f else 1f
+        h.reflect.alpha = if (e.missing) 0.3f else 1f
+        h.badge.visibility = if (e.missing) View.VISIBLE else View.GONE
+
         h.label.text = e.label
         h.label.visibility = if (prefs.showLabels) View.VISIBLE else View.GONE
         (h.label.layoutParams as LinearLayout.LayoutParams).width = wPx
@@ -105,7 +124,8 @@ class AppAdapter(
 
     private fun style(h: VH, focused: Boolean) {
         val moving = h.bindingAdapterPosition == movingPos && movingPos >= 0
-        h.tile.focusedLook = focused
+        // Light look: no frame at all – the selected logo just grows and its mirror shines
+        h.tile.focusedLook = focused && !(prefs.reflect && prefs.tileAlpha == 0)
         h.tile.accent = moving
         val s = if (focused || moving) 1f + prefs.focusScale / 100f else 1f
         h.tile.animate().scaleX(s).scaleY(s).setDuration(if (Backdrop.lite) 0L else 150L).withEndAction { h.tile.invalidate() }.start()
@@ -114,5 +134,12 @@ class AppAdapter(
         h.label.typeface = if (focused) Fonts.medium(h.itemView.context) else Fonts.regular(h.itemView.context)
         h.label.setTextColor(if (focused) Color.WHITE else Color.argb(215, 255, 255, 255))
         h.label.translationY = if (focused) h.tile.height * prefs.focusScale / 200f else 0f
+        if (h.reflect.visibility == View.VISIBLE) {
+            // the selected logo shines more in its mirror and moves down with the zoom
+            val base = if (items.getOrNull(h.bindingAdapterPosition)?.missing == true) 0.3f else 1f
+            h.reflect.animate().alpha(base * if (focused) 1f else 0.55f)
+                .translationY(if (focused) h.tile.height * prefs.focusScale / 200f else 0f)
+                .scaleX(s).scaleY(s).setDuration(if (Backdrop.lite) 0L else 150L).start()
+        }
     }
 }

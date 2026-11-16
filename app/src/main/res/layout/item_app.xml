@@ -24,6 +24,24 @@
             android:scaleType="fitCenter" />
     </com.glass.launcher.GlassFrame>
 
+    <ImageView
+        android:id="@+id/reflect"
+        android:layout_width="132dp"
+        android:layout_height="37dp"
+        android:layout_marginTop="4dp"
+        android:importantForAccessibility="no"
+        android:scaleType="fitXY"
+        android:visibility="gone" />
+
+    <ImageView
+        android:id="@+id/badge"
+        android:layout_width="22dp"
+        android:layout_height="22dp"
+        android:layout_marginTop="-30dp"
+        android:importantForAccessibility="no"
+        android:src="@drawable/lc_download"
+        android:visibility="gone" />
+
     <TextView
         android:id="@+id/label"
         android:layout_width="132dp"

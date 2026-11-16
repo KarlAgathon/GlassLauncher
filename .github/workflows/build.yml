@@ -59,7 +59,8 @@ jobs:
       - name: Make update.json
         if: steps.v.outputs.exists == 'false' && (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v'))
         run: |
-          echo "{\"versionCode\": ${{ steps.v.outputs.code }}, \"versionName\": \"${{ steps.v.outputs.name }}\", \"apk\": \"https://github.com/${{ github.repository }}/releases/latest/download/GlassLauncher.apk\", \"notes\": \"\"}" > update.json
+          SHA=$(sha256sum GlassLauncher.apk | cut -d' ' -f1)
+          echo "{\"versionCode\": ${{ steps.v.outputs.code }}, \"versionName\": \"${{ steps.v.outputs.name }}\", \"apk\": \"https://github.com/${{ github.repository }}/releases/latest/download/GlassLauncher.apk\", \"sha256\": \"$SHA\", \"notes\": \"\"}" > update.json
           cat update.json
       - uses: softprops/action-gh-release@v2
         if: steps.v.outputs.exists == 'false' && (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v'))
@@ -72,3 +73,18 @@ jobs:
             GlassLauncher.apk
             LEAD-VPN-test.apk
             update.json
+
+      # Beta channel: every push to the "beta" branch replaces the pre-release "beta".
+      # Only boxes with "Beta versions on this box" switched on look there. Stable = merge beta into master.
+      - name: Publish beta
+        if: github.ref == 'refs/heads/beta'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SHA=$(sha256sum GlassLauncher.apk | cut -d' ' -f1)
+          NOTES=$(python3 -c 'import json,sys; print(json.dumps(open("RELEASE_NOTES.txt").read().strip()))' 2>/dev/null || echo '""')
+          echo "{\"versionCode\": ${{ steps.v.outputs.code }}, \"versionName\": \"${{ steps.v.outputs.name }}\", \"apk\": \"https://github.com/${{ github.repository }}/releases/download/beta/GlassLauncher.apk\", \"sha256\": \"$SHA\", \"notes\": $NOTES}" > update.json
+          cat update.json
+          gh release delete beta --repo "${{ github.repository }}" --yes --cleanup-tag || true
+          gh release create beta GlassLauncher.apk LEAD-VPN-test.apk update.json --repo "${{ github.repository }}" --prerelease --latest=false \
+            --target "${{ github.sha }}" --title "LEAD Launcher ${{ steps.v.outputs.name }} (beta)" --notes-file RELEASE_NOTES.txt

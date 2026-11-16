@@ -1,0 +1,12 @@
+LEAD Launcher 9.0 BETA
+- Visual Look: Light (floating logos with reflections), Semi (glass tiles), Modern (SofaDrop)
+- Fresh install: Light look, LEAD wallpaper, PRETORIAN IPTV, YouTube, Disney+, Netflix
+- Missing default apps keep their place: PRETORIAN from GitHub (stable), others via Google Play
+- Built-in icons: PRETORIAN IPTV, Netflix, YouTube, YouTube Premium, Disney+, TiviMate, Nuvio
+- Status bar hides itself (Always / Auto-hide / On demand), sharper, icons-only option
+- VPN key, profile, settings, power and clock always visible
+- Settings as a glass sheet on the right, new order with groups, green sliders like PRETORIAN
+- Text size for the whole launcher
+- Long press › Change icon: own picture, search the internet, link, LEAD icon, original
+- App updates checked 4 times a day; notification opens the update screen directly
+- Beta / Stable channel, SHA-256 check of every LEAD download
