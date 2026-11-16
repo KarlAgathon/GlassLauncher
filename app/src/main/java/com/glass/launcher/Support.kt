@@ -227,6 +227,15 @@ class Prefs(ctx: Context) {
     /** GitHub apps (TizenTube, PRETORIAN, SofaDrop …) update themselves at night (needs Shizuku) */
     var nightUpdates: Boolean get() = bool("nightUpd", true); set(v) = putBool("nightUpd", v)
 
+    /** clock font: 0 thin, 1 light, 2 normal, 3 bold, 4 narrow, 5 digital */
+    var clockFont: Int get() = int("clockFont", 1); set(v) = putInt("clockFont", v)
+    /** clock size: 0 small, 1 normal, 2 large, 3 very large */
+    var clockSize: Int get() = int("clockSize", 1); set(v) = putInt("clockSize", v)
+    /** time and date in one line instead of two */
+    var clockOneLine: Boolean get() = bool("clockOneLine", false); set(v) = putBool("clockOneLine", v)
+    /** date: 0 "Monday, 16. November", 1 "Mon, 16. Nov", 2 "16.11.2026" */
+    var dateStyle: Int get() = int("dateStyle", 0); set(v) = putInt("dateStyle", v)
+
     /** the clock of the first 9.0 beta was moved below the buttons once */
     var clockMoved: Boolean get() = bool("clockMoved", false); set(v) = putBool("clockMoved", v)
     /** TizenTube (with the YouTube Premium icon) put on the home screen once in place of the official YouTube */

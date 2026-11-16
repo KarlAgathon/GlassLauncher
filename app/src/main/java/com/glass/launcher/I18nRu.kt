@@ -5,6 +5,15 @@ object I18nRu {
     val map: HashMap<String, String> = HashMap(1024)
 
     init {
+        map["Font"] = "Шрифт"
+        map["Thin"] = "Тонкий"
+        map["Bold"] = "Жирный"
+        map["Narrow"] = "Узкий"
+        map["Digital"] = "Цифровой"
+        map["Time and date in one line"] = "Время и дата в одну строку"
+        map["Date format"] = "Формат даты"
+        map["Monday, 16 November"] = "Понедельник, 16 ноября"
+        map["Mon, 16 Nov"] = "Пн, 16 ноя"
         map["All"] = "Все"
         map["Black"] = "Чёрный"
         map["Blue"] = "Синий"

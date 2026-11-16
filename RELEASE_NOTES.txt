@@ -1,4 +1,6 @@
 LEAD Launcher 9.1.1 BETA
+- Remote: from the right side or the clock, Up goes straight to profile / settings / power; from the middle Up opens the status bar
+- Clock: font (thin, light, normal, bold, narrow, digital), size, time and date in one line, date format
 - The update screen no longer shows the long text: only Update now / Later / What's new
 - What's new opens over the whole screen, scrolls with Up / Down, Back closes it
 

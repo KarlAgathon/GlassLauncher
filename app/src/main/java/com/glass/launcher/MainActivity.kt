@@ -14,6 +14,7 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.graphics.Typeface
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -761,9 +762,36 @@ class MainActivity : Activity() {
     // ================================================================== status bar
 
     private fun updateClock() {
-        clock.text = SimpleDateFormat(ClockFmt.pattern(this, prefs), T.locale).format(Date())
-        val d = SimpleDateFormat("EEEE, d. MMMM", T.locale).format(Date())
-        date.text = d.replaceFirstChar { it.uppercase() }
+        val time = SimpleDateFormat(ClockFmt.pattern(this, prefs), T.locale).format(Date())
+        val pat = when (prefs.dateStyle) { 1 -> "EEE, d. MMM"; 2 -> "dd.MM.yyyy"; else -> "EEEE, d. MMMM" }
+        val d = SimpleDateFormat(pat, T.locale).format(Date()).replaceFirstChar { it.uppercase() }
+        if (prefs.clockOneLine && prefs.showDate) {
+            // one line: "14:02:15  Monday, 16. November" – the date smaller, on the same line
+            val sp = android.text.SpannableString("$time   $d")
+            sp.setSpan(android.text.style.RelativeSizeSpan(0.42f), time.length, sp.length, 0)
+            sp.setSpan(android.text.style.ForegroundColorSpan(Color.argb(221, 255, 255, 255)), time.length, sp.length, 0)
+            clock.text = sp
+            date.visibility = View.GONE
+        } else {
+            clock.text = time
+            date.text = d
+            date.visibility = if (prefs.showDate) View.VISIBLE else View.GONE
+        }
+    }
+
+    /** font and size of the clock (Settings › Clock) */
+    private fun styleClock(baseSp: Float) {
+        clock.typeface = when (prefs.clockFont) {
+            0 -> Typeface.create("sans-serif-thin", Typeface.NORMAL)
+            2 -> Fonts.regular(this)
+            3 -> Fonts.medium(this)
+            4 -> Typeface.create("sans-serif-condensed", Typeface.NORMAL)
+            5 -> Typeface.MONOSPACE
+            else -> Fonts.light(this)
+        }
+        val f = listOf(0.75f, 1f, 1.3f, 1.6f)[prefs.clockSize.coerceIn(0, 3)]
+        clock.setTextSize(TypedValue.COMPLEX_UNIT_SP, baseSp * f)
+        date.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f * f.coerceAtMost(1.3f))
     }
 
     @Volatile private var statusBusy = false
@@ -1257,6 +1285,24 @@ class MainActivity : Activity() {
         if (menu.isOpen && k == KeyEvent.KEYCODE_BACK) {
             if (event.action == KeyEvent.ACTION_UP) menu.back()
             return true
+        }
+        if (!menu.isOpen && movingPos < 0 && k == KeyEvent.KEYCODE_DPAD_UP && event.action == KeyEvent.ACTION_DOWN) {
+            val f = currentFocus
+            if (f != null && (f === clock || isInGrid(f))) {
+                val loc = IntArray(2); f.getLocationOnScreen(loc)
+                val cx = loc[0] + f.width / 2
+                val sw = screenSize().first
+                val buttons = listOfNotNull(bellBadge, findViewById<View>(R.id.vpnKey), profileBtn, settingsBtn, powerBtn)
+                    .filter { it.visibility == View.VISIBLE && it.isFocusable }
+                fun nearest(l: List<View>) = l.minByOrNull { v -> val p = IntArray(2); v.getLocationOnScreen(p); Math.abs(p[0] + v.width / 2 - cx) }
+                if (f === clock || cx > sw * 0.62 || !pillWanted) {
+                    nearest(buttons)?.requestFocus(); return true
+                }
+                // middle / left: up opens the status bar and goes onto it
+                setReveal(true)
+                statusPill.post { nearest(statusGroups().filter { it.visibility == View.VISIBLE && it.isFocusable })?.requestFocus() ?: nearest(buttons)?.requestFocus() }
+                return true
+            }
         }
         if (!menu.isOpen && movingPos < 0 && prefs.numberKeys && k in KeyEvent.KEYCODE_1..KeyEvent.KEYCODE_9) {
             if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
@@ -2394,17 +2440,17 @@ class MainActivity : Activity() {
             row.addView(spacer, 0, LinearLayout.LayoutParams(0, 1, 1f))
             row.addView(col, LinearLayout.LayoutParams(-2, -2).apply { marginStart = (20 * d).toInt(); gravity = Gravity.CENTER_VERTICAL })
             col.gravity = Gravity.END
-            clock.setTextSize(TypedValue.COMPLEX_UNIT_SP, 34f)
+            styleClock(34f)
         } else if (right) {
             val spacer = clockSpacer ?: View(this).also { clockSpacer = it }
             row.addView(spacer, 0, LinearLayout.LayoutParams(0, 1, 1f))
             outer.addView(col, outer.indexOfChild(row) + 1, LinearLayout.LayoutParams(-1, -2).apply { topMargin = (10 * d).toInt() })
             col.gravity = Gravity.END
-            clock.setTextSize(TypedValue.COMPLEX_UNIT_SP, 40f)   // about 30 % smaller than on the left
+            styleClock(40f)   // about 30 % smaller than on the left
         } else {
             row.addView(col, 0, LinearLayout.LayoutParams(0, -2, 1f))
             col.gravity = Gravity.START
-            clock.setTextSize(TypedValue.COMPLEX_UNIT_SP, 58f)
+            styleClock(58f)
         }
         // the "new version" chip: clock on the right = third line under the date; otherwise top right
         if (chipHome == null) chipHome = updateBtn.parent as? FrameLayout
@@ -2449,12 +2495,36 @@ class MainActivity : Activity() {
             },
             GlassMenu.Item(T.s("Show date", "Prikaži datum", "Datum anzeigen"), R.drawable.lc_type,
                 checked = prefs.showDate, toggle = true) { prefs.showDate = it.checked; applyLook() },
+            GlassMenu.Item(T.s("Font", "Font", "Schrift"), R.drawable.lc_type, value = clockFonts()[prefs.clockFont.coerceIn(0, 5)]) {
+                choose(T.s("Font", "Font", "Schrift"), R.drawable.lc_type, clockFonts().mapIndexed { i, n -> n to i }, prefs.clockFont) {
+                    prefs.clockFont = it; placeClock(); updateClock()
+                }
+            },
+            GlassMenu.Item(T.s("Size", "Veličina", "Größe"), R.drawable.lc_columns_3, value = clockSizes()[prefs.clockSize.coerceIn(0, 3)]) {
+                choose(T.s("Size", "Veličina", "Größe"), R.drawable.lc_columns_3, clockSizes().mapIndexed { i, n -> n to i }, prefs.clockSize) {
+                    prefs.clockSize = it; placeClock(); updateClock()
+                }
+            },
+            GlassMenu.Item(T.s("Time and date in one line", "Vrijeme i datum u jednom redu", "Uhrzeit und Datum in einer Zeile"), R.drawable.lc_layout_grid,
+                checked = prefs.clockOneLine, toggle = true) { prefs.clockOneLine = it.checked; updateClock() },
+            GlassMenu.Item(T.s("Date format", "Format datuma", "Datumsformat"), R.drawable.lc_type, value = dateStyles()[prefs.dateStyle.coerceIn(0, 2)]) {
+                choose(T.s("Date format", "Format datuma", "Datumsformat"), R.drawable.lc_type, dateStyles().mapIndexed { i, n -> n to i }, prefs.dateStyle) {
+                    prefs.dateStyle = it; updateClock()
+                }
+            },
             GlassMenu.Item(T.s("Show seconds", "Prikaži sekunde", "Sekunden anzeigen"), R.drawable.lc_clock,
                 checked = prefs.clockSeconds, toggle = true) { prefs.clockSeconds = it.checked; updateClock() },
             GlassMenu.Item(T.s("Time zone automatically", "Vremenska zona automatski", "Zeitzone automatisch"), R.drawable.lc_globe,
                 checked = autoZone(), toggle = true) { toggleAutoZone() },
         ))
     }
+
+    private fun clockFonts() = listOf(T.s("Thin", "Tanki", "Dünn"), "Light", T.s("Normal", "Normalni", "Normal"),
+        T.s("Bold", "Podebljani", "Fett"), T.s("Narrow", "Uski", "Schmal"), T.s("Digital", "Digitalni", "Digital"))
+    private fun clockSizes() = listOf(T.s("Small", "Mali", "Klein"), T.s("Normal", "Normalni", "Normal"),
+        T.s("Large", "Veliki", "Groß"), T.s("Very large", "Vrlo veliki", "Sehr groß"))
+    private fun dateStyles() = listOf(T.s("Monday, 16 November", "Ponedjeljak, 16. novembar", "Montag, 16. November"),
+        T.s("Mon, 16 Nov", "Pon, 16. nov", "Mo, 16. Nov"), "16.11.2026")
 
     private fun autoZone(): Boolean =
         runCatching { Settings.Global.getInt(contentResolver, Settings.Global.AUTO_TIME_ZONE) == 1 }.getOrDefault(false)
