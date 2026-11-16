@@ -1,4 +1,6 @@
 LEAD Launcher 9.1.1 BETA
+- Light: all logos the same size class with exactly equal gaps; the selected one grows 35 % and lifts up
+- Status bar, buttons, VPN key, clock and date: On demand by default (change in Status bar settings)
 - Light: only the wallpaper and the apps; status bar, buttons, VPN key, clock and date come on demand (Up)
 - Light: four logos fill the screen width on any TV, bigger; the selected one grows 35 %
 - Status bar settings: switches for clock, date, profile, settings, power, VPN key, and when the buttons / clock show

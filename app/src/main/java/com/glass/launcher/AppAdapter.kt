@@ -55,9 +55,16 @@ class AppAdapter(
         val ctx = h.itemView.context
         val d = ctx.resources.displayMetrics.density
         val (tw, th) = prefs.tileDp()
-        val wPx = (tw * d).toInt()
-        val hPx = (th * d).toInt()
+        var wPx = (tw * d).toInt()
+        var hPx = (th * d).toInt()
         val wide = prefs.tileShape == 0
+        val evenly = prefs.fitScreen && Prefs.fitBoxW > 0 && !e.isAdd && e.icon != null
+        if (evenly) {
+            // Light: every logo fits the same box and takes only its own width – so all gaps are the same
+            hPx = Prefs.fitBoxH
+            val ar = e.icon!!.width.toFloat() / e.icon.height.coerceAtLeast(1)
+            wPx = minOf(Prefs.fitBoxW, (hPx * ar).toInt())
+        }
 
         // tile size and look
         val lp = h.tile.layoutParams
@@ -75,7 +82,7 @@ class AppAdapter(
         h.tile.refreshShape()
 
         // gap + room for the focus zoom
-        val gapPx = (prefs.tileGap * d).toInt()
+        val gapPx = if (evenly) Prefs.fitGap else (prefs.tileGap * d).toInt()
         val grow = (hPx * prefs.focusScale / 100f / 2f).toInt()
         h.itemView.setPadding(gapPx / 2, grow + (4 * d).toInt(), gapPx / 2, grow)
 
@@ -87,7 +94,7 @@ class AppAdapter(
             ilp.width = ViewGroup.LayoutParams.MATCH_PARENT
             ilp.height = ViewGroup.LayoutParams.MATCH_PARENT
             // Light (four logos across the screen): the logo almost fills its place
-            val pad = if (stretch) 0 else (hPx * if (prefs.fitScreen) 0.04f else 0.14f).toInt()
+            val pad = if (stretch || evenly) 0 else (hPx * if (prefs.fitScreen) 0.04f else 0.14f).toInt()
             h.icon.setPadding(pad * 2, pad, pad * 2, pad)
             h.icon.scaleType = if (stretch) ImageView.ScaleType.CENTER_CROP else ImageView.ScaleType.FIT_CENTER
         } else {
@@ -144,7 +151,9 @@ class AppAdapter(
         }
         h.tile.accent = moving
         val s = if (focused || moving) 1f + prefs.focusScale / 100f else 1f
-        h.tile.animate().scaleX(s).scaleY(s).setDuration(if (Backdrop.lite) 0L else 150L).withEndAction { h.tile.invalidate() }.start()
+        // Light: the selected logo also lifts a little – it "pops up"
+        val lift = if (focused && prefs.reflect) -h.tile.height * 0.08f else 0f
+        h.tile.animate().scaleX(s).scaleY(s).translationY(lift).setDuration(if (Backdrop.lite) 0L else 150L).withEndAction { h.tile.invalidate() }.start()
         // older Android cannot hide the shadow: no lift there when the frame is off
         val z = if (focused && (prefs.focusFrame || android.os.Build.VERSION.SDK_INT >= 28)) 10f else 0f
         h.tile.translationZ = z

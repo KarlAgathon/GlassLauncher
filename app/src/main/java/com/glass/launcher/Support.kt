@@ -119,6 +119,10 @@ class Prefs(ctx: Context) {
     companion object {
         /** tile size worked out from the screen width (Light: four logos fill the screen), in dp */
         @Volatile var fitDp: Pair<Int, Int>? = null
+        /** Light: every logo gets the same height and its own width, with the same gap between all of them (px) */
+        @Volatile var fitBoxW = 0
+        @Volatile var fitBoxH = 0
+        @Volatile var fitGap = 0
 
         /** settings of another profile (e.g. a brand-new one) */
         fun forProfile(ctx: Context, id: String, block: (Prefs) -> Unit) {
@@ -207,7 +211,7 @@ class Prefs(ctx: Context) {
     /** mirror picture of the logos under the row (Light look) */
     var reflect: Boolean get() = bool("tReflect", false); set(v) = putBool("tReflect", v)
     /** status bar: 0 always shown, 1 auto-hide (appears when you go to the top), 2 on demand (one more Up at the top) */
-    var statusMode: Int get() = int("sMode", 1); set(v) = putInt("sMode", v)
+    var statusMode: Int get() = int("sMode", 2); set(v) = putInt("sMode", v)
     /** frame around the selected icon (off = the selected icon only grows) – Light starts without it */
     var focusFrame: Boolean get() = bool("tFocusFrame", !(reflect && tileAlpha == 0)); set(v) = putBool("tFocusFrame", v)
     /** status bar: icons only, no numbers or names */
@@ -233,7 +237,7 @@ class Prefs(ctx: Context) {
     /** Light: four logos fill the width of the screen, bigger and evenly spread (any TV size) */
     var fitScreen: Boolean get() = bool("fitScreen", false); set(v) = putBool("fitScreen", v)
     /** profile / settings / power / VPN key / bell: 0 always, 1 auto-hide, 2 on demand */
-    var buttonsMode: Int get() = int("btnMode", 0); set(v) = putInt("btnMode", v)
+    var buttonsMode: Int get() = int("btnMode", 2); set(v) = putInt("btnMode", v)
     var showProfileBtn: Boolean get() = bool("showProfileBtn", true); set(v) = putBool("showProfileBtn", v)
     var showSettingsBtn: Boolean get() = bool("showSettingsBtn", true); set(v) = putBool("showSettingsBtn", v)
     var showPowerBtn: Boolean get() = bool("showPowerBtn", true); set(v) = putBool("showPowerBtn", v)
@@ -241,7 +245,7 @@ class Prefs(ctx: Context) {
     var lightDemandSet: Boolean get() = bool("lightDemand", false); set(v) = putBool("lightDemand", v)
 
     /** clock and date: 0 always, 1 auto-hide (appear when you go to the top), 2 on demand (one more Up at the top) */
-    var clockMode: Int get() = int("clockMode", 0); set(v) = putInt("clockMode", v)
+    var clockMode: Int get() = int("clockMode", 2); set(v) = putInt("clockMode", v)
     /** in the evening and at night (20–7 h) the logos and the clock are a little dimmer */
     var nightSoft: Boolean get() = bool("nightSoft", true); set(v) = putBool("nightSoft", v)
     /** clock font: 0 thin, 1 light, 2 normal, 3 bold, 4 narrow, 5 digital */
@@ -271,11 +275,11 @@ class Prefs(ctx: Context) {
             1 -> { tileShape = 0; logoWhite = false; logoNoBg = true; tileAlpha = 6; tileBorder = 0; tileClean = true; tileFrost = false
                 dock = false; showLabels = false; reflect = false; tileSize = 2; tileGap = 12; focusScale = 30; focusFrame = true
                 gridPosition = 2; gridAlign = 0; clockSide = 1; showAddTile = true; showDate = true; dim = 10
-                statusMode = 1; clockMode = 0; buttonsMode = 0; fitScreen = false }
+                statusMode = 2; clockMode = 2; buttonsMode = 2; fitScreen = false }
             0 -> { tileShape = 0; logoWhite = false; logoNoBg = true; tileAlpha = 10; tileBorder = 0; tileClean = true; tileFrost = false
                 dock = false; showLabels = false; reflect = false; tileSize = 2; tileGap = 12; focusScale = 30; focusFrame = true
                 gridPosition = 2; gridAlign = 0; clockSide = 1; showAddTile = true; showDate = true; dim = 10
-                statusMode = 1; clockMode = 0; buttonsMode = 0; fitScreen = false }
+                statusMode = 2; clockMode = 2; buttonsMode = 2; fitScreen = false }
         }
     }
 
@@ -446,6 +450,7 @@ object AppLoader {
         val wide = prefs.tileShape == 0
         return prefs.pinned.mapNotNull { p ->
             val own = IconStore.file(ctx, p).takeIf { it.exists() }?.let { Bitmaps.decodeScaled(it, wPx * 2, hPx * 2) }
+                ?.let { if (prefs.fitScreen) Bitmaps.trimAlpha(it) else it }
             if (p == AppEntry.FILES) {
                 val name = prefs.label(p) ?: T.s("Files", "Fajlovi", "Dateien")
                 val icon = own ?: if (wide) {
@@ -624,6 +629,19 @@ object Bitmaps {
     fun leadWallpaper(colour: Int) = when (colour) {
         1 -> R.drawable.wallpaper_lead_black; 2 -> R.drawable.wallpaper_lead_green; 3 -> R.drawable.wallpaper_lead_purple
         else -> R.drawable.wallpaper_default
+    }
+
+    /** cuts away the empty (transparent) border around a logo, so equal gaps look equal */
+    fun trimAlpha(b: Bitmap): Bitmap {
+        val w = b.width; val h = b.height
+        if (w < 4 || h < 4 || !b.hasAlpha()) return b
+        val px = IntArray(w * h); b.getPixels(px, 0, w, 0, 0, w, h)
+        var l = w; var r = -1; var t = h; var btm = -1
+        for (y in 0 until h) { val o = y * w; for (x in 0 until w) if ((px[o + x] ushr 24) > 24) {
+            if (x < l) l = x; if (x > r) r = x; if (y < t) t = y; if (y > btm) btm = y } }
+        if (r < l || btm < t) return b
+        if (l == 0 && t == 0 && r == w - 1 && btm == h - 1) return b
+        return Bitmap.createBitmap(b, l, t, r - l + 1, btm - t + 1)
     }
 
     fun decodeScaled(f: File, reqW: Int, reqH: Int): Bitmap? {

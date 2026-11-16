@@ -435,6 +435,15 @@ class MainActivity : Activity() {
             Prefs.fitDp = tw to (tw * 0.56f).toInt()
             val gap = (place - tw).toInt()
             if (prefs.tileGap != gap) prefs.tileGap = gap
+            // every logo fits the same box (74 % of a quarter of the screen) and keeps only its own width;
+            // whatever is left is shared out as equal gaps – room for the 35 % zoom without touching the neighbours
+            val boxW = (w / 4f * 0.74f).toInt()
+            val boxH = (boxW * 0.5f).toInt()
+            Prefs.fitBoxW = boxW; Prefs.fitBoxH = boxH
+            val first = apps.filter { !it.isAdd && it.icon != null }.take(4)
+            val sumW = first.sumOf { e -> minOf(boxW, (boxH * e.icon!!.width.toFloat() / e.icon.height.coerceAtLeast(1)).toInt()) }
+            Prefs.fitGap = if (first.isEmpty()) 0 else ((w - sumW) / first.size).coerceAtLeast((24 * d).toInt())
+        }
         }
         val (tw, _) = prefs.tileDp()
         val cell = ((tw + prefs.tileGap) * d).toInt()
@@ -443,7 +452,11 @@ class MainActivity : Activity() {
         val maxCols = maxOf(1, (avail - 2 * dockPad) / cell)
         cols = maxOf(1, minOf(maxCols, apps.size))
         val glp = grid.layoutParams
-        if (prefs.singleRow) {
+        if (prefs.singleRow && prefs.fitScreen && Prefs.fitBoxW > 0) {
+            if (grid.layoutManager !== rowManager) grid.layoutManager = rowManager
+            glp.width = ViewGroup.LayoutParams.WRAP_CONTENT
+            cols = apps.size.coerceAtLeast(1)
+        } else if (prefs.singleRow) {
             if (grid.layoutManager !== rowManager) grid.layoutManager = rowManager
             // one row: as wide as the apps, at most the screen; scrolls when there are more
             glp.width = minOf(apps.size * cell, avail - 2 * dockPad).coerceAtLeast(cell)
