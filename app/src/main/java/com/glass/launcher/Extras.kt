@@ -20,6 +20,7 @@ object BuiltinIcons {
         "com.disney.disneyplus" to R.drawable.builtin_disney,
         "com.nuvio.tv" to R.drawable.builtin_nuvio,
         "org.siloserver.silo" to R.drawable.builtin_silo,
+        "com.nordvpn.android" to R.drawable.builtin_nordvpn,
     )
     /** raise when the pictures in the app change: the new ones then replace the old built-in ones once */
     private const val VERSION = 2

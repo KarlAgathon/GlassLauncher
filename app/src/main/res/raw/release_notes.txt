@@ -1,3 +1,8 @@
+LEAD Launcher 9.1.2 BETA
+- New default LEAD wallpaper (blue glass horizon), also in black, green and purple (Wallpaper › LEAD wallpaper)
+- Long press on an icon: options only for that icon – size (60–160 %), move left/right/up/down, change picture, rename, reset; options for all icons stay in Settings › Icons and tiles
+- Built-in NordVPN icon
+
 LEAD Launcher 9.1.1 BETA
 - Light: all logos the same size class with exactly equal gaps; the selected one grows 35 % and lifts up
 - Status bar, buttons, VPN key, clock and date: On demand by default (change in Status bar settings)
