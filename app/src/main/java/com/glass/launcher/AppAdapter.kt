@@ -125,12 +125,19 @@ class AppAdapter(
     private fun style(h: VH, focused: Boolean) {
         val moving = h.bindingAdapterPosition == movingPos && movingPos >= 0
         // Light look: no frame at all – the selected logo just grows and its mirror shines
-        h.tile.focusedLook = focused && !(prefs.reflect && prefs.tileAlpha == 0)
+        h.tile.focusedLook = focused && prefs.focusFrame
+        // without a frame there is also no dark shadow box behind the selected icon – it only grows
+        if (android.os.Build.VERSION.SDK_INT >= 28) {
+            val sh = if (prefs.focusFrame) android.graphics.Color.BLACK else android.graphics.Color.TRANSPARENT
+            for (v in listOf(h.tile, h.itemView)) { v.outlineAmbientShadowColor = sh; v.outlineSpotShadowColor = sh }
+        }
         h.tile.accent = moving
         val s = if (focused || moving) 1f + prefs.focusScale / 100f else 1f
         h.tile.animate().scaleX(s).scaleY(s).setDuration(if (Backdrop.lite) 0L else 150L).withEndAction { h.tile.invalidate() }.start()
-        h.tile.translationZ = if (focused) 10f else 0f
-        h.itemView.translationZ = if (focused) 10f else 0f
+        // older Android cannot hide the shadow: no lift there when the frame is off
+        val z = if (focused && (prefs.focusFrame || android.os.Build.VERSION.SDK_INT >= 28)) 10f else 0f
+        h.tile.translationZ = z
+        h.itemView.translationZ = z
         h.label.typeface = if (focused) Fonts.medium(h.itemView.context) else Fonts.regular(h.itemView.context)
         h.label.setTextColor(if (focused) Color.WHITE else Color.argb(215, 255, 255, 255))
         h.label.translationY = if (focused) h.tile.height * prefs.focusScale / 200f else 0f

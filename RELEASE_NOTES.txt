@@ -1,4 +1,6 @@
-LEAD Launcher 9.0 BETA
+LEAD Launcher 9.0.1 BETA
+- No frame and no dark shadow box around the selected icon (Light); it just grows 30 %
+- Icons and tiles: new switch "Frame around the selected icon"
 - Visual Look: Light (floating logos with reflections), Semi (glass tiles), Modern (SofaDrop)
 - Fresh install: Light look, LEAD wallpaper, PRETORIAN IPTV, YouTube, Disney+, Netflix
 - Missing default apps keep their place: PRETORIAN from GitHub (stable), others via Google Play

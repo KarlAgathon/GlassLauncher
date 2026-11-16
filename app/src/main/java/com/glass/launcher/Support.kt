@@ -159,6 +159,8 @@ class Prefs(ctx: Context) {
     var reflect: Boolean get() = bool("tReflect", false); set(v) = putBool("tReflect", v)
     /** status bar: 0 always shown, 1 auto-hide (appears when you go to the top), 2 on demand (one more Up at the top) */
     var statusMode: Int get() = int("sMode", 1); set(v) = putInt("sMode", v)
+    /** frame around the selected icon (off = the selected icon only grows) – Light starts without it */
+    var focusFrame: Boolean get() = bool("tFocusFrame", !(reflect && tileAlpha == 0)); set(v) = putBool("tFocusFrame", v)
     /** status bar: icons only, no numbers or names */
     var statusIconsOnly: Boolean get() = bool("sIconsOnly", false); set(v) = putBool("sIconsOnly", v)
 
@@ -167,14 +169,14 @@ class Prefs(ctx: Context) {
         visualLook = v
         when (v) {
             2 -> { tileShape = 0; logoWhite = false; logoNoBg = true; tileAlpha = 0; tileBorder = 0; tileClean = true; tileFrost = false
-                dock = false; showLabels = false; reflect = true; tileSize = 2; tileGap = 48; focusScale = 15
+                dock = false; showLabels = false; reflect = true; tileSize = 2; tileGap = 48; focusScale = 30; focusFrame = false
                 gridPosition = 1; gridAlign = 1; gridOffX = 0; gridOffY = 0; clockSide = 2; singleRow = true; showAddTile = false
                 statusMode = 1; showDate = false; dim = 0 }
             1 -> { tileShape = 0; logoWhite = false; logoNoBg = true; tileAlpha = 6; tileBorder = 0; tileClean = true; tileFrost = false
-                dock = false; showLabels = false; reflect = false; tileSize = 2; tileGap = 12; focusScale = 30
+                dock = false; showLabels = false; reflect = false; tileSize = 2; tileGap = 12; focusScale = 30; focusFrame = true
                 gridPosition = 2; gridAlign = 0; clockSide = 1; showAddTile = true; showDate = true; dim = 10 }
             0 -> { tileShape = 0; logoWhite = false; logoNoBg = true; tileAlpha = 10; tileBorder = 0; tileClean = true; tileFrost = false
-                dock = false; showLabels = false; reflect = false; tileSize = 2; tileGap = 12; focusScale = 30
+                dock = false; showLabels = false; reflect = false; tileSize = 2; tileGap = 12; focusScale = 30; focusFrame = true
                 gridPosition = 2; gridAlign = 0; clockSide = 1; showAddTile = true; showDate = true; dim = 10 }
         }
     }

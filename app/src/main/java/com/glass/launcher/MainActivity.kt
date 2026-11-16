@@ -148,6 +148,8 @@ class MainActivity : Activity() {
                 g.edit().putBoolean("installSeen", true).apply()
             }
         }
+        // Light from the first 9.0 beta grew only 15 %: now 30 % like asked
+        if (prefs.visualLook == 2 && prefs.focusScale == 15) prefs.focusScale = 30
         // icons that come with LEAD (TiviMate, YouTube, Disney+ …)
         runCatching { BuiltinIcons.seed(this) }
         Backdrop.lite = prefs.perfMode
@@ -1657,6 +1659,8 @@ class MainActivity : Activity() {
                     prefs.logoFit = it; relayout()
                 }
             },
+            GlassMenu.Item(T.s("Frame around the selected icon", "Okvir oko odabrane ikone", "Rahmen um das ausgewählte Symbol"), R.drawable.lc_layout_grid,
+                checked = prefs.focusFrame, toggle = true) { prefs.focusFrame = it.checked; relayout() },
             GlassMenu.Item(T.s("Focus zoom", "Fokus uvećanje", "Fokus-Zoom"), R.drawable.lc_eye, value = "+${prefs.focusScale}%") {
                 choose(T.s("Focus zoom", "Fokus uvećanje", "Fokus-Zoom"), R.drawable.lc_eye,
                     listOf(0, 10, 20, 30, 40, 50).map { "+$it%" to it }, prefs.focusScale) { prefs.focusScale = it; relayout() }
