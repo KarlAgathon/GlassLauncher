@@ -444,7 +444,6 @@ class MainActivity : Activity() {
             val sumW = first.sumOf { e -> minOf(boxW, (boxH * e.icon!!.width.toFloat() / e.icon.height.coerceAtLeast(1)).toInt()) }
             Prefs.fitGap = if (first.isEmpty()) 0 else ((w - sumW) / first.size).coerceAtLeast((24 * d).toInt())
         }
-        }
         val (tw, _) = prefs.tileDp()
         val cell = ((tw + prefs.tileGap) * d).toInt()
         val avail = if (gridArea.width > 0) gridArea.width else resources.displayMetrics.widthPixels - (80 * d).toInt()
