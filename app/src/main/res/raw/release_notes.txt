@@ -1,4 +1,8 @@
 LEAD Launcher 9.1.1 BETA
+- Clock and date: Always / Auto-hide / On demand, like the status bar
+- Evening and night (20–7 h): logos and clock a little softer (can be switched off)
+- The small line at the top glows briefly when something new arrives
+- Green slider also in every list where you pick one option; switch for update notifications
 - Beta options (Beta versions, Mark as Stable, update address) only on your own boxes; every other box always gets Stable. Unlock: press "Installed version" 7 times
 - Beta off = Stable only; the box keeps its version until a newer Stable comes out
 - Remote: from the right side or the clock, Up goes straight to profile / settings / power; from the middle Up opens the status bar

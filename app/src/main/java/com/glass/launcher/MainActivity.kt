@@ -106,7 +106,7 @@ class MainActivity : Activity() {
                 updateStatus()
                 if (System.currentTimeMillis() - lastWeather > prefs.weatherMin * 60 * 1000L) updateWeather()
                 if (SystemClock.elapsedRealtime() < 3 * 60 * 1000L) Autostart.apply(this@MainActivity)
-                if (prefs.nightDim && tickCount % 60 == 1) applyDim()
+                if ((prefs.nightDim || prefs.nightSoft) && tickCount % 60 == 1) applyDim()
             }
             checkIdle()
             handler.postDelayed(this, 1_000)
@@ -1311,10 +1311,12 @@ class MainActivity : Activity() {
             }
             return true
         }
-        if (!menu.isOpen && prefs.statusMode == 2 && !statusReveal && k == KeyEvent.KEYCODE_DPAD_UP &&
-            event.action == KeyEvent.ACTION_DOWN && inTopRow(currentFocus) && pillWanted) {
+        if (!menu.isOpen && !demandReveal && (prefs.statusMode == 2 || prefs.clockMode == 2) && k == KeyEvent.KEYCODE_DPAD_UP &&
+            event.action == KeyEvent.ACTION_DOWN && inTopRow(currentFocus)) {
+            // on demand: one more Up at the top shows the status bar and / or the clock
             setReveal(true)
-            statusPill.post { statusGroups().firstOrNull { it.visibility == View.VISIBLE && it.isFocusable }?.requestFocus() }
+            if (prefs.statusMode == 2 && pillWanted)
+                statusPill.post { statusGroups().firstOrNull { it.visibility == View.VISIBLE && it.isFocusable }?.requestFocus() }
             return true
         }
         if (!menu.isOpen && movingPos < 0 && event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
@@ -1627,6 +1629,8 @@ class MainActivity : Activity() {
             },
             GlassMenu.Item(T.s("Darker at night (20–7 h)", "Noću tamnije (20–7 h)", "Nachts dunkler (20–7 Uhr)"), R.drawable.lc_moon,
                 checked = prefs.nightDim, toggle = true) { prefs.nightDim = it.checked; applyDim() },
+            GlassMenu.Item(T.s("Softer logos and clock at night", "Noću blaži logotipi i sat", "Nachts sanftere Logos und Uhr"), R.drawable.lc_moon,
+                checked = prefs.nightSoft, toggle = true) { prefs.nightSoft = it.checked; applyDim() },
             GlassMenu.Item(T.s("Blur wallpaper", "Zamuti pozadinu", "Hintergrund weichzeichnen"), R.drawable.lc_eye,
                 checked = prefs.blurWallpaper, toggle = true) { prefs.blurWallpaper = it.checked; loadWallpaper() },
             GlassMenu.Item(T.s("Darken", "Zatamnjenje", "Abdunkeln"), R.drawable.lc_sun_dim, value = "${prefs.dim}%") {
@@ -1808,7 +1812,7 @@ class MainActivity : Activity() {
             t(T.s("Show status bar", "Prikaži statusnu traku", "Statusleiste anzeigen"), R.drawable.lc_eye, prefs.showStatusBar) { prefs.showStatusBar = it },
             GlassMenu.Item(T.s("When it shows", "Način prikaza", "Wann sie erscheint"), R.drawable.lc_layout_grid, value = statusModeName(prefs.statusMode)) {
                 choose(T.s("When it shows", "Način prikaza", "Wann sie erscheint"), R.drawable.lc_layout_grid,
-                    (0..2).map { statusModeName(it) to it }, prefs.statusMode) { prefs.statusMode = it; statusReveal = false; applyLook() }
+                    (0..2).map { statusModeName(it) to it }, prefs.statusMode) { prefs.statusMode = it; setReveal(false); applyLook() }
             },
             t(T.s("Icons only (no numbers)", "Samo ikone (bez brojeva)", "Nur Symbole (ohne Zahlen)"), R.drawable.lc_image, prefs.statusIconsOnly) { prefs.statusIconsOnly = it },
             GlassMenu.Item(T.s("Status bar transparency", "Providnost statusne trake", "Transparenz der Statusleiste"), R.drawable.lc_layers,
@@ -1841,7 +1845,6 @@ class MainActivity : Activity() {
 
     // ------------------------------------------------------------------ status bar that hides itself
 
-    private var statusReveal = false
     private var pillWanted = false
     private var statusHandle: View? = null
 
@@ -1862,10 +1865,10 @@ class MainActivity : Activity() {
         statusPill.radiusDp = 12f   // sharper: less of a pill
         root.viewTreeObserver.addOnGlobalFocusChangeListener { _, now ->
             if (menu.isOpen) return@addOnGlobalFocusChangeListener
-            when (prefs.statusMode) {
-                1 -> setReveal(inTopRow(now))
-                2 -> if (!inTopRow(now)) setReveal(false)
-            }
+            val top = inTopRow(now)
+            autoReveal = top
+            if (!top) demandReveal = false
+            showPill()
         }
         val key = findViewById<ImageView>(R.id.vpnKey)
         key.isFocusable = true; key.isClickable = true
@@ -1874,29 +1877,38 @@ class MainActivity : Activity() {
         key.setOnClickListener { vpnPanel() }
     }
 
+    /** focus is in the top row (buttons, status bar, clock) */
+    private var autoReveal = false
+    /** Up was pressed once more at the top (on demand) or from the middle of the screen */
+    private var demandReveal = false
+
     private fun setReveal(on: Boolean) {
-        if (statusReveal == on) return
-        statusReveal = on
+        if (!on) { autoReveal = false; demandReveal = false } else demandReveal = true
         showPill()
     }
 
-    /** shows / hides the status bar (clock, VPN key and the buttons always stay) */
+    private fun shownBy(mode: Int) = mode == 0 || (mode == 1 && (autoReveal || demandReveal)) || (mode == 2 && demandReveal)
+
+    /** shows / hides the status bar and – with its own setting – the clock and date (buttons and VPN key always stay) */
     private fun showPill() {
         val d = resources.displayMetrics.density
-        if (!pillWanted) { statusPill.visibility = View.GONE; statusHandle?.visibility = View.GONE; return }
-        val show = prefs.statusMode == 0 || statusReveal
-        statusHandle?.visibility = if (show) View.GONE else View.VISIBLE
         val dur = if (Backdrop.lite) 0L else 220L
-        if (show && (statusPill.visibility != View.VISIBLE || statusPill.alpha < 1f)) {
-            if (statusPill.visibility != View.VISIBLE) { statusPill.alpha = 0f; statusPill.translationY = -14 * d }
-            statusPill.visibility = View.VISIBLE
-            statusPill.animate().alpha(1f).translationY(0f).setDuration(dur).withEndAction { statusPill.invalidate() }.start()
-        } else if (!show && statusPill.visibility == View.VISIBLE) {
-            statusPill.animate().alpha(0f).translationY(-14 * d).setDuration(dur).withEndAction {
-                if (!(prefs.statusMode == 0 || statusReveal)) statusPill.visibility = View.INVISIBLE
-            }.start()
+        fun fade(v: View, show: Boolean, still: () -> Boolean) {
+            if (show && (v.visibility != View.VISIBLE || v.alpha < 1f)) {
+                if (v.visibility != View.VISIBLE) { v.alpha = 0f; v.translationY = -14 * d }
+                v.visibility = View.VISIBLE
+                v.animate().alpha(1f).translationY(0f).setDuration(dur).withEndAction { v.invalidate() }.start()
+            } else if (!show && v.visibility == View.VISIBLE) {
+                v.animate().alpha(0f).translationY(-14 * d).setDuration(dur).withEndAction { if (!still()) v.visibility = View.INVISIBLE }.start()
+            }
         }
+        (clock.parent as? View)?.let { col -> fade(col, shownBy(prefs.clockMode)) { shownBy(prefs.clockMode) } }
+        if (!pillWanted) { statusPill.visibility = View.GONE; statusHandle?.visibility = View.GONE; return }
+        val show = shownBy(prefs.statusMode)
+        statusHandle?.visibility = if (show) View.GONE else View.VISIBLE
+        fade(statusPill, show) { shownBy(prefs.statusMode) }
     }
+
 
     // ------------------------------------------------------------------ 9.1: bell number, profiles, weather, safety
 
@@ -1949,9 +1961,28 @@ class MainActivity : Activity() {
         return n + lead + appsN
     }
 
+    private var lastBell = -1
+
+    /** the small line at the top glows a few times – quiet sign that something new came */
+    private fun glowHandle() {
+        val h = statusHandle ?: return
+        if (h.visibility != View.VISIBLE || Backdrop.lite) return
+        h.animate().cancel()
+        android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 700; repeatCount = 5; repeatMode = android.animation.ValueAnimator.REVERSE
+            addUpdateListener { a -> val f = a.animatedValue as Float; h.scaleX = 1f + 0.6f * f; h.alpha = 0.6f + 0.4f * f }
+            addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: android.animation.Animator) { h.scaleX = 1f; h.alpha = 1f }
+            })
+            start()
+        }
+    }
+
     private fun updateBell() {
         val b = bellBadge ?: return
         val c = bellCount()
+        if (lastBell >= 0 && c > lastBell) glowHandle()
+        lastBell = c
         b.visibility = if (c > 0) View.VISIBLE else View.GONE
         bellText?.text = c.toString()
     }
@@ -1961,6 +1992,10 @@ class MainActivity : Activity() {
         val night = prefs.nightDim && (h >= 20 || h < 7)
         val v = (prefs.dim + if (night) 30 else 0).coerceAtMost(75)
         dim.setBackgroundColor(Color.argb(v * 255 / 100, 0, 0, 0))
+        // evening and night: logos and clock a little dimmer, so they don't dazzle in a dark room
+        val soft = prefs.nightSoft && (h >= 20 || h < 7)
+        val a = if (soft) 0.72f else 1f
+        grid.alpha = a; clock.alpha = a; date.alpha = a
     }
 
     private fun leadWpNames() = listOf(T.s("Blue", "Plava", "Blau"), T.s("Black", "Crna", "Schwarz"),
@@ -2493,6 +2528,10 @@ class MainActivity : Activity() {
                     T.s("Next to the buttons", "Pored dugmadi", "Neben den Knöpfen") to 2), prefs.clockSide) {
                     prefs.clockSide = it; applyLook()
                 }
+            },
+            GlassMenu.Item(T.s("When it shows", "Način prikaza", "Wann sie erscheint"), R.drawable.lc_eye, value = statusModeName(prefs.clockMode)) {
+                choose(T.s("When it shows", "Način prikaza", "Wann sie erscheint"), R.drawable.lc_eye,
+                    (0..2).map { statusModeName(it) to it }, prefs.clockMode) { prefs.clockMode = it; setReveal(false); showPill() }
             },
             GlassMenu.Item(T.s("Show date", "Prikaži datum", "Datum anzeigen"), R.drawable.lc_type,
                 checked = prefs.showDate, toggle = true) { prefs.showDate = it.checked; applyLook() },

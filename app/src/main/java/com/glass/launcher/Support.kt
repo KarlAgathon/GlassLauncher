@@ -227,6 +227,10 @@ class Prefs(ctx: Context) {
     /** GitHub apps (TizenTube, PRETORIAN, SofaDrop …) update themselves at night (needs Shizuku) */
     var nightUpdates: Boolean get() = bool("nightUpd", true); set(v) = putBool("nightUpd", v)
 
+    /** clock and date: 0 always, 1 auto-hide (appear when you go to the top), 2 on demand (one more Up at the top) */
+    var clockMode: Int get() = int("clockMode", 0); set(v) = putInt("clockMode", v)
+    /** in the evening and at night (20–7 h) the logos and the clock are a little dimmer */
+    var nightSoft: Boolean get() = bool("nightSoft", true); set(v) = putBool("nightSoft", v)
     /** clock font: 0 thin, 1 light, 2 normal, 3 bold, 4 narrow, 5 digital */
     var clockFont: Int get() = int("clockFont", 1); set(v) = putInt("clockFont", v)
     /** clock size: 0 small, 1 normal, 2 large, 3 very large */

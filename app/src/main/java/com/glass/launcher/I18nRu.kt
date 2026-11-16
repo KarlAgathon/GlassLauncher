@@ -5,6 +5,7 @@ object I18nRu {
     val map: HashMap<String, String> = HashMap(1024)
 
     init {
+        map["Softer logos and clock at night"] = "Ночью логотипы и часы мягче"
         map["Update notifications"] = "Уведомления об обновлениях"
         map["Beta options unlocked on this box"] = "Бета-настройки разблокированы на этой приставке"
         map["Downloads are checked (SHA-256) before installing."] = "Загрузки проверяются (SHA-256) перед установкой."
