@@ -133,6 +133,16 @@ class AppAdapter(
         h.reflect.alpha = if (e.missing) 0.3f else 1f
         h.badge.visibility = if (e.missing) View.VISIBLE else View.GONE
 
+        // this icon's own size and position (long press › Size / Move this icon)
+        val own = prefs.iconScale(e.pkg) / 100f
+        val (ox, oy) = prefs.iconOffset(e.pkg)
+        h.icon.scaleX = own; h.icon.scaleY = own
+        // a bigger icon may reach past its tile – never cut it
+        h.tile.clipChildren = false
+        if (own > 1f) h.tile.clipToOutline = false
+        h.icon.translationX = ox * d; h.icon.translationY = oy * d
+        h.reflect.scaleX = own; h.reflect.scaleY = own; h.reflect.translationX = ox * d
+
         h.label.text = e.label
         // names off: the selected app's name still shows softly under its logo
         h.label.visibility = if (prefs.showLabels || prefs.nameOnFocus) View.VISIBLE else View.GONE
@@ -167,9 +177,10 @@ class AppAdapter(
         if (h.reflect.visibility == View.VISIBLE) {
             // the selected logo shines more in its mirror and moves down with the zoom
             val base = if (items.getOrNull(h.bindingAdapterPosition)?.missing == true) 0.3f else 1f
+            val own = items.getOrNull(h.bindingAdapterPosition)?.let { prefs.iconScale(it.pkg) / 100f } ?: 1f
             h.reflect.animate().alpha(base * if (focused) 1f else 0.55f)
                 .translationY(if (focused) h.tile.height * prefs.focusScale / 200f else 0f)
-                .scaleX(s).scaleY(s).setDuration(if (Backdrop.lite) 0L else 150L).start()
+                .scaleX(s * own).scaleY(s * own).setDuration(if (Backdrop.lite) 0L else 150L).start()
         }
     }
 }

@@ -81,7 +81,7 @@ object Profiles {
     val GROUPS = listOf("apps", "look", "wallpaper", "status", "weather", "saver", "lang", "other")
 
     fun groupOf(k: String): String = when {
-        k == "pinned" || k.startsWith("label_") -> "apps"
+        k == "pinned" || k.startsWith("label_") || k.startsWith("isz_") || k.startsWith("iox_") || k.startsWith("ioy_") -> "apps"
         k.startsWith("wp") || k.startsWith("tmdb") || k in setOf("blur", "movieInfo", "leadWp", "nightDim") -> "wallpaper"
         k in setOf("city", "lat", "lon", "weatherMin", "wF", "wIcons") -> "weather"
         k.startsWith("saver") || k.startsWith("idle") -> "saver"
@@ -243,6 +243,12 @@ class Prefs(ctx: Context) {
     var showPowerBtn: Boolean get() = bool("showPowerBtn", true); set(v) = putBool("showPowerBtn", v)
     /** Light's "everything on demand" was put on this profile once */
     var lightDemandSet: Boolean get() = bool("lightDemand", false); set(v) = putBool("lightDemand", v)
+
+    /** one icon only (long press on it): size in % and position in dp */
+    fun iconScale(pkg: String) = int("isz_$pkg", 100)
+    fun setIconScale(pkg: String, v: Int) = putInt("isz_$pkg", v)
+    fun iconOffset(pkg: String) = int("iox_$pkg", 0) to int("ioy_$pkg", 0)
+    fun setIconOffset(pkg: String, x: Int, y: Int) { putInt("iox_$pkg", x); putInt("ioy_$pkg", y) }
 
     /** clock and date: 0 always, 1 auto-hide (appear when you go to the top), 2 on demand (one more Up at the top) */
     var clockMode: Int get() = int("clockMode", 2); set(v) = putInt("clockMode", v)

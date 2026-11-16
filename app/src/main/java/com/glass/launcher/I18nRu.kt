@@ -5,6 +5,14 @@ object I18nRu {
     val map: HashMap<String, String> = HashMap(1024)
 
     init {
+        map["Size of this icon"] = "Размер этого значка"
+        map["Move this icon"] = "Переместить этот значок"
+        map["Reset this icon"] = "Сбросить этот значок"
+        map["Move in the row"] = "Переместить в ряду"
+        map["Smaller"] = "Меньше"
+        map["Bigger"] = "Больше"
+        map["Only this icon. All icons: Settings › Icons and tiles. Back = done."] = "Только этот значок. Все значки: Настройки › Значки и плитки. Назад = готово."
+        map["Only this icon moves. Back = done."] = "Двигается только этот значок. Назад = готово."
         map["Softer logos and clock at night"] = "Ночью логотипы и часы мягче"
         map["Update notifications"] = "Уведомления об обновлениях"
         map["Beta options unlocked on this box"] = "Бета-настройки разблокированы на этой приставке"

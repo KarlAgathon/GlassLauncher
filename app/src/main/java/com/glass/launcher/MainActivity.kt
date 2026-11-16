@@ -511,6 +511,33 @@ class MainActivity : Activity() {
     }
 
     /** +/- steps for the app row: the menu stays open so you can press several times */
+    /** size of one icon only (60–160 %) */
+    private fun iconSizeMenu(e: AppEntry) {
+        val cur = prefs.iconScale(e.pkg)
+        fun set(n: Int) { prefs.setIconScale(e.pkg, n.coerceIn(60, 160)); adapter.notifyDataSetChanged(); iconSizeMenu(e) }
+        menu.show(T.s("Size of this icon", "Veličina ove ikone", "Größe dieses Symbols") + " – " + e.label, R.drawable.lc_columns_3, listOf(
+            GlassMenu.Item(T.s("Smaller", "Manja", "Kleiner"), R.drawable.lc_minus) { set(cur - 10) },
+            GlassMenu.Item(T.s("Bigger", "Veća", "Größer"), R.drawable.lc_plus) { set(cur + 10) },
+            GlassMenu.Item(T.s("Reset", "Vrati na 100 %", "Zurücksetzen"), R.drawable.lc_rotate_cw, value = "$cur %") { set(100) },
+        ), T.s("Only this icon. All icons: Settings › Icons and tiles. Back = done.",
+            "Samo ova ikona. Sve ikone: Postavke › Ikone i pločice. Back = gotovo.",
+            "Nur dieses Symbol. Alle Symbole: Einstellungen › Symbole und Kacheln. Zurück = fertig."))
+    }
+
+    /** position of one icon only: left / right / up / down */
+    private fun iconNudgeMenu(e: AppEntry) {
+        val (x, y) = prefs.iconOffset(e.pkg)
+        val step = 6
+        fun set(nx: Int, ny: Int) { prefs.setIconOffset(e.pkg, nx.coerceIn(-120, 120), ny.coerceIn(-120, 120)); adapter.notifyDataSetChanged(); iconNudgeMenu(e) }
+        menu.show(T.s("Move this icon", "Pomjeri ovu ikonu", "Dieses Symbol verschieben") + " – " + e.label, R.drawable.lc_move, listOf(
+            GlassMenu.Item(T.s("◀ Left", "◀ Lijevo", "◀ Links"), R.drawable.lc_minus) { set(x - step, y) },
+            GlassMenu.Item(T.s("▶ Right", "▶ Desno", "▶ Rechts"), R.drawable.lc_plus) { set(x + step, y) },
+            GlassMenu.Item(T.s("▲ Up", "▲ Gore", "▲ Hoch"), R.drawable.lc_minus) { set(x, y - step) },
+            GlassMenu.Item(T.s("▼ Down", "▼ Dolje", "▼ Runter"), R.drawable.lc_plus) { set(x, y + step) },
+            GlassMenu.Item(T.s("Reset", "Vrati na 0", "Zurücksetzen"), R.drawable.lc_rotate_cw, value = "$x / $y dp") { set(0, 0) },
+        ), T.s("Only this icon moves. Back = done.", "Pomjera se samo ova ikona. Back = gotovo.", "Nur dieses Symbol bewegt sich. Zurück = fertig."))
+    }
+
     private fun nudgeMenu(vertical: Boolean) {
         val step = 8
         val v = if (vertical) prefs.gridOffY else prefs.gridOffX
@@ -1081,27 +1108,17 @@ class MainActivity : Activity() {
         if (e.isAdd) { showSettings(); return }
         val items = mutableListOf(
             GlassMenu.Item(T.s("Change icon", "Promijeni ikonu", "Symbol ändern"), R.drawable.lc_image) { iconMenu(e) },
-            GlassMenu.Item(T.s("Icon look (all options)", "Izgled ikona (sve opcije)", "Symbol-Aussehen (alle Optionen)"), R.drawable.lc_layout_grid) { tilesMenu() },
-            GlassMenu.Item(T.s("Size", "Veličina", "Größe"), R.drawable.lc_columns_3, value = listOf("S", "M", "L", "XL")[prefs.tileSize.coerceIn(0, 3)]) {
-                choose(T.s("Size", "Veličina", "Größe"), R.drawable.lc_columns_3, listOf("S" to 0, "M" to 1, "L" to 2, "XL" to 3), prefs.tileSize) { prefs.tileSize = it; reloadApps() }
-            },
-            GlassMenu.Item(T.s("Spacing", "Razmak", "Abstand"), R.drawable.lc_columns_3, value = "${prefs.tileGap} dp") {
-                choose(T.s("Spacing", "Razmak", "Abstand"), R.drawable.lc_columns_3,
-                    listOf(0, 6, 12, 18, 24, 32, 40).map { "$it dp" to it }, prefs.tileGap) { prefs.tileGap = it; relayout() }
-            },
-            GlassMenu.Item(T.s("Row position", "Pozicija reda", "Position der Reihe"), R.drawable.lc_move) {
-                choose(T.s("Row position", "Pozicija reda", "Position der Reihe"), R.drawable.lc_move, listOf(
-                    T.s("Bottom left", "Dolje lijevo", "Unten links") to 20, T.s("Bottom center", "Dolje sredina", "Unten Mitte") to 21,
-                    T.s("Bottom right", "Dolje desno", "Unten rechts") to 22, T.s("Middle left", "Sredina lijevo", "Mitte links") to 10,
-                    T.s("Center", "Sredina", "Mitte") to 11, T.s("Top left", "Gore lijevo", "Oben links") to 0,
-                    T.s("Top center", "Gore sredina", "Oben Mitte") to 1), prefs.gridPosition * 10 + prefs.gridAlign) {
-                    prefs.gridPosition = it / 10; prefs.gridAlign = it % 10; applyLook()
-                }
-            },
-            GlassMenu.Item(T.s("Add apps", "Dodaj aplikacije", "Apps hinzufügen"), R.drawable.lc_plus) { showAddMenu() },
-            GlassMenu.Item(T.s("Move", "Pomjeri", "Verschieben"), R.drawable.lc_move) { startMove(pos) },
+            // only THIS icon – everything for all icons is in Settings › Icons and tiles
+            GlassMenu.Item(T.s("Size of this icon", "Veličina ove ikone", "Größe dieses Symbols"), R.drawable.lc_columns_3,
+                value = "${prefs.iconScale(e.pkg)} %") { iconSizeMenu(e) },
+            GlassMenu.Item(T.s("Move this icon", "Pomjeri ovu ikonu", "Dieses Symbol verschieben"), R.drawable.lc_move,
+                value = prefs.iconOffset(e.pkg).let { (x, y) -> if (x == 0 && y == 0) "–" else "$x / $y" }) { iconNudgeMenu(e) },
+            GlassMenu.Item(T.s("Move in the row", "Pomjeri u redu", "In der Reihe verschieben"), R.drawable.lc_move) { startMove(pos) },
             GlassMenu.Item(T.s("Rename", "Preimenuj", "Umbenennen"), R.drawable.lc_pencil) {
                 askText(T.s("Rename", "Preimenuj", "Umbenennen"), e.label) { prefs.setLabel(e.pkg, it); reloadApps() }
+            },
+            GlassMenu.Item(T.s("Reset this icon", "Vrati ovu ikonu na zadano", "Dieses Symbol zurücksetzen"), R.drawable.lc_rotate_ccw) {
+                prefs.setIconScale(e.pkg, 100); prefs.setIconOffset(e.pkg, 0, 0); adapter.notifyDataSetChanged()
             },
             GlassMenu.Item(T.s("Remove from home screen", "Ukloni s početnog ekrana", "Vom Startbildschirm entfernen"), R.drawable.lc_trash_2) {
                 prefs.pinned = prefs.pinned - e.pkg; lastPos = 0; reloadApps()
