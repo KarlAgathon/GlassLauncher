@@ -175,6 +175,8 @@ class GlassMenu(
         }
 
         val list = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+        // a list where one row is "the chosen one": every row gets the green slider (on = chosen), like in PRETORIAN
+        choiceMenu = items.any { it.checked && !it.toggle && !it.header }
         val all = items.mapIndexed { i, it -> makeRow(it, i) }
         all.forEach { list.addView(it) }
         val rows = all.filterIndexed { i, _ -> !items[i].header }
@@ -195,6 +197,8 @@ class GlassMenu(
         val focusRow = all.getOrNull(focusIndex)?.takeIf { !items[focusIndex].header } ?: rows.firstOrNull()
         focusRow?.post { focusRow.requestFocus() }
     }
+
+    private var choiceMenu = false
 
     /** title of the menu a new one is opened from (for the "Settings › …" line) */
     private var pendingParent: String? = null
@@ -258,6 +262,8 @@ class GlassMenu(
             // the same green slider as in PRETORIAN: green = on, grey = off, no "on/off" text
             sw = GreenSwitch(act).apply { on = item.checked }
             row.addView(sw, LinearLayout.LayoutParams(dp(46), dp(26)).apply { marginStart = dp(12) })
+        } else if (choiceMenu) {
+            row.addView(GreenSwitch(act).apply { on = item.checked }, LinearLayout.LayoutParams(dp(46), dp(26)).apply { marginStart = dp(12) })
         } else if (item.checked) {
             check = ImageView(act).apply {
                 setImageResource(R.drawable.lc_check)

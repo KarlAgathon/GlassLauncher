@@ -111,6 +111,10 @@ object Updater {
             if (c2 !in 200..299) "GitHub: $c2 " + runCatching { JSONObject(t2).optString("message") }.getOrDefault("") else null
         } catch (e: Exception) { e.message ?: "?" }
     }
+    /** updates (LEAD + apps) show at the bell / as notifications – can be switched off */
+    fun notifyOn(ctx: Context) = g(ctx).getBoolean("updNotif", true)
+    fun setNotifyOn(ctx: Context, on: Boolean) = g(ctx).edit().putBoolean("updNotif", on).apply()
+
     fun hasToken(ctx: Context) = !(g(ctx).getString("ghToken", "") ?: "").isBlank()
     fun setToken(ctx: Context, t: String) = g(ctx).edit().putString("ghToken", t.trim()).apply()
 
@@ -220,6 +224,7 @@ object Updater {
 
     fun notify(ctx: Context, info: Info) {
         remember(ctx, info)
+        if (!notifyOn(ctx)) return
         val g = ctx.getSharedPreferences("glass_global", Context.MODE_PRIVATE)
         if (g.getLong("notifiedCode", 0L) >= info.code) return
         g.edit().putLong("notifiedCode", info.code).apply()

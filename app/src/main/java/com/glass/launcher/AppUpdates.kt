@@ -193,6 +193,7 @@ object AppUpdates {
     private const val CHANNEL = "updates_quiet"
 
     fun notify(ctx: Context, l: List<Update>) {
+        if (!Updater.notifyOn(ctx)) return
         val st = store(ctx)
         val key = l.sortedBy { it.pkg }.joinToString(",") { it.pkg + ":" + it.remote }
         if (st.getString("notified", "") == key) return   // same list already announced

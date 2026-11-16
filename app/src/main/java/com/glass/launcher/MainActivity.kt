@@ -1943,8 +1943,9 @@ class MainActivity : Activity() {
     /** notifications + LEAD update + app updates */
     private fun bellCount(): Int {
         val n = if (NotifListener.connected) NotifListener.current().size else 0
-        val lead = if (Updater.pending(this) != null) 1 else 0
-        val appsN = if (prefs.appUpdates) AppUpdates.list(this).size else 0
+        val upd = Updater.notifyOn(this)
+        val lead = if (upd && Updater.pending(this) != null) 1 else 0
+        val appsN = if (upd && prefs.appUpdates) AppUpdates.list(this).size else 0
         return n + lead + appsN
     }
 
@@ -3055,10 +3056,11 @@ class MainActivity : Activity() {
     private fun notificationsPanel() {
         val pm = packageManager
         val items = mutableListOf<GlassMenu.Item>()
-        Updater.pending(this)?.let { p ->
+        val updOn = Updater.notifyOn(this)
+        if (updOn) Updater.pending(this)?.let { p ->
             items.add(GlassMenu.Item(T.s("New LEAD version ", "Nova LEAD verzija ", "Neue LEAD-Version ") + p.name, R.drawable.lc_download) { updateMenu() })
         }
-        if (prefs.appUpdates) for (u in AppUpdates.list(this)) {
+        if (updOn && prefs.appUpdates) for (u in AppUpdates.list(this)) {
             items.add(GlassMenu.Item(T.s("Update: ", "Ažuriranje: ", "Update: ") + u.label, drawable = runCatching { pm.getApplicationIcon(u.pkg) }.getOrNull(),
                 value = u.local + " → " + u.remote) { appUpdateScreen(u) })
         }
@@ -3100,6 +3102,8 @@ class MainActivity : Activity() {
             choose(T.s("Which notifications", "Koja obavještenja", "Welche Benachrichtigungen"), R.drawable.lc_bell,
                 (0..3).map { notifModeName(it) to it }, prefs.notifMode) { prefs.notifMode = it; NotifListener.mode = it; updateStatus(); notificationsPanel() }
         })
+        items.add(GlassMenu.Item(T.s("Update notifications", "Obavještenja o ažuriranjima", "Update-Benachrichtigungen"), R.drawable.lc_download,
+            checked = updOn, toggle = true) { Updater.setNotifyOn(this, it.checked); updateBell(); updateStatus() })
         val muted = prefs.mutedNotifs
         if (muted.isNotEmpty()) items.add(GlassMenu.Item(T.s("Hidden apps", "Skrivene aplikacije", "Ausgeblendete Apps"), R.drawable.lc_eye, value = muted.size.toString()) {
             menu.show(T.s("Hidden apps", "Skrivene aplikacije", "Ausgeblendete Apps"), R.drawable.lc_eye, muted.map { pkg ->
