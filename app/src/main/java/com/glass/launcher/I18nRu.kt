@@ -5,6 +5,7 @@ object I18nRu {
     val map: HashMap<String, String> = HashMap(1024)
 
     init {
+        map["Light is also the fastest (least memory). Saved for this profile; your apps stay as they are."] = "Light ещё и самый быстрый (меньше всего памяти). Сохраняется для этого профиля; ваши приложения не меняются."
         map["Show date"] = "Показывать дату"
         map[" apps"] = " приложений"
         map["(undo: adb shell pm enable com.google.android.tvlauncher)"] = "(отменить: adb shell pm enable com.google.android.tvlauncher)"

@@ -80,10 +80,11 @@ class GlassMenu(
         current = Snap(title, icon, items, subtitle)
         removeOverlay()
         val ov = FrameLayout(act).apply {
-            setBackgroundColor(Color.argb(70, 0, 0, 0))
+            setBackgroundColor(Color.argb(110, 0, 0, 0))
             isClickable = true
         }
-        val panel = GlassFrame(act).apply { radiusDp = 0f; tint = 0.06f; darken = 0.55f }
+        // nearly solid dark glass: nothing of the home screen (buttons, clock, logos) shows through the menu
+        val panel = GlassFrame(act).apply { radiusDp = 0f; tint = 0.04f; solid = 0.88f; darken = 0.25f; backdropAlpha = 0.6f }
         val col = LinearLayout(act).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(30), dp(20), dp(20))

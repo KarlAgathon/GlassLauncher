@@ -1323,8 +1323,6 @@ class MainActivity : Activity() {
             GlassMenu.Item(T.s("Auto-start apps", "Auto-start aplikacije", "Autostart-Apps"), R.drawable.lc_rocket) { autostartMenu() },
             GlassMenu.Item(T.s("Backup and restore", "Backup i vraćanje", "Sichern und wiederherstellen"), R.drawable.lc_archive) { backupMenu() },
             GlassMenu.Item(T.s("Add-ons (SofaDrop, Shizuku)", "Dodaci (SofaDrop, Shizuku)", "Erweiterungen (SofaDrop, Shizuku)"), R.drawable.lc_plus) { extrasMenu() },
-            if (prefs.perfMode) GlassMenu.Item(T.s("Normal mode", "Normalni mod", "Normaler Modus"), R.drawable.lc_image) { normalModeAsk() }
-            else GlassMenu.Item(T.s("Performance mode", "Performance mod", "Leistungsmodus"), R.drawable.lc_gauge) { perfModeAsk() },
             GlassMenu.Item(T.s("Power", "Napajanje", "Energie"), R.drawable.lc_power) { powerMenu() },
 
             GlassMenu.header(T.s("Network and tools", "Mreža i alati", "Netzwerk und Werkzeuge")),
@@ -1351,6 +1349,8 @@ class MainActivity : Activity() {
     /** Modern (SofaDrop pictures), Semi (glass tiles) or Light (floating logos on the LEAD wallpaper) */
     private fun visualLookMenu() {
         fun item(v: Int, title: String, info: String) = GlassMenu.Item(title, R.drawable.lc_image, checked = prefs.visualLook == v, value = info) {
+            // the look also decides the speed: Light = fastest (no glass effects, least memory), Semi / Modern = full effects
+            setPerfMode(v == 2, quiet = true)
             prefs.applyVisualLook(v)
             if (v != 0 && prefs.wpMode == 3) prefs.wpMode = 0
             reloadApps(); applyLook()
@@ -1363,8 +1363,9 @@ class MainActivity : Activity() {
             item(2, "Light", T.s("floating logos", "logotipi lebde", "schwebende Logos")),
             item(1, "Semi", T.s("glass tiles", "staklene pločice", "Glaskacheln")),
             item(0, "Modern", T.s("SofaDrop pictures", "SofaDrop slike", "SofaDrop-Bilder")),
-        ), T.s("Saved for this profile. Your apps stay as they are.", "Pamti se za ovaj profil. Tvoje aplikacije ostaju kako jesu.",
-            "Wird für dieses Profil gespeichert. Deine Apps bleiben, wie sie sind."))
+        ), T.s("Light is also the fastest (least memory). Saved for this profile; your apps stay as they are.",
+            "Light je ujedno i najbrži (najmanje memorije). Pamti se za ovaj profil; tvoje aplikacije ostaju kako jesu.",
+            "Light ist auch am schnellsten (wenigster Speicher). Wird für dieses Profil gespeichert; deine Apps bleiben, wie sie sind."))
     }
 
     private fun textSizeMenu() {
@@ -2480,7 +2481,7 @@ class MainActivity : Activity() {
         handler.postDelayed({ Plugins.openSettings(this, p) }, 800)
     }
 
-    private fun setPerfMode(on: Boolean) {
+    private fun setPerfMode(on: Boolean, quiet: Boolean = false) {
         if (on == prefs.perfMode) return
         if (on) {
             prefs.perfPrevWp = prefs.wpMode
@@ -2493,7 +2494,7 @@ class MainActivity : Activity() {
         if (on) { Backdrop.blurred = null; movies = emptyList(); showMovieInfo(null) }
         applyLook()
         invalidateGlass()
-        toast(if (on) T.s("Performance mode on", "Performance mod uključen", "Leistungsmodus an")
+        if (!quiet) toast(if (on) T.s("Performance mode on", "Performance mod uključen", "Leistungsmodus an")
             else T.s("Normal mode on", "Normalni mod uključen", "Normaler Modus an"))
     }
 
