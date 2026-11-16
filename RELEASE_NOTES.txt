@@ -1,4 +1,6 @@
 LEAD Launcher 9.1.1 BETA
+- Beta options (Beta versions, Mark as Stable, update address) only on your own boxes; every other box always gets Stable. Unlock: press "Installed version" 7 times
+- Beta off = Stable only; the box keeps its version until a newer Stable comes out
 - Remote: from the right side or the clock, Up goes straight to profile / settings / power; from the middle Up opens the status bar
 - Clock: font (thin, light, normal, bold, narrow, digital), size, time and date in one line, date format
 - The update screen no longer shows the long text: only Update now / Later / What's new

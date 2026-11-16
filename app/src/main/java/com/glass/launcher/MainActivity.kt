@@ -3180,37 +3180,61 @@ class MainActivity : Activity() {
         }.start()
     }
 
+    /** presses on "Installed version" – 7 unlock the Beta options on this box (like Android's developer mode) */
+    private var betaTaps = 0
+
     private fun updateMenu() {
         val url = prefs.updateUrl
         val cur = Updater.currentName(this)
         val isBeta = Updater.installedIsBeta(this)
+        val dev = Updater.devBox(this)
         val p = Updater.pending(this)
         val gold = Color.rgb(214, 182, 72)
         val items = mutableListOf<GlassMenu.Item>()
-        if (p != null) items.add(GlassMenu.Item(T.s("Update to ", "Ažuriraj na ", "Aktualisieren auf ") + p.name, R.drawable.lc_download,
-            value = if (p.code > Updater.stableCode(this)) "BETA" else "STABLE") { installUpdate(p) })
+        // always first: 7 × OK here makes this box a Beta box (only on Svire's own boxes)
         items.add(GlassMenu.Item(T.s("Installed version", "Instalirana verzija", "Installierte Version"),
             if (isBeta) R.drawable.lc_flask_conical else R.drawable.lc_shield_check, tint = if (isBeta) null else gold,
-            value = "$cur · " + if (isBeta) "BETA" else "STABLE"))
-        items.add(GlassMenu.Item(T.s("Check now", "Provjeri sada", "Jetzt prüfen"), R.drawable.lc_refresh_cw) { checkUpdate(manual = true) })
-        items.add(GlassMenu.Item(T.s("Beta versions on this box", "Beta verzije na ovom boxu", "Beta-Versionen auf dieser Box"), R.drawable.lc_flask_conical,
-            checked = Updater.beta(this), toggle = true) { Updater.setBeta(this, it.checked) })
-        items.add(GlassMenu.Item(T.s("What's new", "Šta je novo", "Was ist neu"), R.drawable.lc_info) { whatsNew() })
-        if (isBeta || (p != null && p.code > Updater.stableCode(this)))
-            items.add(GlassMenu.Item(T.s("Mark as Stable (for all boxes)", "Označi kao Stable (za sve boxove)", "Als Stable markieren (für alle Boxen)"),
-                R.drawable.lc_shield_check, tint = gold) { markStable() })
-        items.add(GlassMenu.header(T.s("Advanced", "Napredno", "Erweitert")))
-        items.add(GlassMenu.Item(T.s("Update address (URL)", "Adresa za update (link)", "Update-Adresse (URL)"), R.drawable.lc_link,
-            value = if (url.isBlank()) "–" else url.substringAfter("://").take(24)) {
-            askText(T.s("Link to update.json", "Link do update.json", "Link zu update.json"), url.ifBlank { "https://" }) { prefs.updateUrl = it.trim() }
+            value = "$cur · " + if (isBeta) "BETA" else "STABLE") {
+            if (!dev && ++betaTaps >= 7) {
+                betaTaps = 0; Updater.setDevBox(this, true)
+                toast(T.s("Beta options unlocked on this box", "Beta opcije otključane na ovom boxu", "Beta-Optionen auf dieser Box freigeschaltet"))
+            }
+            updateMenu()
         })
+        if (p != null) items.add(GlassMenu.Item(T.s("Update to ", "Ažuriraj na ", "Aktualisieren auf ") + p.name, R.drawable.lc_download,
+            value = if (p.code > Updater.stableCode(this)) "BETA" else "STABLE") { installUpdate(p) })
+        items.add(GlassMenu.Item(T.s("Check now", "Provjeri sada", "Jetzt prüfen"), R.drawable.lc_refresh_cw) { checkUpdate(manual = true) })
+        items.add(GlassMenu.Item(T.s("What's new", "Šta je novo", "Was ist neu"), R.drawable.lc_info) { whatsNew() })
+        if (dev) {
+            items.add(GlassMenu.header("Beta"))
+            items.add(GlassMenu.Item(T.s("Beta versions on this box", "Beta verzije na ovom boxu", "Beta-Versionen auf dieser Box"), R.drawable.lc_flask_conical,
+                checked = Updater.beta(this), toggle = true) { item ->
+                Updater.setBeta(this, item.checked)
+                if (!item.checked) {
+                    Updater.forgetPending(this); showUpdateChip(false)
+                    // Android never installs an older version over a newer one: this box waits for the next Stable
+                    if (Updater.installedIsBeta(this)) toast(T.s("Stable only from now on. This box keeps $cur until a newer Stable comes out.",
+                        "Od sada samo Stable. Box ostaje na $cur dok ne izađe novija Stable verzija.",
+                        "Ab jetzt nur Stable. Die Box bleibt auf $cur, bis eine neuere Stable-Version erscheint.",
+                        "Теперь только Stable. Приставка остаётся на $cur, пока не выйдет более новая Stable."))
+                    else checkUpdate(manual = false)
+                } else checkUpdate(manual = false)
+            })
+            if (isBeta || (p != null && p.code > Updater.stableCode(this)))
+                items.add(GlassMenu.Item(T.s("Mark as Stable (for all boxes)", "Označi kao Stable (za sve boxove)", "Als Stable markieren (für alle Boxen)"),
+                    R.drawable.lc_shield_check, tint = gold) { markStable() })
+            items.add(GlassMenu.Item(T.s("Update address (URL)", "Adresa za update (link)", "Update-Adresse (URL)"), R.drawable.lc_link,
+                value = if (url.isBlank()) "–" else url.substringAfter("://").take(24)) {
+                askText(T.s("Link to update.json", "Link do update.json", "Link zu update.json"), url.ifBlank { "https://" }) { prefs.updateUrl = it.trim() }
+            })
+        }
         val stable = Updater.stableName(this)
         menu.show(T.s("LEAD update", "Ažuriranje LEAD-a", "LEAD-Update"), R.drawable.lc_refresh_cw, items,
             (if (stable.isNotBlank()) "Stable: $stable · " else "") +
-                T.s("Every new version starts as Beta. Downloads are checked (SHA-256) before installing.",
-                    "Svaka nova verzija prvo je Beta. Preuzimanje se provjerava (SHA-256) prije instalacije.",
-                    "Jede neue Version ist zuerst Beta. Downloads werden vor dem Installieren geprüft (SHA-256)."))
+                T.s("Downloads are checked (SHA-256) before installing.", "Preuzimanje se provjerava (SHA-256) prije instalacije.",
+                    "Downloads werden vor dem Installieren geprüft (SHA-256)."))
     }
+
 
     /** one LEAD version: one click on "Update now" (comes straight from the notification) */
     private fun leadUpdateScreen(info: Updater.Info) {

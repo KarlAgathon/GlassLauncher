@@ -34,11 +34,29 @@ object Updater {
         val p = Prefs(ctx)
         if ("/download/beta/" in p.updateUrl) {
             p.updateUrl = "https://github.com/KarlAgathon/GlassLauncher/releases/latest/download/update.json"
-            g(ctx).edit().putBoolean("updBeta", true).apply()
+            g(ctx).edit().putBoolean("updBeta", true).putBoolean("updDev", true).apply()
         }
         return g(ctx).getBoolean("updBeta", false)
     }
-    fun setBeta(ctx: Context, on: Boolean) = g(ctx).edit().putBoolean("updBeta", on).apply()
+    fun setBeta(ctx: Context, on: Boolean) = g(ctx).edit().putBoolean("updBeta", on).also { if (on) it.putBoolean("updDev", true) }.apply()
+
+    /**
+     * Only Svire's own boxes see the Beta options. A box becomes one by pressing "Installed version" 7 times,
+     * or because it already gets Betas. Every other box only ever gets Stable versions.
+     */
+    fun devBox(ctx: Context): Boolean {
+        if (g(ctx).getBoolean("updDev", false)) return true
+        // a box that already gets Betas stays a Beta box, also after Beta is switched off
+        if (beta(ctx)) { setDevBox(ctx, true); return true }
+        return false
+    }
+    fun setDevBox(ctx: Context, on: Boolean) = g(ctx).edit().putBoolean("updDev", on).apply()
+
+    /** forget a found Beta (after switching Beta off) */
+    fun forgetPending(ctx: Context) {
+        val p = pending(ctx) ?: return
+        if (p.code > stableCode(ctx)) g(ctx).edit().remove("pendingCode").apply()
+    }
 
     /** last known Stable version (versionCode, name) */
     fun stableCode(ctx: Context) = g(ctx).getLong("stableCode", 0L)
