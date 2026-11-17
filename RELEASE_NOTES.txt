@@ -1,3 +1,7 @@
+LEAD Launcher 9.1.4 BETA
+- Restart: one question in LEAD (Yes / No), then the box restarts by itself – no more system menu that the remote can't reach (S3 and other boxes)
+- After a restart LEAD opens by itself; it checks for Google TV from the first second
+
 LEAD Launcher 9.1.3 BETA
 - Google TV came back by itself (after a restart, sleep or the screensaver): LEAD opens again on its own, no need to press Home (Settings › Default launcher › Return to LEAD automatically)
 - Uninstalling an app from Android's App info no longer leaves an empty page with only the app's name
