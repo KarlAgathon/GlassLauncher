@@ -39,6 +39,11 @@ object BuiltinIcons {
             }
             done.add(pkg)
         }
+        // new PRETORIAN logo (blue / silver, no red): replace the old one once on every box
+        if (!g.getBoolean("pretorianLogo2", false)) {
+            if (restore(ctx, DefaultApps.PRETORIAN)) changed = true
+            g.edit().putBoolean("pretorianLogo2", true).apply()
+        }
         g.edit().putString(key, done.joinToString(",")).apply()
         return changed
     }
