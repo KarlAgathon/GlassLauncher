@@ -74,7 +74,7 @@ object DefaultApps {
     fun isDefault(pkg: String) = pkg == PRETORIAN || pkg == NETFLIX || pkg == DISNEY || pkg == TIZENTUBE
 
     fun name(pkg: String) = when (pkg) {
-        PRETORIAN -> "PRETORIAN IPTV"; NETFLIX -> "Netflix"; DISNEY -> "Disney+"; else -> "YouTube"
+        PRETORIAN -> "PRETORIAN IPTV"; NETFLIX -> "Netflix"; DISNEY -> "Disney+"; TIZENTUBE -> "Premium"; else -> "YouTube"
     }
 
     /** GitHub repo a default app is installed from (newest stable release), or null = Google Play */

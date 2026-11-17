@@ -473,7 +473,8 @@ object AppLoader {
                 val pic = BuiltinIcons.bitmap(ctx, p, wPx * 2, hPx * 2) ?: return@mapNotNull null
                 return@mapNotNull AppEntry(p, prefs.label(p) ?: DefaultApps.name(p), pic, missing = true)
             }
-            val label = prefs.label(p) ?: ri.loadLabel(pm).toString()
+            // TizenTube is LEAD's YouTube: it is called "Premium" (like its icon) unless you renamed it
+            val label = prefs.label(p) ?: if (p == DefaultApps.TIZENTUBE) "Premium" else ri.loadLabel(pm).toString()
             val icon = own?.let { if (prefs.logoWhite) IconRender.whiten(it) else it }
                 ?: runCatching {
                     if (wide) TileArt.wide(ctx, ri, label, null, wPx, hPx, prefs)
