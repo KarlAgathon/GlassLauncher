@@ -154,7 +154,7 @@ class HomeService : AccessibilityService() {
         return false
     }
 
-    fun watchHome(delays: List<Long> = listOf(1500L, 4000L, 8000L, 15_000L, 30_000L)) {
+    fun watchHome(delays: List<Long> = listOf(500L, 1500L, 3000L, 5000L, 8000L, 15_000L, 30_000L)) {
         if (!Prefs(this).homeRedirect || !Prefs(this).autoReturn) return
         for (d in delays) h.postDelayed({ backFromStock() }, d)
     }
@@ -183,7 +183,7 @@ class HomeService : AccessibilityService() {
             registerReceiver(wakeReceiver, f)
         }
         // switched on / restarted: Google TV starts first – check a few times during the first minute
-        if (android.os.SystemClock.elapsedRealtime() < 5 * 60_000L) watchHome(listOf(3000L, 8000L, 15_000L, 30_000L, 60_000L, 90_000L, 120_000L))
+        if (android.os.SystemClock.elapsedRealtime() < 5 * 60_000L) watchHome(listOf(1000L, 2000L, 3000L, 5000L, 8000L, 12_000L, 20_000L, 30_000L, 45_000L, 60_000L, 90_000L, 120_000L))
         // right after a LEAD update Android shows Google TV: come back to LEAD by ourselves
         val g = getSharedPreferences("glass_global", MODE_PRIVATE)
         val upd = g.getLong("justUpdated", 0L)
