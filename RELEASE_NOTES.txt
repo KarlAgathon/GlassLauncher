@@ -1,3 +1,15 @@
+LEAD Launcher 9.1.3 BETA
+- Google TV came back by itself (after a restart, sleep or the screensaver): LEAD opens again on its own, no need to press Home (Settings › Default launcher › Return to LEAD automatically)
+- Uninstalling an app from Android's App info no longer leaves an empty page with only the app's name
+- Empty system notices (Google TV "Notification Center", "… running in the background") no longer count at the bell (can be switched off in the notification center)
+- New PRETORIAN IPTV logo (blue and silver)
+- TizenTube is called "Premium" on the home screen; long press › Rename this icon
+- Apps LEAD knows: Silo and Nuvio install from GitHub (TV version), Stremio, NordVPN, Proton VPN open in Google Play; built-in Silo logo
+- Safer updates: a downloaded update is checked again (SHA-256) before installing; Mark as Stable shows and publishes exactly the tested Beta commit
+- The GitHub token is never copied into backups
+- Several installs at once no longer cancel each other; night updates try again after a failure
+- Fixed: a normal-size icon could lose its rounded edge after a bigger one
+
 LEAD Launcher 9.1.2 BETA
 - New default LEAD wallpaper (blue glass horizon), also in black, green and purple (Wallpaper › LEAD wallpaper)
 - Long press on an icon: options only for that icon – size (60–160 %), move left/right/up/down, change picture, rename, reset; options for all icons stay in Settings › Icons and tiles
