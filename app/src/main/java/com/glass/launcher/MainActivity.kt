@@ -1517,7 +1517,7 @@ class MainActivity : Activity() {
     /** a default app (PRETORIAN, Netflix …) is not on the box yet: install it from its official place */
     private fun installMissing(e: AppEntry) {
         if (DefaultApps.repo(e.pkg) != null) {
-            val n = if (e.pkg == DefaultApps.TIZENTUBE) "TizenTube (YouTube)" else "PRETORIAN IPTV"
+            val n = if (e.pkg == DefaultApps.TIZENTUBE) "TizenTube (YouTube)" else DefaultApps.name(e.pkg)
             confirm(e.label, R.drawable.lc_download, T.s("$n is not installed yet. Install the newest stable version from GitHub?",
                 "$n još nije instaliran. Instalirati najnoviju stabilnu verziju sa GitHuba?",
                 "$n ist noch nicht installiert. Neueste stabile Version von GitHub installieren?",

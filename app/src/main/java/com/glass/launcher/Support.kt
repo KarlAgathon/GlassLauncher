@@ -476,7 +476,8 @@ object AppLoader {
             val ri = all[p] ?: run {
                 // one of LEAD's default apps that is not installed yet: keep its place, a click installs it
                 if (!DefaultApps.isDefault(p)) return@mapNotNull null
-                val pic = BuiltinIcons.bitmap(ctx, p, wPx * 2, hPx * 2) ?: return@mapNotNull null
+                // no picture built into LEAD (yet): the app's name as a clean white word
+                val pic = BuiltinIcons.bitmap(ctx, p, wPx * 2, hPx * 2) ?: wordmark(DefaultApps.name(p), wPx * 2, hPx * 2)
                 return@mapNotNull AppEntry(p, prefs.label(p) ?: DefaultApps.name(p), pic, missing = true)
             }
             // TizenTube is LEAD's YouTube: it is called "Premium" (like its icon) unless you renamed it
@@ -518,6 +519,22 @@ object AppLoader {
 }
 
 /** How often each app was opened – the "All apps" list learns from it. Older use slowly counts less. */
+/** the app's name written big and white – stands in for an app logo LEAD does not have */
+fun wordmark(name: String, w: Int, h: Int): Bitmap {
+    val b = Bitmap.createBitmap(w.coerceAtLeast(64), h.coerceAtLeast(36), Bitmap.Config.ARGB_8888)
+    val c = android.graphics.Canvas(b)
+    val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        typeface = android.graphics.Typeface.create(android.graphics.Typeface.SANS_SERIF, android.graphics.Typeface.BOLD)
+        textAlign = android.graphics.Paint.Align.CENTER
+        textSize = b.height * 0.42f
+    }
+    while (paint.measureText(name) > b.width * 0.9f && paint.textSize > 8f) paint.textSize *= 0.92f
+    val y = b.height / 2f - (paint.descent() + paint.ascent()) / 2f
+    c.drawText(name, b.width / 2f, y, paint)
+    return b
+}
+
 object Usage {
     private fun sp(ctx: Context) = ctx.getSharedPreferences("app_usage", Context.MODE_PRIVATE)
 

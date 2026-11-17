@@ -76,14 +76,38 @@ object DefaultApps {
     const val TIZENTUBE_REPO = "reisxd/TizenTubeCobalt"
     const val YOUTUBE_OFFICIAL = "com.google.android.youtube.tv"
 
-    fun isDefault(pkg: String) = pkg == PRETORIAN || pkg == NETFLIX || pkg == DISNEY || pkg == TIZENTUBE
+    const val NUVIO = "com.nuvio.tv"
+    const val STREMIO = "com.stremio.one"
+    const val NORDVPN = "com.nordvpn.android"
+    const val PROTONVPN = "ch.protonvpn.android"
 
-    fun name(pkg: String) = when (pkg) {
-        PRETORIAN -> "PRETORIAN IPTV"; NETFLIX -> "Netflix"; DISNEY -> "Disney+"; TIZENTUBE -> "Premium"; else -> "YouTube"
-    }
+    /** one app LEAD knows: name on the home screen and where it comes from (GitHub repo, or null = Google Play) */
+    data class App(val pkg: String, val name: String, val repo: String?)
 
-    /** GitHub repo a default app is installed from (newest stable release), or null = Google Play */
-    fun repo(pkg: String) = when (pkg) { PRETORIAN -> PRETORIAN_REPO; TIZENTUBE -> TIZENTUBE_REPO; else -> null }
+    /**
+     * Apps LEAD offers (setup wizard, home screen). They can sit on the home screen before they are installed:
+     * a click with the ⬇ installs the newest stable GitHub release, or opens Google Play for the others.
+     */
+    val CATALOG = listOf(
+        App(PRETORIAN, "PRETORIAN IPTV", PRETORIAN_REPO),
+        App(TIZENTUBE, "Premium", TIZENTUBE_REPO),
+        App(DISNEY, "Disney+", null),
+        App(NETFLIX, "Netflix", null),
+        App(NUVIO, "Nuvio", "NuvioMedia/NuvioTV"),
+        App(STREMIO, "Stremio", null),
+        App(NORDVPN, "NordVPN", null),
+        App(PROTONVPN, "Proton VPN", null),
+        App(Extras.SHIZUKU, "Shizuku", "thedjchi/Shizuku"),
+    )
+
+    fun find(pkg: String) = CATALOG.firstOrNull { it.pkg == pkg }
+
+    fun isDefault(pkg: String) = find(pkg) != null
+
+    fun name(pkg: String) = find(pkg)?.name ?: "YouTube"
+
+    /** GitHub repo an app is installed from (newest stable release), or null = Google Play */
+    fun repo(pkg: String) = find(pkg)?.repo
 
     @Suppress("UNUSED_PARAMETER")
     fun list(ctx: Context) = listOf(PRETORIAN, TIZENTUBE, DISNEY, NETFLIX)

@@ -33,6 +33,7 @@ object AppUpdates {
         "moe.shizuku.privileged.api" to "thedjchi/Shizuku",
         "io.gh.reisxd.tizentube.cobalt" to "reisxd/TizenTubeCobalt",
         "com.pretorian.tv" to "KarlAgathon/PRETORIAN",
+        "com.nuvio.tv" to "NuvioMedia/NuvioTV",
         "com.rfmarcos.sofadrop" to "rfmarcos/sofadrop",
     )
 
