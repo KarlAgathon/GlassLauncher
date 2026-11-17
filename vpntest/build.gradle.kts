@@ -26,8 +26,9 @@ android {
     buildTypes {
         getByName("release") {
             isMinifyEnabled = false
+            val wantsRelease = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
             signingConfig = signingConfigs.findByName("lead")
-                ?: throw GradleException("Signing key missing")
+                ?: if (wantsRelease) throw GradleException("Signing key missing") else null
         }
     }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
