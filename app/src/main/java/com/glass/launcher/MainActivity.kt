@@ -1114,8 +1114,9 @@ class MainActivity : Activity() {
             GlassMenu.Item(T.s("Move this icon", "Pomjeri ovu ikonu", "Dieses Symbol verschieben"), R.drawable.lc_move,
                 value = prefs.iconOffset(e.pkg).let { (x, y) -> if (x == 0 && y == 0) "–" else "$x / $y" }) { iconNudgeMenu(e) },
             GlassMenu.Item(T.s("Move in the row", "Pomjeri u redu", "In der Reihe verschieben"), R.drawable.lc_move) { startMove(pos) },
-            GlassMenu.Item(T.s("Rename", "Preimenuj", "Umbenennen"), R.drawable.lc_pencil) {
-                askText(T.s("Rename", "Preimenuj", "Umbenennen"), e.label) { prefs.setLabel(e.pkg, it); reloadApps() }
+            GlassMenu.Item(T.s("Rename this icon", "Preimenuj ovu ikonu", "Dieses Symbol umbenennen"), R.drawable.lc_pencil, value = e.label) {
+                // empty name = the app's own name again
+                askText(T.s("Name of this icon", "Ime ove ikone", "Name dieses Symbols"), e.label) { prefs.setLabel(e.pkg, it.trim().ifBlank { null }); reloadApps() }
             },
             GlassMenu.Item(T.s("Reset this icon", "Vrati ovu ikonu na zadano", "Dieses Symbol zurücksetzen"), R.drawable.lc_rotate_ccw) {
                 prefs.setIconScale(e.pkg, 100); prefs.setIconOffset(e.pkg, 0, 0); adapter.notifyDataSetChanged()

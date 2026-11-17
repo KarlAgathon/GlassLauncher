@@ -5,6 +5,8 @@ object I18nRu {
     val map: HashMap<String, String> = HashMap(1024)
 
     init {
+        map["Rename this icon"] = "Переименовать этот значок"
+        map["Name of this icon"] = "Название этого значка"
         map["Size of this icon"] = "Размер этого значка"
         map["Move this icon"] = "Переместить этот значок"
         map["Reset this icon"] = "Сбросить этот значок"
