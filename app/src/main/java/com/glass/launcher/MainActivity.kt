@@ -88,6 +88,17 @@ class MainActivity : Activity() {
     private val packageReceiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context?, i: Intent?) {
             reloadApps()
+            // uninstalled from Android's App info page: that page stays empty with only the app's name – close it
+            if (i?.action == Intent.ACTION_PACKAGE_REMOVED && i.getBooleanExtra(Intent.EXTRA_REPLACING, false) == false && !HomeService.homeVisible) {
+                handler.postDelayed({
+                    runCatching {
+                        // started through the helper service: Android lets it open LEAD from the background
+                        val c: Context = HomeService.instance ?: this@MainActivity
+                        c.startActivity(Intent(c, MainActivity::class.java)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
+                    }
+                }, 700)
+            }
             if (i?.action != Intent.ACTION_PACKAGE_REMOVED) pluginUpdated(i?.data?.schemeSpecificPart)
             // SofaDrop just installed from "Add-ons" (quietly via Shizuku): make it the wallpaper
             val pkg = i?.data?.schemeSpecificPart
@@ -166,6 +177,7 @@ class MainActivity : Activity() {
         CrashWatch.install(this)
         Weather.fahrenheit = prefs.weatherF
         NotifListener.mode = prefs.notifMode
+        NotifListener.hideJunk = prefs.hideSysNotifs
         // icons that come with LEAD (TiviMate, YouTube, Disney+ …)
         runCatching { BuiltinIcons.seed(this) }
         Backdrop.lite = prefs.perfMode
@@ -2286,6 +2298,9 @@ class MainActivity : Activity() {
                     toast(T.s("Home button: Android home screen", "Dugme Home: Android početni ekran", "Home-Taste: Android-Startbildschirm"))
                 } else enableHomeButton()
             },
+            // Google TV sometimes shows itself again after a restart / sleep / screensaver: go back to LEAD by itself
+            GlassMenu.Item(T.s("Return to LEAD automatically", "Automatski se vrati na LEAD", "Automatisch zu LEAD zurück", "Автоматически возвращаться в LEAD"),
+                R.drawable.lc_rotate_ccw, checked = prefs.autoReturn, toggle = true) { prefs.autoReturn = it.checked },
             GlassMenu.Item(T.s("Instructions (computer / ADB)", "Upute (računar / ADB)", "Anleitung (Computer / ADB)"), R.drawable.lc_info) { adbHelp() },
         ))
     }
@@ -3213,6 +3228,10 @@ class MainActivity : Activity() {
         })
         items.add(GlassMenu.Item(T.s("Update notifications", "Obavještenja o ažuriranjima", "Update-Benachrichtigungen"), R.drawable.lc_download,
             checked = updOn, toggle = true) { Updater.setNotifyOn(this, it.checked); updateBell(); updateStatus() })
+        items.add(GlassMenu.Item(T.s("Hide empty system notices", "Sakrij prazna sistemska obavještenja", "Leere Systemhinweise ausblenden", "Скрывать пустые системные уведомления"),
+            R.drawable.lc_eye, checked = prefs.hideSysNotifs, toggle = true) {
+            prefs.hideSysNotifs = it.checked; NotifListener.hideJunk = it.checked; updateStatus()
+        })
         val muted = prefs.mutedNotifs
         if (muted.isNotEmpty()) items.add(GlassMenu.Item(T.s("Hidden apps", "Skrivene aplikacije", "Ausgeblendete Apps"), R.drawable.lc_eye, value = muted.size.toString()) {
             menu.show(T.s("Hidden apps", "Skrivene aplikacije", "Ausgeblendete Apps"), R.drawable.lc_eye, muted.map { pkg ->

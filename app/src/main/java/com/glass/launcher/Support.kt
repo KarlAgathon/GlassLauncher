@@ -388,6 +388,12 @@ class Prefs(ctx: Context) {
     /** Home button of the remote opens LEAD Launcher (needs the accessibility service) */
     var homeRedirect: Boolean get() = bool("homeRedir", true); set(v) = putBool("homeRedir", v)
 
+    /** Google TV came back by itself (restart, sleep, screensaver): go back to LEAD automatically */
+    var autoReturn: Boolean get() = bool("autoReturn", true); set(v) = putBool("autoReturn", v)
+
+    /** hide empty system notices (Google TV "Notification Center", "… running in the background") from the bell */
+    var hideSysNotifs: Boolean get() = bool("hideSysNotifs", true); set(v) = putBool("hideSysNotifs", v)
+
     /** what to do when the home screen is idle: 0 nothing, 1 screensaver, 2 sleep */
     var idleAction: Int get() = int("idleAct", 0); set(v) = putInt("idleAct", v)
     var idleMinutes: Int get() = int("idleMin", 15); set(v) = putInt("idleMin", v)

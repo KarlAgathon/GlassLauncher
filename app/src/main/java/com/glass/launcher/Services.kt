@@ -104,10 +104,45 @@ class HomeService : AccessibilityService() {
         }
     }
 
+    /**
+     * Google TV sometimes comes back by itself (after a restart, after sleep or the screensaver).
+     * For a short while after such a moment LEAD looks what is on top and, if it is the stock home
+     * screen, opens LEAD again – the user does not have to press Home.
+     */
+    private val wakeReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(c: android.content.Context?, i: Intent?) { watchHome() }
+    }
+
+    fun watchHome(delays: List<Long> = listOf(1500L, 4000L, 8000L, 15_000L, 30_000L)) {
+        if (!Prefs(this).homeRedirect || !Prefs(this).autoReturn) return
+        for (d in delays) h.postDelayed({ backFromStock() }, d)
+    }
+
+    private fun backFromStock() {
+        if (homeVisible) return
+        val top = runCatching { rootInActiveWindow?.packageName?.toString() }.getOrNull() ?: lastPkg
+        if (top !in STOCK) return
+        val now = System.currentTimeMillis()
+        if (now - last < 800) return
+        last = now
+        runCatching {
+            startActivity(Intent(this, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED))
+        }
+    }
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
         createOverlay()
+        runCatching {
+            val f = android.content.IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_ON); addAction(Intent.ACTION_USER_PRESENT); addAction(Intent.ACTION_DREAMING_STOPPED)
+            }
+            registerReceiver(wakeReceiver, f)
+        }
+        // switched on / restarted: Google TV starts first – check a few times during the first minute
+        if (android.os.SystemClock.elapsedRealtime() < 5 * 60_000L) watchHome(listOf(3000L, 8000L, 15_000L, 30_000L, 60_000L))
         // right after a LEAD update Android shows Google TV: come back to LEAD by ourselves
         val g = getSharedPreferences("glass_global", MODE_PRIVATE)
         val upd = g.getLong("justUpdated", 0L)
@@ -355,6 +390,7 @@ class HomeService : AccessibilityService() {
 
     override fun onDestroy() {
         instance = null
+        runCatching { unregisterReceiver(wakeReceiver) }
         h.removeCallbacks(tick)
         breathe(false)
         overlay?.let { v -> runCatching { (getSystemService(WINDOW_SERVICE) as WindowManager).removeView(v) } }
