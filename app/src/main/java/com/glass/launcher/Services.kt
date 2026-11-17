@@ -57,6 +57,24 @@ class HomeService : AccessibilityService() {
         /** System power menu (restart / turn off). */
         fun powerMenu(): Boolean = instance?.performGlobalAction(AccessibilityService.GLOBAL_ACTION_POWER_DIALOG) ?: false
 
+        private val RESTART_WORDS = listOf("restart", "reboot", "neustart", "neu starten", "ponovo pokreni", "restartuj",
+            "перезагрузить", "перезапуск", "redémarrer", "riavvia", "reiniciar", "opnieuw opstarten", "uruchom ponownie", "yeniden başlat")
+
+        /**
+         * Restart without Shizuku: Android's own power menu opens and LEAD presses its "Restart" button itself
+         * (on some boxes the remote can't reach those buttons). [done] gets false if the button wasn't found.
+         */
+        fun restartViaMenu(done: (Boolean) -> Unit) {
+            val s = instance ?: return done(false)
+            if (!s.performGlobalAction(AccessibilityService.GLOBAL_ACTION_POWER_DIALOG)) return done(false)
+            var tries = 0
+            fun look() {
+                if (s.clickRestart()) { done(true); return }
+                if (++tries < 15) s.h.postDelayed({ look() }, 300) else done(false)
+            }
+            s.h.postDelayed({ look() }, 500)
+        }
+
         /** Puts the box to sleep (Android 9+). */
         fun sleep(): Boolean =
             if (Build.VERSION.SDK_INT >= 28) instance?.performGlobalAction(AccessibilityService.GLOBAL_ACTION_LOCK_SCREEN) ?: false else false
@@ -113,6 +131,29 @@ class HomeService : AccessibilityService() {
         override fun onReceive(c: android.content.Context?, i: Intent?) { watchHome() }
     }
 
+    /** finds the "Restart" button in any window on screen and presses it */
+    fun clickRestart(): Boolean {
+        val roots = runCatching { windows.mapNotNull { it.root } }.getOrDefault(emptyList()) +
+            listOfNotNull(runCatching { rootInActiveWindow }.getOrNull())
+        for (r in roots) {
+            val found = ArrayList<android.view.accessibility.AccessibilityNodeInfo>()
+            fun walk(n: android.view.accessibility.AccessibilityNodeInfo?, depth: Int) {
+                if (n == null || depth > 25) return
+                val t = (n.text ?: n.contentDescription)?.toString()?.trim()?.lowercase() ?: ""
+                if (t.isNotEmpty() && RESTART_WORDS.any { t == it || t.startsWith(it) }) found.add(n)
+                for (i in 0 until n.childCount) walk(n.getChild(i), depth + 1)
+            }
+            walk(r, 0)
+            for (n in found) {
+                var c: android.view.accessibility.AccessibilityNodeInfo? = n
+                var up = 0
+                while (c != null && !c.isClickable && up < 5) { c = c.parent; up++ }
+                if (c != null && c.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK)) return true
+            }
+        }
+        return false
+    }
+
     fun watchHome(delays: List<Long> = listOf(1500L, 4000L, 8000L, 15_000L, 30_000L)) {
         if (!Prefs(this).homeRedirect || !Prefs(this).autoReturn) return
         for (d in delays) h.postDelayed({ backFromStock() }, d)
@@ -142,7 +183,7 @@ class HomeService : AccessibilityService() {
             registerReceiver(wakeReceiver, f)
         }
         // switched on / restarted: Google TV starts first – check a few times during the first minute
-        if (android.os.SystemClock.elapsedRealtime() < 5 * 60_000L) watchHome(listOf(3000L, 8000L, 15_000L, 30_000L, 60_000L))
+        if (android.os.SystemClock.elapsedRealtime() < 5 * 60_000L) watchHome(listOf(3000L, 8000L, 15_000L, 30_000L, 60_000L, 90_000L, 120_000L))
         // right after a LEAD update Android shows Google TV: come back to LEAD by ourselves
         val g = getSharedPreferences("glass_global", MODE_PRIVATE)
         val upd = g.getLong("justUpdated", 0L)
@@ -427,9 +468,11 @@ class BootReceiver : BroadcastReceiver() {
         // Google TV always starts its own home screen: open LEAD once right after switching on
         if (a != Intent.ACTION_LOCKED_BOOT_COMPLETED && Prefs(app).homeRedirect) h.postDelayed({
             runCatching {
-                app.startActivity(Intent(app, MainActivity::class.java)
+                val c: Context = HomeService.instance ?: app
+                c.startActivity(Intent(c, MainActivity::class.java)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED))
             }
+            HomeService.instance?.watchHome()
         }, 2500)
         h.postDelayed({ Autostart.apply(app) }, 4000)
         h.postDelayed({ Autostart.apply(app); pending.finish() }, 8000)

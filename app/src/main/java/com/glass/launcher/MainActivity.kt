@@ -2975,9 +2975,12 @@ class MainActivity : Activity() {
         }
         val direct = runCatching { (getSystemService(Context.POWER_SERVICE) as android.os.PowerManager).reboot(null); true }.getOrDefault(false)
         if (direct) return
-        if (HomeService.powerMenu()) {
-            toast(T.s("Choose \"Restart\"", "Izaberi \"Restart\"", "\"Neustart\" wählen"))
-        } else needServiceFor()
+        if (HomeService.instance == null) { needServiceFor(); return }
+        // the question was already asked in LEAD: open Android's power menu and press its "Restart" ourselves
+        toast(T.s("Restarting…", "Restartujem…", "Neustart…"))
+        HomeService.restartViaMenu { ok ->
+            if (!ok) toast(T.s("Choose \"Restart\"", "Izaberi \"Restart\"", "\"Neustart\" wählen"))
+        }
     }
 
     /** Standby: screen + box off, TV off over HDMI-CEC; the remote switches everything on again. */
