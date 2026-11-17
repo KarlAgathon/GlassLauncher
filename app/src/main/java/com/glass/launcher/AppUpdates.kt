@@ -34,6 +34,7 @@ object AppUpdates {
         "io.gh.reisxd.tizentube.cobalt" to "reisxd/TizenTubeCobalt",
         "com.pretorian.tv" to "KarlAgathon/PRETORIAN",
         "com.nuvio.tv" to "NuvioMedia/NuvioTV",
+        "org.siloserver.silo" to "Silo-Server/silo-android",
         "com.rfmarcos.sofadrop" to "rfmarcos/sofadrop",
     )
 
@@ -142,6 +143,9 @@ object AppUpdates {
             if ("universal" in name || "all" in name) s += 2
             if (listOf("x86", "arm64", "armeabi", "v7a", "v8a").any { it in name } && want.none { it in name }) s -= 6
             if ("debug" in name) s -= 2
+            // phone and TV builds in one release (Silo, Nuvio …): a box takes the TV one
+            if (Regex("(^|[^a-z])(tv|androidtv|leanback)([^a-z]|$)").containsMatchIn(name) || "androidtv" in name) s += 4
+            if (listOf("phone", "mobile").any { it in name }) s -= 4
             if (s > bestScore) { bestScore = s; best = a.optString("browser_download_url") }
         }
         return tag to best

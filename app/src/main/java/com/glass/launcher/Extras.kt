@@ -10,6 +10,7 @@ import java.net.URL
 object BuiltinIcons {
     private val MAP = mapOf(
         DefaultApps.PRETORIAN to R.drawable.builtin_pretorian_iptv,
+        DefaultApps.SILO to R.drawable.builtin_silo,
         DefaultApps.NETFLIX to R.drawable.builtin_netflix,
         "ar.tvplayer.tv" to R.drawable.builtin_tivimate,
         "com.google.android.youtube.tv" to R.drawable.builtin_youtube,
@@ -78,6 +79,7 @@ object DefaultApps {
 
     const val NUVIO = "com.nuvio.tv"
     const val STREMIO = "com.stremio.one"
+    const val SILO = "org.siloserver.silo"
     const val NORDVPN = "com.nordvpn.android"
     const val PROTONVPN = "ch.protonvpn.android"
 
@@ -94,6 +96,7 @@ object DefaultApps {
         App(DISNEY, "Disney+", null),
         App(NETFLIX, "Netflix", null),
         App(NUVIO, "Nuvio", "NuvioMedia/NuvioTV"),
+        App(SILO, "Silo", "Silo-Server/silo-android"),
         App(STREMIO, "Stremio", null),
         App(NORDVPN, "NordVPN", null),
         App(PROTONVPN, "Proton VPN", null),
