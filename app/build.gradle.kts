@@ -34,8 +34,10 @@ android {
     buildTypes {
         getByName("release") {
             isMinifyEnabled = false
+            // a release must be signed with the LEAD key; a debug compile check (other branches) needs no key
+            val wantsRelease = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
             signingConfig = signingConfigs.findByName("lead")
-                ?: throw GradleException("Signing key missing: set the GitHub secrets LEAD_KEYSTORE_B64 and LEAD_KEY_PASSWORD")
+                ?: if (wantsRelease) throw GradleException("Signing key missing: set the GitHub secrets LEAD_KEYSTORE_B64 and LEAD_KEY_PASSWORD") else null
         }
     }
     compileOptions {

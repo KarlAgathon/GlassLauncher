@@ -245,9 +245,12 @@ class SaverView(ctx: Context) : FrameLayout(ctx) {
         Thread {
             val b: Bitmap? = runCatching {
                 if (src.startsWith("http")) {
-                    val tmp = File(context.cacheDir, "saver_pic.img")
-                    Http.download(src, tmp)
-                    Bitmaps.decodeScaled(tmp, dm.widthPixels, dm.heightPixels)
+                    // every picture its own temp file: two downloads can never write into the same file
+                    val tmp = File(context.cacheDir, "saver_pic_${System.nanoTime()}.img")
+                    try {
+                        Http.download(src, tmp)
+                        Bitmaps.decodeScaled(tmp, dm.widthPixels, dm.heightPixels)
+                    } finally { tmp.delete() }
                 } else Bitmaps.decodeScaled(File(src), dm.widthPixels, dm.heightPixels)
             }.getOrNull()
             h.post { if (b != null) crossfade(b) }

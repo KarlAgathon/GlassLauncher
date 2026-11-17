@@ -18,15 +18,25 @@ object AppInstaller {
     @Volatile private var total = 0
     @Volatile private var done = 0
 
+    @Volatile private var lastStep = 0L
+
     fun start(ctx: Context, apps: List<Pair<String, List<File>>>) {
         if (apps.isEmpty()) return
-        queue.clear(); queue.addAll(apps)
-        total = apps.size; done = 0
+        synchronized(queue) {
+            // installing already (and not stuck for minutes): the new apps wait in the same line
+            if (total > 0 && System.currentTimeMillis() - lastStep < 5 * 60_000L) {
+                apps.forEach { a -> if (queue.none { it.first == a.first }) { queue.addLast(a); total++ } }
+                return
+            }
+            queue.clear(); queue.addAll(apps)
+            total = apps.size; done = 0
+        }
         next(ctx.applicationContext)
     }
 
     fun next(ctx: Context) {
-        val item = queue.removeFirstOrNull() ?: run {
+        lastStep = System.currentTimeMillis()
+        val item = synchronized(queue) { queue.removeFirstOrNull() } ?: run {
             if (total > 0) toast(ctx, T.s("Apps installed: ", "Instalirano aplikacija: ", "Apps installiert: ") + "$done / $total")
             total = 0
             return

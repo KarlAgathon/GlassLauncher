@@ -139,7 +139,8 @@ class AppAdapter(
         h.icon.scaleX = own; h.icon.scaleY = own
         // a bigger icon may reach past its tile – never cut it
         h.tile.clipChildren = false
-        if (own > 1f) h.tile.clipToOutline = false
+        // set every time: a recycled tile of a normal-size icon must get its rounded clip back
+        h.tile.clipToOutline = own <= 1f
         h.icon.translationX = ox * d; h.icon.translationY = oy * d
         h.reflect.scaleX = own; h.reflect.scaleY = own; h.reflect.translationX = ox * d
 

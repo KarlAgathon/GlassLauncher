@@ -2199,12 +2199,22 @@ class MainActivity : Activity() {
             return
         }
         val name = Updater.pending(this)?.takeIf { it.code > Updater.stableCode(this) }?.name ?: Updater.currentName(this)
+        toast(T.s("Working…", "Radim…", "Arbeite…"))
+        // show exactly which beta commit goes to every box; only that one is published
+        Thread {
+            val head = Updater.betaHead(this)
+            handler.post { if (head == null) toast("GitHub ?") else confirmStable(name, head) }
+        }.start()
+    }
+
+    private fun confirmStable(name: String, head: Pair<String, String>) {
         confirm(T.s("Mark as Stable", "Označi kao Stable", "Als Stable markieren"), R.drawable.lc_shield_check,
             T.s("Make the Beta the Stable version for every box?", "Napraviti Betu Stable verzijom za sve boxove?",
-                "Die Beta zur Stable-Version für alle Boxen machen?", "Сделать бету стабильной версией для всех приставок?") + "\n\n" + name) {
+                "Die Beta zur Stable-Version für alle Boxen machen?", "Сделать бету стабильной версией для всех приставок?") +
+                "\n\n" + name + "\n" + head.first.take(7) + " · " + head.second.take(70)) {
             toast(T.s("Working…", "Radim…", "Arbeite…"))
             Thread {
-                val err = Updater.promote(this)
+                val err = Updater.promote(this, head.first)
                 handler.post {
                     if (err == null) toast(T.s("Done – GitHub is building the Stable version (a few minutes)", "Gotovo – GitHub pravi Stable verziju (par minuta)",
                         "Fertig – GitHub baut die Stable-Version (ein paar Minuten)", "Готово – GitHub собирает стабильную версию (несколько минут)"))

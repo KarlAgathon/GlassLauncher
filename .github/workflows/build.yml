@@ -20,31 +20,42 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
+      # Only master, beta and version tags get the signing key and make releases.
+      # Every other branch is just a quick compile check (debug build, no secrets).
+      - name: Compile check (other branches)
+        if: ${{ !(github.ref == 'refs/heads/master' || github.ref == 'refs/heads/beta' || startsWith(github.ref, 'refs/tags/v')) }}
+        run: gradle :app:assembleDebug --no-daemon
       - name: Signing key (from secrets)
+        if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/beta' || startsWith(github.ref, 'refs/tags/v'))
         env:
           KS: ${{ secrets.LEAD_KEYSTORE_B64 }}
         run: |
           if [ -z "$KS" ]; then echo "::error::Secret LEAD_KEYSTORE_B64 is missing"; exit 1; fi
           echo "$KS" | base64 -d > app/release.keystore
       - name: Release notes into the app ("What's new")
+        if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/beta' || startsWith(github.ref, 'refs/tags/v'))
         run: mkdir -p app/src/main/res/raw && cp RELEASE_NOTES.txt app/src/main/res/raw/release_notes.txt
       - run: gradle assembleRelease --no-daemon
+        if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/beta' || startsWith(github.ref, 'refs/tags/v'))
         env:
           LEAD_KEY_PASSWORD: ${{ secrets.LEAD_KEY_PASSWORD }}
       - name: Remove signing key
         if: always()
         run: rm -f app/release.keystore
       - name: Rename APK
+        if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/beta' || startsWith(github.ref, 'refs/tags/v'))
         run: |
           cp app/build/outputs/apk/release/*.apk GlassLauncher.apk
           cp vpntest/build/outputs/apk/release/*.apk LEAD-VPN-test.apk
       - uses: actions/upload-artifact@v4
+        if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/beta' || startsWith(github.ref, 'refs/tags/v'))
         with:
           name: GlassLauncher-apk
           path: GlassLauncher.apk
 
       # New versionName in app/build.gradle.kts on master -> automatic release v<versionName>
       - name: Read version
+        if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/beta' || startsWith(github.ref, 'refs/tags/v'))
         id: v
         env:
           GH_TOKEN: ${{ github.token }}

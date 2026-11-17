@@ -29,6 +29,8 @@ object Backup {
         for (n in names.distinct()) {
             val obj = JSONObject()
             for ((k, v) in ctx.getSharedPreferences(n, Context.MODE_PRIVATE).all) {
+                // the GitHub token never leaves this box (not in backups, not in a transfer to another box)
+                if (k == "ghToken") continue
                 val e = JSONObject()
                 when (v) {
                     is String -> { e.put("t", "s"); e.put("v", v) }
