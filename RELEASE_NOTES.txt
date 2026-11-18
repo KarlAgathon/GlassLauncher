@@ -1,3 +1,6 @@
+LEAD Launcher 9.1.5
+- Home-screen icon menu: Move left and Move right now shift an app by one position and save the new order immediately.
+
 LEAD Launcher 9.1.4 BETA
 - Restart: one question in LEAD (Yes / No), then the box restarts by itself – no more system menu that the remote can't reach (S3 and other boxes)
 - After a restart LEAD opens by itself; it checks for Google TV from the first second
