@@ -1125,6 +1125,8 @@ class MainActivity : Activity() {
                 value = "${prefs.iconScale(e.pkg)} %") { iconSizeMenu(e) },
             GlassMenu.Item(T.s("Move this icon", "Pomjeri ovu ikonu", "Dieses Symbol verschieben"), R.drawable.lc_move,
                 value = prefs.iconOffset(e.pkg).let { (x, y) -> if (x == 0 && y == 0) "–" else "$x / $y" }) { iconNudgeMenu(e) },
+            GlassMenu.Item(T.s("Move left", "Pomjeri lijevo", "Nach links verschieben"), R.drawable.lc_move) { movePinnedTile(pos, -1) },
+            GlassMenu.Item(T.s("Move right", "Pomjeri desno", "Nach rechts verschieben"), R.drawable.lc_move) { movePinnedTile(pos, 1) },
             GlassMenu.Item(T.s("Move in the row", "Pomjeri u redu", "In der Reihe verschieben"), R.drawable.lc_move) { startMove(pos) },
             GlassMenu.Item(T.s("Rename this icon", "Preimenuj ovu ikonu", "Dieses Symbol umbenennen"), R.drawable.lc_pencil, value = e.label) {
                 // empty name = the app's own name again
@@ -1267,6 +1269,25 @@ class MainActivity : Activity() {
     }
 
     // ------------------------------------------------------------------ moving tiles
+
+    /** Move one home-screen app exactly one slot and persist the new order immediately. */
+    private fun movePinnedTile(pos: Int, delta: Int) {
+        val first = apps.indexOfFirst { !it.isAdd }
+        val last = apps.indexOfLast { !it.isAdd }
+        if (first < 0 || pos !in first..last) return
+        val target = (pos + delta).coerceIn(first, last)
+        if (target == pos) {
+            toast(T.s("Already at the edge", "Ikona je već na rubu", "Symbol ist bereits am Rand"))
+            return
+        }
+        val item = apps.removeAt(pos)
+        apps.add(target, item)
+        adapter.notifyItemMoved(pos, target)
+        prefs.pinned = apps.filter { !it.isAdd }.map { it.pkg }
+        lastPos = target
+        grid.scrollToPosition(target)
+        grid.post { grid.findViewHolderForAdapterPosition(target)?.itemView?.requestFocus() }
+    }
 
     private fun startMove(pos: Int) {
         movingPos = pos
