@@ -3666,10 +3666,10 @@ class MainActivity : Activity() {
         val d = resources.displayMetrics.density
         nav = V10Nav(this, { i ->
             // OK on a menu: its content shows below, the cursor stays up on the menu (Down goes into it)
-            if (i == V10Nav.POWER) v10Power() else openPage(i, keepFocus = true)
+            openPage(i, keepFocus = true)
         }, { i ->
             // while a page is open, moving along the menu shows each page at once
-            if (openPageIx >= 0 && i != openPageIx && i != V10Nav.POWER) openPage(i, keepFocus = true)
+            if (openPageIx >= 0 && i != openPageIx) openPage(i, keepFocus = true)
         })
         val at = root.indexOfChild(updateBtn)
         pageHost = FrameLayout(this).apply { visibility = View.GONE; clipChildren = false; clipToPadding = false }
@@ -3768,22 +3768,8 @@ class MainActivity : Activity() {
         if (!keepFocus) pageHost.post { firstFocusable(pageHost)?.requestFocus() }
     }
 
-    /** Power (top-right): Restart, Shut down, Screensaver – one Yes / No, then it happens */
-    private fun v10Power() {
-        fun ask(title: String, q: String, go: () -> Unit) = V10Dialog.show(root, title, q,
-            listOf(T.s("No", "Ne", "Nein", "Нет") to {}, T.s("Yes", "Da", "Ja", "Да") to go), focusIndex = 1)
-        V10List.show(root, T.s("Power", "Napajanje", "Energie", "Питание"), listOf(
-            V10List.Entry(T.s("Restart", "Restart", "Neustart", "Перезагрузка"), R.drawable.lc_rotate_cw) {
-                ask(T.s("Restart", "Restart", "Neustart", "Перезагрузка"), T.s("Restart the box now?", "Restartovati box sada?", "Box jetzt neu starten?", "Перезагрузить сейчас?")) { restartBox() }
-            },
-            V10List.Entry(T.s("Shut down", "Ugasi", "Ausschalten", "Выключить"), R.drawable.lc_power) {
-                ask(T.s("Shut down", "Ugasi", "Ausschalten", "Выключить"), T.s("Switch the box off now?", "Ugasiti box sada?", "Box jetzt ausschalten?", "Выключить сейчас?")) { goSleep() }
-            },
-            V10List.Entry(T.s("Screensaver", "Screensaver", "Bildschirmschoner", "Заставка"), R.drawable.lc_monitor) {
-                ask(T.s("Screensaver", "Screensaver", "Bildschirmschoner", "Заставка"), T.s("Start the screensaver now?", "Pokrenuti screensaver sada?", "Bildschirmschoner jetzt starten?", "Запустить заставку?")) { startSaver() }
-            },
-        ), onClose = { nav.focus(V10Nav.POWER) })
-    }
+    private fun powerAsk(title: String, q: String, go: () -> Unit) = V10Dialog.show(root, title, q,
+        listOf(T.s("No", "Ne", "Nein", "Нет") to {}, T.s("Yes", "Da", "Ja", "Да") to go), focusIndex = 1)
 
     /** waiting LEAD + app updates (notifications are not updates) */
     private fun updCount(): Int {
@@ -3844,6 +3830,17 @@ class MainActivity : Activity() {
             V10Tile(T.s("Speed Test", "Test brzine", "Speedtest", "Тест скорости"), R.drawable.lc_gauge) { startActivity(Intent(this, SpeedTestActivity::class.java)) },
             V10Tile(T.s("Tools & Logs", "Alati i logovi", "Werkzeuge & Logs", "Инструменты и логи"), R.drawable.lc_file_text,
                 CrashLog.list(this).size.takeIf { it > 0 }?.let { T.s("$it crash notes", "$it zapisa grešaka", "$it Absturzberichte", "отчётов: $it") }) { logsMenu() },
+        ))
+        V10Nav.POWER -> Triple(T.s("Power", "Napajanje", "Energie", "Питание"), T.s("One Yes / No, then it happens", "Jedno Da / Ne i odmah se izvrši", "Ein Ja / Nein, dann passiert es", "Одно Да / Нет"), listOf(
+            V10Tile(T.s("Restart", "Restart", "Neustart", "Перезагрузка"), R.drawable.lc_rotate_cw) {
+                powerAsk(T.s("Restart", "Restart", "Neustart", "Перезагрузка"), T.s("Restart the box now?", "Restartovati box sada?", "Box jetzt neu starten?", "Перезагрузить сейчас?")) { restartBox() }
+            },
+            V10Tile(T.s("Shut down", "Ugasi", "Ausschalten", "Выключить"), R.drawable.lc_power) {
+                powerAsk(T.s("Shut down", "Ugasi", "Ausschalten", "Выключить"), T.s("Switch the box off now?", "Ugasiti box sada?", "Box jetzt ausschalten?", "Выключить сейчас?")) { goSleep() }
+            },
+            V10Tile(T.s("Screensaver", "Screensaver", "Bildschirmschoner", "Заставка"), R.drawable.lc_monitor) {
+                powerAsk(T.s("Screensaver", "Screensaver", "Bildschirmschoner", "Заставка"), T.s("Start the screensaver now?", "Pokrenuti screensaver sada?", "Bildschirmschoner jetzt starten?", "Запустить заставку?")) { startSaver() }
+            },
         ))
         else -> Triple(T.s("About", "O LEAD-u", "Über", "О LEAD"), "LEAD Launcher " + Updater.currentName(this), listOf(
             V10Tile(T.s("About LEAD", "O LEAD-u", "Über LEAD", "О LEAD"), R.drawable.lc_info) { aboutLead() },
