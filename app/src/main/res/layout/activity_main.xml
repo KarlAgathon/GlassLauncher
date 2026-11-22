@@ -85,6 +85,7 @@
         android:paddingBottom="16dp">
 
         <LinearLayout
+            android:id="@+id/topRow"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:gravity="top"

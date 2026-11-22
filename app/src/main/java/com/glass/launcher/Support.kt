@@ -229,6 +229,18 @@ class Prefs(ctx: Context) {
     var notifMode: Int get() = int("nMode", 2); set(v) = putInt("nMode", v)
     /** number keys 1–9 of the remote open the first nine apps */
     var numberKeys: Boolean get() = bool("numKeys", true); set(v) = putBool("numKeys", v)
+
+    // ---- LEAD v10
+    /** Clock & widgets (the old status row under the navigation) – off by default */
+    var v10Widgets: Boolean get() = bool("v10Widgets", false); set(v) = putBool("v10Widgets", v)
+    /** Icon appearance: 0 automatic adaptation, 1 original app icons, 2 monochrome */
+    var iconMode: Int get() = int("iconMode", IconAdapt.AUTO); set(v) = putInt("iconMode", v)
+    /** cards per row on Home (3–6) */
+    var v10Cols: Int get() = int("v10Cols", 4); set(v) = putInt("v10Cols", v)
+    /** apps hidden from All apps / Add to Home */
+    var hiddenApps: Set<String>
+        get() = str("hiddenApps", "").split(',').filter { it.isNotBlank() }.toSet()
+        set(v) = putStr("hiddenApps", v.joinToString(","))
     /** the name of the selected app shows under its logo (also when names are off) */
     var nameOnFocus: Boolean get() = bool("nameFocus", true); set(v) = putBool("nameFocus", v)
     /** GitHub apps (TizenTube, PRETORIAN, SofaDrop …) update themselves at night (needs Shizuku) */
@@ -478,15 +490,13 @@ object AppLoader {
                 if (!DefaultApps.isDefault(p)) return@mapNotNull null
                 // no picture built into LEAD (yet): the app's name as a clean white word
                 val pic = BuiltinIcons.bitmap(ctx, p, wPx * 2, hPx * 2) ?: wordmark(DefaultApps.name(p), wPx * 2, hPx * 2)
-                return@mapNotNull AppEntry(p, prefs.label(p) ?: DefaultApps.name(p), pic, missing = true)
+                return@mapNotNull AppEntry(p, prefs.label(p) ?: DefaultApps.homeName(p) ?: DefaultApps.name(p), pic, missing = true)
             }
-            // TizenTube is LEAD's YouTube: it is called "Premium" (like its icon) unless you renamed it
-            val label = prefs.label(p) ?: if (p == DefaultApps.TIZENTUBE) "Premium" else ri.loadLabel(pm).toString()
-            val icon = own?.let { if (prefs.logoWhite) IconRender.whiten(it) else it }
-                ?: runCatching {
-                    if (wide) TileArt.wide(ctx, ri, label, null, wPx, hPx, prefs)
-                    else IconRender.render(ri.loadIcon(pm), size, if (prefs.logoWhite) 2 else style)
-                }.getOrNull()
+            // TizenTube is LEAD's YouTube; PRETORIAN is Media Center – unless you renamed them
+            val label = prefs.label(p) ?: DefaultApps.homeName(p) ?: ri.loadLabel(pm).toString()
+            // a picture you chose (or one built into LEAD) always wins; otherwise the Icon Adaptation Engine
+            val icon = (if (own != null && prefs.iconMode == IconAdapt.MONO) IconRender.whiten(own) else own)
+                ?: runCatching { IconAdapt.icon(ctx, p, ri, maxOf(size, (192 * d).toInt()), prefs.iconMode) }.getOrNull()
             AppEntry(p, label, icon)
         }
     }
@@ -494,7 +504,8 @@ object AppLoader {
     /** All apps (plus the built-in file browser) for the "choose apps" list, sorted by name. */
     fun choosable(ctx: Context): List<Triple<String, String, Drawable?>> {
         val pm = ctx.packageManager
-        val list = launchable(ctx).map { (p, ri) ->
+        val hidden = Prefs(ctx).hiddenApps
+        val list = launchable(ctx).filter { it.key !in hidden }.map { (p, ri) ->
             Triple(p, ri.loadLabel(pm).toString(), runCatching { ri.loadIcon(pm) }.getOrNull())
         }
         val all = listOf(Triple(AppEntry.FILES, T.s("Files", "Fajlovi", "Dateien"), ctx.getDrawable(R.drawable.lc_folder))) + list
@@ -656,9 +667,11 @@ object Bitmaps {
     }
 
     /** the LEAD wallpaper in the chosen colour */
+    /** LEAD's own wallpapers: 0 = the v10 living room (default), then the earlier ones */
     fun leadWallpaper(colour: Int) = when (colour) {
-        1 -> R.drawable.wallpaper_lead_black; 2 -> R.drawable.wallpaper_lead_green; 3 -> R.drawable.wallpaper_lead_purple
-        else -> R.drawable.wallpaper_default
+        1 -> R.drawable.wallpaper_default; 2 -> R.drawable.wallpaper_lead_black; 3 -> R.drawable.wallpaper_lead_green
+        4 -> R.drawable.wallpaper_lead_purple
+        else -> R.drawable.wallpaper_living
     }
 
     /** cuts away the empty (transparent) border around a logo, so equal gaps look equal */

@@ -9,7 +9,7 @@ import java.net.URL
 /** Icons that come with LEAD: put on the matching apps automatically (once – your own changes stay). */
 object BuiltinIcons {
     private val MAP = mapOf(
-        DefaultApps.PRETORIAN to R.drawable.builtin_pretorian_iptv,
+        DefaultApps.PRETORIAN to R.drawable.builtin_media_center,
         DefaultApps.SILO to R.drawable.builtin_silo,
         DefaultApps.NETFLIX to R.drawable.builtin_netflix,
         "ar.tvplayer.tv" to R.drawable.builtin_tivimate,
@@ -17,7 +17,7 @@ object BuiltinIcons {
         "com.teamsmart.videomanager.tv" to R.drawable.builtin_youtube,
         "com.liskovsoft.smarttubetv" to R.drawable.builtin_youtube,
         "com.liskovsoft.smarttubetv.beta" to R.drawable.builtin_youtube,
-        "io.gh.reisxd.tizentube.cobalt" to R.drawable.builtin_youtube_premium,
+        "io.gh.reisxd.tizentube.cobalt" to R.drawable.builtin_youtube,
         "com.disney.disneyplus" to R.drawable.builtin_disney,
         "com.nuvio.tv" to R.drawable.builtin_nuvio,
         "org.siloserver.silo" to R.drawable.builtin_silo,
@@ -82,6 +82,10 @@ object DefaultApps {
     const val SILO = "org.siloserver.silo"
     const val NORDVPN = "com.nordvpn.android"
     const val PROTONVPN = "ch.protonvpn.android"
+    const val VLC = "org.videolan.vlc"
+
+    /** names on the Home cards (v10): Media Center and YouTube, whatever the apps call themselves */
+    fun homeName(pkg: String) = when (pkg) { PRETORIAN -> "Media Center"; TIZENTUBE -> "YouTube"; else -> null }
 
     /** one app LEAD knows: name on the home screen and where it comes from (GitHub repo, or null = Google Play) */
     data class App(val pkg: String, val name: String, val repo: String?)
@@ -91,8 +95,8 @@ object DefaultApps {
      * a click with the ⬇ installs the newest stable GitHub release, or opens Google Play for the others.
      */
     val CATALOG = listOf(
-        App(PRETORIAN, "PRETORIAN IPTV", PRETORIAN_REPO),
-        App(TIZENTUBE, "Premium", TIZENTUBE_REPO),
+        App(PRETORIAN, "Media Center", PRETORIAN_REPO),
+        App(TIZENTUBE, "YouTube", TIZENTUBE_REPO),
         App(DISNEY, "Disney+", null),
         App(NETFLIX, "Netflix", null),
         App(NUVIO, "Nuvio", "NuvioMedia/NuvioTV"),
@@ -101,6 +105,7 @@ object DefaultApps {
         App(NORDVPN, "NordVPN", null),
         App(PROTONVPN, "Proton VPN", null),
         App(Extras.SHIZUKU, "Shizuku", "thedjchi/Shizuku"),
+        App(VLC, "VLC", null),
     )
 
     fun find(pkg: String) = CATALOG.firstOrNull { it.pkg == pkg }
