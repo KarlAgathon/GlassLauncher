@@ -46,7 +46,9 @@ object NetUi {
     fun open(a: Activity, r: FrameLayout) {
         act = a; root = r
         stack.clear(); stack.add(Scr.Home)
-        val l = FrameLayout(a).apply { tag = TAG; isClickable = true; setBackgroundColor(Color.argb(150, 24, 21, 19)) }
+        // one screen at a time: the file manager underneath is hidden completely while Network & Connect is open
+        r.findViewWithTag<View>("fmcontent")?.visibility = View.INVISIBLE
+        val l = FrameLayout(a).apply { tag = TAG; isClickable = true; setBackgroundColor(Color.argb(60, 24, 21, 19)) }
         // keys of this layer: Back = one step back
         l.isFocusable = false
         r.addView(l, FrameLayout.LayoutParams(-1, -1))
@@ -70,6 +72,7 @@ object NetUi {
         phone?.stop(); phone = null
         layer?.let { root?.removeView(it) }
         layer = null
+        root?.findViewWithTag<View>("fmcontent")?.visibility = View.VISIBLE
         pending = emptyList()
         (act as? FileBrowserActivity)?.refreshFromNet()
     }

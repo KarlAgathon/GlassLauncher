@@ -95,7 +95,7 @@ class FileBrowserActivity : Activity() {
         root.addView(wp, FrameLayout.LayoutParams(-1, -1))
         // list screens get a darker, calmer veil (like the approved design)
         root.addView(View(this).apply { id = View.generateViewId(); tag = "veil"; setBackgroundColor(Color.argb(0, 18, 16, 14)) }, FrameLayout.LayoutParams(-1, -1))
-        content = FrameLayout(this).apply { clipChildren = false }
+        content = FrameLayout(this).apply { clipChildren = false; tag = "fmcontent" }
         root.addView(content, FrameLayout.LayoutParams(-1, -1))
         setContentView(root)
         stack.add(Screen(Kind.HOME))
