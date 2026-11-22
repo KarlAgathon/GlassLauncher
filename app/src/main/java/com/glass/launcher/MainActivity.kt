@@ -3832,7 +3832,7 @@ class MainActivity : Activity() {
             V10Tile(T.s("Notifications", "Obavještenja", "Benachrichtigungen", "Уведомления"), R.drawable.lc_bell,
                 (if (NotifListener.connected) NotifListener.current().size else 0).takeIf { it > 0 }?.toString()) { notificationsPanel() },
             V10Tile(T.s("Backup & Restore", "Backup", "Sichern", "Резервная копия"), R.drawable.lc_archive) { backupMenu() },
-            V10Tile(T.s("Add-ons", "Dodaci", "Erweiterungen", "Дополнения"), R.drawable.lc_package, "Shizuku · VLC") { addonsMenu() },
+            V10Tile(T.s("Add-ons", "Dodaci", "Erweiterungen", "Дополнения"), R.drawable.lc_package) { addonsMenu() },
         ))
         3 -> Triple(T.s("Diagnostics", "Dijagnostika", "Diagnose", "Диагностика"), T.s("Real measurements, only while you look", "Stvarna mjerenja, samo dok gledaš", "Echte Messungen, nur solange du schaust", "Реальные измерения"), listOf(
             V10Tile(T.s("Device Health", "Stanje uređaja", "Gerätezustand", "Состояние"), R.drawable.lc_cpu) { deviceHealth() },
@@ -3870,7 +3870,7 @@ class MainActivity : Activity() {
     private fun refreshPage() {
         if (openPageIx < 0) return
         val f = currentFocus
-        val idx = (f?.parent as? ViewGroup)?.let { row -> (row.parent as? ViewGroup)?.let { grid -> grid.indexOfChild(row) * 4 + row.indexOfChild(f) } } ?: 0
+        val idx = ArrayList<View>().also { pageHost.addFocusables(it, View.FOCUS_DOWN) }.indexOf(f).coerceAtLeast(0)
         val (title, sub, tiles) = pageContent(openPageIx)
         pageHost.removeAllViews()
         pageHost.addView(V10Page.build(this, title, sub, tiles), FrameLayout.LayoutParams(-1, -1))

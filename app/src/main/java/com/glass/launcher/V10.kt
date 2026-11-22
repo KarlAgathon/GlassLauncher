@@ -210,15 +210,19 @@ object V10Page {
         }
         col.addView(Taupe.text(ctx, title, 43f, Taupe.TEXT).apply { typeface = Fonts.regular(ctx) })
         col.addView(Taupe.text(ctx, sub, 17.5f, Taupe.SUB), LinearLayout.LayoutParams(-2, -2).apply { topMargin = (10 * d).toInt() })
-        val cw = Taupe.cardW(ctx); val ch = (Taupe.cardH(ctx) * 0.8f).toInt(); val gap = Taupe.gap(ctx)
+        // up to 8 cards: 4 per row; more: 5 per row (narrower), so every page fits without anything under "Back"
+        val perRow = if (tiles.size > 8) 5 else 4
+        val gap = Taupe.gap(ctx)
+        val cw = minOf(Taupe.cardW(ctx), ((sw * 0.81f - perRow * gap) / perRow).toInt())
+        val ch = (Taupe.cardH(ctx) * 0.8f).toInt()
         val grid = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; clipChildren = false }
         // up to four per row; later rows are centred under the first (like the approved design)
-        tiles.chunked(4).forEachIndexed { ri, chunk ->
+        tiles.chunked(perRow).forEachIndexed { ri, chunk ->
             val row = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_HORIZONTAL; clipChildren = false }
             for (t in chunk) row.addView(tile(ctx, t, cw, ch), LinearLayout.LayoutParams(cw, ch).apply { marginEnd = gap / 2; marginStart = gap / 2 })
             grid.addView(row, LinearLayout.LayoutParams(-1, -2).apply { topMargin = if (ri == 0) 0 else gap })
         }
-        val scroll = android.widget.ScrollView(ctx).apply { isVerticalScrollBarEnabled = false; clipChildren = false; clipToPadding = false; isFillViewport = false }
+        val scroll = android.widget.ScrollView(ctx).apply { isVerticalScrollBarEnabled = false; clipChildren = true; clipToPadding = false; isFillViewport = false }
         scroll.addView(grid)
         col.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = (ctx.resources.displayMetrics.heightPixels * 0.035f).toInt() })
         col.addView(Taupe.text(ctx, "←  " + T.s("Back", "Nazad", "Zurück", "Назад"), 13f, Taupe.MUTED),
