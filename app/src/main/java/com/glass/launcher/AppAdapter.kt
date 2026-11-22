@@ -108,6 +108,7 @@ class AppAdapter(
 
     /** horizontal centre of the logo's visible pixels (alpha-weighted), measured once per picture */
     private fun massCenterX(b: android.graphics.Bitmap): Float = massCache.getOrPut(b) {
+        if (b.isRecycled || (android.os.Build.VERSION.SDK_INT >= 26 && b.config == android.graphics.Bitmap.Config.HARDWARE)) return@getOrPut b.width / 2f
         val step = maxOf(1, b.width / 96)
         var sum = 0.0; var wsum = 0.0
         var y = 0
