@@ -85,7 +85,13 @@ class AppAdapter(
         val own = prefs.iconScale(e.pkg) / 100f
         val (ox, oy) = prefs.iconOffset(e.pkg)
         h.icon.scaleX = own; h.icon.scaleY = own
-        h.icon.translationX = ox * d; h.icon.translationY = oy * d
+        // optical centring: logos with a swoosh or symbol on one side (Silo, Disney+ …) are shifted so their
+        // visible weight sits exactly above the centred name
+        val shift = e.icon?.let { b ->
+            val sc = minOf(iw.toFloat() / b.width, ih.toFloat() / b.height)
+            (b.width / 2f - massCenterX(b)) * sc * own
+        } ?: 0f
+        h.icon.translationX = ox * d + shift; h.icon.translationY = oy * d
 
         h.label.text = e.label
         h.label.visibility = View.VISIBLE
@@ -96,6 +102,27 @@ class AppAdapter(
         h.label.maxLines = 1
         h.label.includeFontPadding = false
         style(h, h.itemView.hasFocus())
+    }
+
+    private val massCache = java.util.WeakHashMap<android.graphics.Bitmap, Float>()
+
+    /** horizontal centre of the logo's visible pixels (alpha-weighted), measured once per picture */
+    private fun massCenterX(b: android.graphics.Bitmap): Float = massCache.getOrPut(b) {
+        val step = maxOf(1, b.width / 96)
+        var sum = 0.0; var wsum = 0.0
+        var y = 0
+        while (y < b.height) {
+            var x = 0
+            while (x < b.width) {
+                val a = (b.getPixel(x, y) ushr 24) / 255.0
+                if (a > 0.1) { sum += a * x; wsum += a }
+                x += step
+            }
+            y += step
+        }
+        val c = if (wsum > 0) (sum / wsum).toFloat() else b.width / 2f
+        // never more than 12 % of the width – a real logo is only nudged, not moved away
+        c.coerceIn(b.width * 0.38f, b.width * 0.62f)
     }
 
     private fun style(h: VH, focused: Boolean) {
