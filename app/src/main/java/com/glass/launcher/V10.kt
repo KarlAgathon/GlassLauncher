@@ -300,6 +300,10 @@ object V10Dialog {
         val ctx = root.context
         val d = Taupe.dp(ctx, 1f)
         val shade = FrameLayout(ctx).apply { setBackgroundColor(Color.argb(160, 0, 0, 0)); isClickable = true; tag = TAG }
+        // the cursor goes back to where it was when the dialog closes
+        val prev = root.findFocus()
+        val restore = { if (prev != null && prev.isAttachedToWindow) prev.requestFocus() }
+        V10Overlay.onClose(shade) { restore() }
         val box = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL
             background = Taupe.panel(ctx, 20f)
@@ -309,7 +313,7 @@ object V10Dialog {
         if (message != null) box.addView(Taupe.text(ctx, message, 14.5f, Taupe.SUB).apply { gravity = Gravity.CENTER },
             LinearLayout.LayoutParams(-2, -2).apply { topMargin = (12 * d).toInt() })
         val row = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
-        fun close() { root.removeView(shade) }
+        fun close() { root.removeView(shade); restore() }
         val views = buttons.mapIndexed { i, (label, act) ->
             Taupe.text(ctx, label, 15f, if (i == buttons.size - 1) Taupe.CHAMPAGNE else Taupe.TEXT).apply {
                 background = Taupe.pill(ctx, strong = true); isFocusable = true; isClickable = true; gravity = Gravity.CENTER
