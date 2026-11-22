@@ -1,3 +1,11 @@
+LEAD Launcher 10.0.2
+- Dialogs keep the cursor: Yes / No can be chosen, nothing behind gets selected; Back closes every dialog
+- Power is the last item at the right end of the top row (no longer over "About")
+- File lists no longer scroll over the title and the Options button
+- Pages with many cards fit above "Back" (5 per row); Add-ons card without the extra line
+- Numbers on cards (notifications, updates) refresh after closing a menu
+- Darker, calmer dialogs
+
 LEAD Launcher 10.0.1
 - Top menu shows the full names (not only the first letter)
 - Home button always goes straight back to the start (pages, dialogs and the file manager close); Back step by step also ends on Home
