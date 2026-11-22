@@ -405,7 +405,17 @@ class MainActivity : Activity() {
         // Home pressed while we are already open
         menu.close()
         if (movingPos >= 0) finishMove()
-        focusTile(lastPos)
+        // Home = always straight back to the start: any page or small dialog closes, cursor on the first card
+        V10List.close(root)
+        (0 until root.childCount).map { root.getChildAt(it) }.filter { it.tag == "v10dialog" }.forEach { root.removeView(it) }
+        if (::nav.isInitialized && openPageIx >= 0) {
+            openPageIx = -1
+            pageHost.visibility = View.GONE; pageHost.removeAllViews()
+            gridArea.visibility = View.VISIBLE
+            applyWidgets(); nav.select(0)
+        }
+        lastPos = 0
+        focusTile(0)
         if (intent?.getBooleanExtra(EXTRA_SHOW_UPDATE, false) == true) handler.postDelayed({ installPendingOrCheck() }, 500)
         if (intent?.getBooleanExtra(EXTRA_SHOW_APP_UPDATES, false) == true) handler.postDelayed({ openAppUpdates() }, 500)
     }

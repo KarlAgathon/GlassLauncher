@@ -159,9 +159,10 @@ class V10Nav(private val ctx: Context, private val onPick: (Int) -> Unit) {
                 t.setTextColor(if (has || i == selected) Taupe.TEXT else Taupe.MUTED)
                 (row.getChildAt(0) as ImageView).setColorFilter(if (has || i == selected) Taupe.TEXT else Taupe.MUTED)
             }
-            col.addView(row)
+            // the row keeps its own full width (whole name); the underline is exactly as wide as the row
+            col.addView(row, LinearLayout.LayoutParams(-2, -2))
             val line = View(ctx).apply { setBackgroundColor(Color.argb(220, 236, 226, 214)) }
-            col.addView(line, LinearLayout.LayoutParams((ctx.resources.displayMetrics.widthPixels * 0.085f).toInt(), (3 * d).toInt()).apply { topMargin = (6 * d).toInt() })
+            col.addView(line, LinearLayout.LayoutParams(-1, (3 * d).toInt()).apply { topMargin = (6 * d).toInt() })
             view.addView(col, LinearLayout.LayoutParams(-2, -2).apply { marginStart = (22 * d).toInt(); marginEnd = (22 * d).toInt() })
             items.add(row); lines.add(line); badges.add(badge)
         }
@@ -252,7 +253,7 @@ object V10Undo {
             setPadding((14 * d).toInt(), (6 * d).toInt(), (14 * d).toInt(), (6 * d).toInt())
         }
         row.addView(btn, LinearLayout.LayoutParams(-2, -2).apply { marginStart = (18 * d).toInt() })
-        box.addView(row)
+        box.addView(row, LinearLayout.LayoutParams(-2, -2))
         val bar = View(ctx).apply { setBackgroundColor(Taupe.CHAMPAGNE); pivotX = 0f }
         box.addView(bar, LinearLayout.LayoutParams(-1, (2 * d).toInt()).apply { topMargin = (8 * d).toInt() })
         val lp = FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = (36 * d).toInt() }
