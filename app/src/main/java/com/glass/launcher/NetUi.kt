@@ -412,7 +412,7 @@ object NetUi {
     }
 
     private fun progress(a: Activity, text: String): Pair<FrameLayout, android.widget.TextView> {
-        val shade = FrameLayout(a).apply { setBackgroundColor(Color.argb(110, 0, 0, 0)); isClickable = true; tag = "v10dialog" }
+        val shade = FrameLayout(a).apply { setBackgroundColor(Color.argb(110, 0, 0, 0)); isClickable = true; tag = "v10busy" }
         val t = Taupe.text(a, text, 15f).apply {
             background = Taupe.panel(a, 18f)
             val p = (a.resources.displayMetrics.widthPixels * 0.015f).toInt(); setPadding(p * 2, p, p * 2, p)

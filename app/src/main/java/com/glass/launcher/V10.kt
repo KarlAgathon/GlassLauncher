@@ -89,7 +89,7 @@ object Taupe {
     /** dark smoky panel (action bar, dialogs, undo note) */
     fun panel(ctx: Context, radiusDp: Float = 18f) = GradientDrawable().apply {
         cornerRadius = dp(ctx, radiusDp)
-        setColor(Color.argb(205, 46, 42, 39))
+        setColor(Color.argb(242, 46, 42, 39))
         setStroke(dp(ctx, 1f).toInt(), Color.argb(48, 255, 244, 232))
     }
 
@@ -169,8 +169,11 @@ class V10Nav(private val ctx: Context, private val onPick: (Int) -> Unit, privat
             col.addView(row, LinearLayout.LayoutParams(-2, -2))
             val line = View(ctx).apply { setBackgroundColor(Color.argb(220, 236, 226, 214)) }
             col.addView(line, LinearLayout.LayoutParams(-1, (3 * d).toInt()).apply { topMargin = (6 * d).toInt() })
-            if (i == POWER) view.addView(col, FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.TOP).apply { marginEnd = (sw * 0.035f).toInt() })
-            else bar.addView(col, LinearLayout.LayoutParams(-2, -2).apply { marginStart = (22 * d).toInt(); marginEnd = (22 * d).toInt() })
+            // Power is the last item, at the right end of the same row – nothing can overlap
+            bar.addView(col, LinearLayout.LayoutParams(-2, -2).apply {
+                marginStart = (sw * 0.008f).toInt(); marginEnd = (sw * 0.008f).toInt()
+                if (i == POWER) marginStart = (sw * 0.03f).toInt()
+            })
             items.add(row); lines.add(line); badges.add(badge)
         }
         view.addView(bar, 0, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER_HORIZONTAL or Gravity.TOP))
@@ -281,7 +284,7 @@ object V10Dialog {
     fun show(root: FrameLayout, title: String, message: String?, buttons: List<Pair<String, () -> Unit>>, focusIndex: Int = buttons.size - 1) {
         val ctx = root.context
         val d = Taupe.dp(ctx, 1f)
-        val shade = FrameLayout(ctx).apply { setBackgroundColor(Color.argb(120, 0, 0, 0)); isClickable = true; tag = TAG }
+        val shade = FrameLayout(ctx).apply { setBackgroundColor(Color.argb(160, 0, 0, 0)); isClickable = true; tag = TAG }
         val box = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL
             background = Taupe.panel(ctx, 20f)
@@ -308,7 +311,7 @@ object V10Dialog {
         views.forEach { v -> v.setOnKeyListener { _, code, ev ->
             if (code == KeyEvent.KEYCODE_BACK) { if (ev.action == KeyEvent.ACTION_UP) close(); true } else false } }
         root.addView(shade, FrameLayout.LayoutParams(-1, -1))
-        views.getOrNull(focusIndex)?.requestFocus()
+        views.getOrNull(focusIndex)?.let { v -> v.requestFocus(); v.post { if (v.isAttachedToWindow) v.requestFocus() } }
     }
 
     private const val TAG = "v10dialog"
@@ -317,7 +320,7 @@ object V10Dialog {
 
 /** Compact vertical action list in a small panel (contextual actions, destination picker). Back = close. */
 object V10List {
-    private const val TAG = "v10list"
+    private const val TAG = "v10list"   // V10Overlay knows this tag
     data class Entry(val text: String, val icon: Int? = null, val value: String? = null, val action: () -> Unit)
 
     fun isOpen(root: ViewGroup) = (0 until root.childCount).any { root.getChildAt(it).tag == TAG }
@@ -328,7 +331,7 @@ object V10List {
         val d = Taupe.dp(ctx, 1f)
         val sw = ctx.resources.displayMetrics.widthPixels
         close(root)
-        val shade = FrameLayout(ctx).apply { setBackgroundColor(Color.argb(110, 0, 0, 0)); isClickable = true; tag = TAG }
+        val shade = FrameLayout(ctx).apply { setBackgroundColor(Color.argb(160, 0, 0, 0)); isClickable = true; tag = TAG }
         val box = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             background = Taupe.panel(ctx, 20f)
@@ -337,6 +340,7 @@ object V10List {
         box.addView(Taupe.text(ctx, title, 16f, Taupe.SUB), LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = (10 * d).toInt(); marginStart = (10 * d).toInt() })
         val inner = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         fun done() { root.removeView(shade); onClose() }
+        V10Overlay.onClose(shade, onClose)
         val views = entries.map { e ->
             LinearLayout(ctx).apply {
                 orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
@@ -358,7 +362,7 @@ object V10List {
         shade.addView(box, FrameLayout.LayoutParams((sw * 0.36f).toInt(), -2, Gravity.CENTER))
         box.post { if (box.height > maxH) box.layoutParams = (box.layoutParams as FrameLayout.LayoutParams).also { it.height = maxH } }
         root.addView(shade, FrameLayout.LayoutParams(-1, -1))
-        views.firstOrNull()?.requestFocus()
+        views.firstOrNull()?.let { v -> v.requestFocus(); v.post { if (v.isAttachedToWindow) v.requestFocus() } }
     }
 }
 
@@ -402,5 +406,47 @@ object V10Input {
         shade.addView(box, FrameLayout.LayoutParams((sw * 0.42f).toInt(), -2, Gravity.CENTER))
         root.addView(shade, FrameLayout.LayoutParams(-1, -1))
         edit.requestFocus()
+    }
+}
+
+
+/**
+ * Keys while a small dialog / list is open: the cursor can never leave it (nothing behind gets selected),
+ * Back closes it. Busy notes (copying …) keep the cursor too but ignore Back.
+ */
+object V10Overlay {
+    private val closers = java.util.WeakHashMap<View, () -> Unit>()
+    fun onClose(shade: View, f: () -> Unit) { closers[shade] = f }
+
+    private fun top(root: ViewGroup): View? = (root.childCount - 1 downTo 0).map { root.getChildAt(it) }
+        .firstOrNull { it.tag == "v10dialog" || it.tag == "v10list" || it.tag == "v10busy" }
+
+    private fun inside(p: View, v: View?): Boolean { var x: View? = v; while (x != null) { if (x === p) return true; x = x.parent as? View }; return false }
+
+    fun handle(root: ViewGroup, ev: KeyEvent, focused: View?): Boolean {
+        val top = top(root) ?: return false
+        when (ev.keyCode) {
+            KeyEvent.KEYCODE_BACK -> {
+                if (ev.action == KeyEvent.ACTION_UP && top.tag != "v10busy") { root.removeView(top); closers.remove(top)?.invoke() }
+                return true
+            }
+            KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                if (!inside(top, focused)) {
+                    if (ev.action == KeyEvent.ACTION_DOWN) { val all = ArrayList<View>(); top.addFocusables(all, View.FOCUS_DOWN); all.firstOrNull()?.requestFocus() }
+                    return true
+                }
+                if (ev.action != KeyEvent.ACTION_DOWN) return false
+                val dir = when (ev.keyCode) { KeyEvent.KEYCODE_DPAD_UP -> View.FOCUS_UP; KeyEvent.KEYCODE_DPAD_DOWN -> View.FOCUS_DOWN
+                    KeyEvent.KEYCODE_DPAD_LEFT -> View.FOCUS_LEFT; else -> View.FOCUS_RIGHT }
+                val next = focused?.focusSearch(dir)
+                if (next == null || !inside(top, next)) return true      // stay inside the dialog
+                return false
+            }
+            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
+                if (!inside(top, focused)) return true
+                return false
+            }
+        }
+        return false
     }
 }

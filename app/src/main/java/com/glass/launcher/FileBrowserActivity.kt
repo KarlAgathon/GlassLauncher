@@ -738,7 +738,7 @@ class FileBrowserActivity : Activity() {
             orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL
             background = Taupe.panel(this@FileBrowserActivity, 20f)
             setPadding(dp(30f).toInt(), dp(22f).toInt(), dp(30f).toInt(), dp(18f).toInt())
-            tag = "v10dialog"; isClickable = true
+            tag = "v10busy"; isClickable = true
         }
         val label = Taupe.text(this, "…", 15f)
         panel.addView(label)
@@ -870,6 +870,7 @@ class FileBrowserActivity : Activity() {
         val k = event.keyCode
         list?.focusedChild?.let { lastListFocus = list!!.getChildAdapterPosition(it) }
         // dialogs and small lists handle their own keys (Back closes them)
+        if (V10Overlay.handle(root, event, currentFocus)) return true
         if (V10Dialog.isOpen(root) || V10List.isOpen(root)) return super.dispatchKeyEvent(event)
         if (NetUi.isOpen(root)) return NetUi.key(event) || super.dispatchKeyEvent(event)
         if (k == KeyEvent.KEYCODE_MENU && event.action == KeyEvent.ACTION_UP && list != null) {

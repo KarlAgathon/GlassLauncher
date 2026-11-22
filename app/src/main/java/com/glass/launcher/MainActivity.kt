@@ -1340,6 +1340,8 @@ class MainActivity : Activity() {
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         lastInput = SystemClock.elapsedRealtime()
+        // a small dialog / list on top: the cursor stays in it, Back closes it
+        if (!menu.isOpen && V10Overlay.handle(root, event, currentFocus)) return true
         val k = event.keyCode
         if (menu.isOpen && k == KeyEvent.KEYCODE_BACK) {
             if (event.action == KeyEvent.ACTION_UP) menu.back()
