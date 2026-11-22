@@ -58,11 +58,13 @@ class AppAdapter(
         val cw = Taupe.cardW(ctx); val ch = Taupe.cardH(ctx); val gap = Taupe.gap(ctx)
         h.itemView.layoutParams = (h.itemView.layoutParams ?: RecyclerView.LayoutParams(cw + gap, ch + gap)).also { it.width = cw + gap; it.height = ch + gap }
         h.itemView.background = android.graphics.drawable.InsetDrawable(Taupe.card(ctx), gap / 2)
-        h.itemView.setPadding(gap / 2, gap / 2 + (ch * 0.13f).toInt(), gap / 2, gap / 2)
+        // logo + name as one block, exactly in the middle of the card (same for every card)
+        h.itemView.setPadding(gap / 2, gap / 2, gap / 2, gap / 2)
+        (h.itemView as LinearLayout).gravity = android.view.Gravity.CENTER
         if (android.os.Build.VERSION.SDK_INT >= 26) h.itemView.defaultFocusHighlightEnabled = false
 
         val iw = (cw * 0.70f).toInt(); val ih = (ch * 0.46f).toInt()
-        h.tile.layoutParams = h.tile.layoutParams.also { it.width = iw; it.height = ih }
+        h.tile.layoutParams = (h.tile.layoutParams as LinearLayout.LayoutParams).also { it.width = iw; it.height = ih; it.gravity = android.view.Gravity.CENTER_HORIZONTAL; it.topMargin = 0 }
         h.tile.plain = true; h.tile.tint = 0f; h.tile.backdrop = false; h.tile.liquid = false; h.tile.rimMode = 0
         h.tile.focusedLook = false; h.tile.accent = false
         h.tile.refreshShape()
@@ -89,7 +91,10 @@ class AppAdapter(
         h.label.visibility = View.VISIBLE
         h.label.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, ctx.resources.displayMetrics.widthPixels * 0.0185f)
         h.label.typeface = Fonts.regular(ctx)
-        (h.label.layoutParams as LinearLayout.LayoutParams).also { it.width = (cw * 0.88f).toInt(); it.topMargin = (ch * 0.07f).toInt() }
+        (h.label.layoutParams as LinearLayout.LayoutParams).also { it.width = (cw * 0.88f).toInt(); it.topMargin = (ch * 0.08f).toInt(); it.gravity = android.view.Gravity.CENTER_HORIZONTAL }
+        h.label.gravity = android.view.Gravity.CENTER
+        h.label.maxLines = 1
+        h.label.includeFontPadding = false
         style(h, h.itemView.hasFocus())
     }
 
