@@ -12,8 +12,8 @@ android {
         minSdk = 24
         targetSdk = 34
         // raise both numbers for every new version you publish (needed for web updates)
-        versionCode = 75
-        versionName = "9.1.5"
+        versionCode = 76
+        versionName = "10.0"
     }
 
     // Private signing key: it is NOT in this repository. GitHub Actions writes it from the secrets

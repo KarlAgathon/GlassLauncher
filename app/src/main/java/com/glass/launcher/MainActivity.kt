@@ -192,10 +192,16 @@ class MainActivity : Activity() {
             updateBtn.isFocusable = !open
             powerBtn.isFocusable = !open
             statusGroups().forEach { it.isFocusable = !open }
+            // v10: nothing behind an open menu can take the focus (one menu at a time)
+            if (::nav.isInitialized) {
+                (nav.view as ViewGroup).descendantFocusability = if (open) ViewGroup.FOCUS_BLOCK_DESCENDANTS else ViewGroup.FOCUS_AFTER_DESCENDANTS
+                pageHost.descendantFocusability = if (open) ViewGroup.FOCUS_BLOCK_DESCENDANTS else ViewGroup.FOCUS_AFTER_DESCENDANTS
+            }
             if (!open) {
                 val back = menuOpener
                 menuOpener = null
                 if (back != null && back.isShown && back.isFocusable) { back.requestFocus(); return@GlassMenu }
+                if (openPageIx >= 0) { pageHost.post { firstFocusable(pageHost)?.requestFocus() }; return@GlassMenu }
                 focusTile(lastPos)
                 if (plusPeek) { handler.removeCallbacks(hidePlus); handler.postDelayed(hidePlus, 1500) }
             }
@@ -3694,7 +3700,9 @@ class MainActivity : Activity() {
                 if (openPageIx < 0 && f != null && isInGrid(f)) {
                     val p = focusedPos()
                     if (p == RecyclerView.NO_POSITION || p < cols) { nav.focus(0); return true }
-                    return false
+                    // a card further down: simply the card above (the old status-bar logic must not take over)
+                    grid.findViewHolderForAdapterPosition(p - cols)?.itemView?.requestFocus() ?: f.focusSearch(View.FOCUS_UP)?.requestFocus()
+                    return true
                 }
                 if (openPageIx >= 0 && f != null && isIn(pageHost, f)) {
                     val next = f.focusSearch(View.FOCUS_UP)

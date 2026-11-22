@@ -1,3 +1,18 @@
+LEAD Launcher 10.0
+- New design "Modern Taupe & Charcoal": living-room wallpaper, smoky glass cards, thin champagne focus line (no zoom), one menu at a time
+- New top navigation: Apps · Personalize · System · Diagnostics · About – each opens its own page, Back returns one step
+- Home: Media Center, YouTube, Disney+, Netflix as equal cards; long OK: change position, size, picture, rename, remove (with Undo), uninstall, app info
+- Automatic icon adaptation: app logos sit cleanly in the cards (original or monochrome on request; your own pictures always win)
+- Apps page: Add to Home, All Apps, Manage Apps, Install Apps, Hidden Apps, App Updates, Files
+- Diagnostics: device health, network quality (real latency, jitter, packet loss, VPN path shown), connection, VPN, storage, speed test, crash logs
+- New File Manager: six start cards, clean lists, long OK to select (range, select all, invert), smart Move/Copy with last-used, recent and favourite places, Paste here, name clashes (skip / keep both / replace, also for all), Recycle Bin with Undo or permanent delete (asked twice)
+- Network & Connect: SMB 2/3 Windows and NAS shares, FTP, FTPS, SFTP, saved locations (passwords encrypted on the box), network discovery
+- Phone Connect: QR code on the TV, phone or computer browser sends and receives files after you press Allow (home network only)
+- Clock and status are off by default (Personalize › Clock & Widgets); Light / Semi / Modern looks and profiles removed
+
+LEAD Launcher 9.1.5
+- Home-screen icon menu: Move left and Move right now shift an app by one position and save the new order immediately.
+
 LEAD Launcher 9.1.4 BETA
 - Restart: one question in LEAD (Yes / No), then the box restarts by itself – no more system menu that the remote can't reach (S3 and other boxes)
 - After a restart LEAD opens by itself; it checks for Google TV from the first second

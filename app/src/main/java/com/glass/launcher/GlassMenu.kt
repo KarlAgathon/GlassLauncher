@@ -81,11 +81,14 @@ class GlassMenu(
         current = null
         removeOverlay()
         val ov = FrameLayout(act).apply { isClickable = true }
-        val panel = GlassFrame(act).apply { radiusDp = 0f; tint = 0.03f; solid = 0.92f; darken = 0.2f; backdropAlpha = 0.5f }
+        val panel = FrameLayout(act).apply {
+            // v10: warm charcoal smoky glass, no blue tint
+            background = android.graphics.drawable.GradientDrawable().apply { setColor(Color.argb(244, 43, 39, 36)) }
+        }
         val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(80), dp(44), dp(80), dp(30)) }
         val header = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, 0, 0, dp(18)) }
         if (icon != null) header.addView(ImageView(act).apply { setImageResource(icon) }, LinearLayout.LayoutParams(dp(28), dp(28)).apply { marginEnd = dp(14) })
-        header.addView(TextView(act).apply { this.text = title; setTextColor(Color.WHITE); setTextSize(TypedValue.COMPLEX_UNIT_SP, 28f); typeface = Fonts.medium(act) })
+        header.addView(TextView(act).apply { this.text = title; setTextColor(Taupe.TEXT); setTextSize(TypedValue.COMPLEX_UNIT_SP, 28f); typeface = Fonts.medium(act) })
         col.addView(header)
         val body = TextView(act).apply {
             this.text = text; setTextColor(Color.argb(230, 255, 255, 255)); setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
@@ -126,7 +129,10 @@ class GlassMenu(
             isClickable = true
         }
         // nearly solid dark glass: nothing of the home screen (buttons, clock, logos) shows through the menu
-        val panel = GlassFrame(act).apply { radiusDp = 0f; tint = 0.04f; solid = 0.88f; darken = 0.25f; backdropAlpha = 0.6f }
+        val panel = FrameLayout(act).apply {
+            // v10: warm charcoal smoky glass, no blue tint
+            background = android.graphics.drawable.GradientDrawable().apply { setColor(Color.argb(244, 43, 39, 36)) }
+        }
         val col = LinearLayout(act).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(30), dp(20), dp(20))
@@ -143,7 +149,7 @@ class GlassMenu(
         }
         header.addView(TextView(act).apply {
             text = title
-            setTextColor(Color.WHITE)
+            setTextColor(Taupe.TEXT)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 24f)
             typeface = Fonts.medium(act)
         })
@@ -223,7 +229,8 @@ class GlassMenu(
             setPadding(dp(14), dp(6), dp(14), dp(6))
             if (Build.VERSION.SDK_INT >= 26) defaultFocusHighlightEnabled = false
         }
-        row.setOnFocusChangeListener { v, has -> v.background = if (has) GlassDrawable(d, 12, true) else null }
+        row.setOnFocusChangeListener { v, has -> v.background = if (has) android.graphics.drawable.GradientDrawable().apply {
+            cornerRadius = 12 * d; setColor(Color.argb(52, 224, 201, 164)); setStroke((2 * d).toInt(), Color.argb(235, 224, 201, 164)) } else null }
 
         val ic: Drawable? = item.drawable ?: item.icon?.let { act.getDrawable(it) }
         if (ic != null) {
@@ -238,7 +245,7 @@ class GlassMenu(
         }
         row.addView(TextView(act).apply {
             text = item.text
-            setTextColor(Color.WHITE)
+            setTextColor(Taupe.TEXT)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
             typeface = Fonts.regular(act)
             maxLines = 2
@@ -267,7 +274,7 @@ class GlassMenu(
         } else if (item.checked) {
             check = ImageView(act).apply {
                 setImageResource(R.drawable.lc_check)
-                setColorFilter(Color.rgb(52, 212, 122))
+                setColorFilter(Taupe.CHAMPAGNE)
                 visibility = if (item.checked) View.VISIBLE else View.INVISIBLE
             }
             row.addView(check, LinearLayout.LayoutParams(dp(22), dp(22)).apply { marginStart = dp(10) })
@@ -328,7 +335,8 @@ class GreenSwitch(ctx: android.content.Context) : View(ctx) {
     override fun onDraw(c: android.graphics.Canvas) {
         val w = width.toFloat(); val h = height.toFloat(); val r = h / 2f
         val grey = Color.argb(90, 255, 255, 255)
-        val green = Color.rgb(52, 199, 89)
+        // v10: champagne = on, grey = off
+        val green = Color.rgb(212, 186, 146)
         paint.color = android.animation.ArgbEvaluator().evaluate(pos, grey, green) as Int
         c.drawRoundRect(0f, 0f, w, h, r, r, paint)
         val pad = h * 0.12f
