@@ -1,3 +1,7 @@
+LEAD Launcher 10.0.3
+- Yes / No dialogs (Power, delete …): Left / Right now reach "No" – the cursor never jumps to the cards behind
+- Card names always fit: long names use two lines or slightly smaller letters, never "…"
+
 LEAD Launcher 10.0.2
 - Dialogs keep the cursor: Yes / No can be chosen, nothing behind gets selected; Back closes every dialog
 - Power is the last item at the right end of the top row (no longer over "About")
