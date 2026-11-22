@@ -238,8 +238,22 @@ object V10Page {
             if (android.os.Build.VERSION.SDK_INT >= 26) defaultFocusHighlightEnabled = false
             background = Taupe.card(ctx)
             addView(Taupe.icon(ctx, t.icon, (ch * 0.30f).toInt()))
-            addView(Taupe.text(ctx, t.title, 18.5f).apply { gravity = Gravity.CENTER; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END },
-                LinearLayout.LayoutParams(-2, -2).apply { topMargin = (ch * 0.10f).toInt() })
+            // the whole name always fits: smaller on narrow cards, and a long name may use two lines
+            val narrow = (cw.toFloat() / Taupe.cardW(ctx)).coerceIn(0.75f, 1f)
+            val label = Taupe.text(ctx, t.title, 18.5f * narrow).apply {
+                gravity = Gravity.CENTER; maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END
+                setPadding((cw * 0.05f).toInt(), 0, (cw * 0.05f).toInt(), 0)
+            }
+            // a single word that still does not fit gets a little smaller instead of "…"
+            label.post {
+                var guard = 0
+                while (guard++ < 6 && label.layout != null && (0 until label.lineCount).any { label.layout.getEllipsisCount(it) > 0 }) {
+                    label.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, label.textSize * 0.92f); label.measure(
+                        View.MeasureSpec.makeMeasureSpec(label.width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+                    label.layout(label.left, label.top, label.right, label.top + label.measuredHeight)
+                }
+            }
+            addView(label, LinearLayout.LayoutParams(-1, -2).apply { topMargin = (ch * 0.08f).toInt() })
             if (t.sub != null) addView(Taupe.text(ctx, t.sub, 12f, Taupe.MUTED).apply { gravity = Gravity.CENTER; maxLines = 1 },
                 LinearLayout.LayoutParams(-2, -2).apply { topMargin = (4 * d).toInt() })
             setOnClickListener { t.action() }
