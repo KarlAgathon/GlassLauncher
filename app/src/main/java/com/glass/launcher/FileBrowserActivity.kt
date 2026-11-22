@@ -883,6 +883,10 @@ class FileBrowserActivity : Activity() {
         return super.dispatchKeyEvent(event)
     }
 
+    // Back is handled in dispatchKeyEvent (one step at a time); never close the whole file manager by accident
+    @Deprecated("Back is handled in dispatchKeyEvent")
+    override fun onBackPressed() {}
+
     /** exactly one step back */
     private fun back() {
         if (rangeAnchor >= 0) { rangeAnchor = -1; countView?.text = countText(); return }
