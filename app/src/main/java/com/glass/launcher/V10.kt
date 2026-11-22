@@ -244,15 +244,12 @@ object V10Page {
                 gravity = Gravity.CENTER; maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END
                 setPadding((cw * 0.05f).toInt(), 0, (cw * 0.05f).toInt(), 0)
             }
-            // a single word that still does not fit gets a little smaller instead of "…"
-            label.post {
-                var guard = 0
-                while (guard++ < 6 && label.layout != null && (0 until label.lineCount).any { label.layout.getEllipsisCount(it) > 0 }) {
-                    label.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, label.textSize * 0.92f); label.measure(
-                        View.MeasureSpec.makeMeasureSpec(label.width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
-                    label.layout(label.left, label.top, label.right, label.top + label.measuredHeight)
-                }
-            }
+            // the longest word must fit on one line: shrink a little until it does (never "…" in a word)
+            val avail = cw * 0.86f
+            val words = t.title.split(' ')
+            var guard = 0
+            while (guard++ < 10 && words.maxOf { label.paint.measureText(it) } > avail)
+                label.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, label.textSize * 0.93f)
             addView(label, LinearLayout.LayoutParams(-1, -2).apply { topMargin = (ch * 0.08f).toInt() })
             if (t.sub != null) addView(Taupe.text(ctx, t.sub, 12f, Taupe.MUTED).apply { gravity = Gravity.CENTER; maxLines = 1 },
                 LinearLayout.LayoutParams(-2, -2).apply { topMargin = (4 * d).toInt() })
