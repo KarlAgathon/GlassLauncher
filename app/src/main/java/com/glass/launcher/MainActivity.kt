@@ -200,8 +200,9 @@ class MainActivity : Activity() {
             if (!open) {
                 val back = menuOpener
                 menuOpener = null
-                if (back != null && back.isShown && back.isFocusable) { back.requestFocus(); return@GlassMenu }
-                if (openPageIx >= 0) { pageHost.post { firstFocusable(pageHost)?.requestFocus() }; return@GlassMenu }
+                if (back != null && back.isShown && back.isFocusable && openPageIx < 0) { back.requestFocus(); return@GlassMenu }
+                // a page is open: its small numbers (notifications, updates …) are read again, cursor back on its card
+                if (openPageIx >= 0) { pageHost.post { refreshPage(back) }; return@GlassMenu }
                 focusTile(lastPos)
                 if (plusPeek) { handler.removeCallbacks(hidePlus); handler.postDelayed(hidePlus, 1500) }
             }
@@ -3867,9 +3868,9 @@ class MainActivity : Activity() {
     }
 
     /** reopen the page after a change so its small values are up to date (focus stays on the same card) */
-    private fun refreshPage() {
+    private fun refreshPage(from: View? = null) {
         if (openPageIx < 0) return
-        val f = currentFocus
+        val f = from ?: currentFocus
         val idx = ArrayList<View>().also { pageHost.addFocusables(it, View.FOCUS_DOWN) }.indexOf(f).coerceAtLeast(0)
         val (title, sub, tiles) = pageContent(openPageIx)
         pageHost.removeAllViews()
