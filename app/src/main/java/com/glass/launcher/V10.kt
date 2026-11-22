@@ -306,3 +306,93 @@ object V10Dialog {
     private const val TAG = "v10dialog"
     fun isOpen(root: ViewGroup) = (0 until root.childCount).any { root.getChildAt(it).tag == TAG }
 }
+
+/** Compact vertical action list in a small panel (contextual actions, destination picker). Back = close. */
+object V10List {
+    private const val TAG = "v10list"
+    data class Entry(val text: String, val icon: Int? = null, val value: String? = null, val action: () -> Unit)
+
+    fun isOpen(root: ViewGroup) = (0 until root.childCount).any { root.getChildAt(it).tag == TAG }
+    fun close(root: ViewGroup) { (0 until root.childCount).map { root.getChildAt(it) }.filter { it.tag == TAG }.forEach { root.removeView(it) } }
+
+    fun show(root: FrameLayout, title: String, entries: List<Entry>, onClose: () -> Unit = {}) {
+        val ctx = root.context
+        val d = Taupe.dp(ctx, 1f)
+        val sw = ctx.resources.displayMetrics.widthPixels
+        close(root)
+        val shade = FrameLayout(ctx).apply { setBackgroundColor(Color.argb(110, 0, 0, 0)); isClickable = true; tag = TAG }
+        val box = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            background = Taupe.panel(ctx, 20f)
+            setPadding((18 * d).toInt(), (18 * d).toInt(), (18 * d).toInt(), (14 * d).toInt())
+        }
+        box.addView(Taupe.text(ctx, title, 16f, Taupe.SUB), LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = (10 * d).toInt(); marginStart = (10 * d).toInt() })
+        val inner = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+        fun done() { root.removeView(shade); onClose() }
+        val views = entries.map { e ->
+            LinearLayout(ctx).apply {
+                orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+                background = Taupe.pill(ctx); isFocusable = true; isClickable = true
+                if (android.os.Build.VERSION.SDK_INT >= 26) defaultFocusHighlightEnabled = false
+                setPadding((14 * d).toInt(), (10 * d).toInt(), (16 * d).toInt(), (10 * d).toInt())
+                if (e.icon != null) addView(Taupe.icon(ctx, e.icon, (sw * 0.017f).toInt()), LinearLayout.LayoutParams((sw * 0.017f).toInt(), (sw * 0.017f).toInt()).apply { marginEnd = (14 * d).toInt() })
+                addView(Taupe.text(ctx, e.text, 14.5f).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.MIDDLE }, LinearLayout.LayoutParams(0, -2, 1f))
+                if (e.value != null) addView(Taupe.text(ctx, e.value, 12f, Taupe.MUTED).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.START },
+                    LinearLayout.LayoutParams(-2, -2).apply { marginStart = (14 * d).toInt() })
+                setOnClickListener { root.removeView(shade); e.action() }
+                setOnKeyListener { _, code, ev -> if (code == KeyEvent.KEYCODE_BACK) { if (ev.action == KeyEvent.ACTION_UP) done(); true } else false }
+                inner.addView(this, LinearLayout.LayoutParams(-1, -2).apply { topMargin = (2 * d).toInt() })
+            }
+        }
+        val scroll = android.widget.ScrollView(ctx).apply { isVerticalScrollBarEnabled = false; addView(inner) }
+        box.addView(scroll, LinearLayout.LayoutParams(-1, -2))
+        val maxH = (ctx.resources.displayMetrics.heightPixels * 0.8f).toInt()
+        shade.addView(box, FrameLayout.LayoutParams((sw * 0.36f).toInt(), -2, Gravity.CENTER))
+        box.post { if (box.height > maxH) box.layoutParams = (box.layoutParams as FrameLayout.LayoutParams).also { it.height = maxH } }
+        root.addView(shade, FrameLayout.LayoutParams(-1, -1))
+        views.firstOrNull()?.requestFocus()
+    }
+}
+
+/** One line of text input in the same style (rename, server address …). */
+object V10Input {
+    fun show(root: FrameLayout, title: String, value: String, password: Boolean = false, done: (String) -> Unit) {
+        val ctx = root.context
+        val d = Taupe.dp(ctx, 1f)
+        val sw = ctx.resources.displayMetrics.widthPixels
+        val shade = FrameLayout(ctx).apply { setBackgroundColor(Color.argb(120, 0, 0, 0)); isClickable = true; tag = "v10dialog" }
+        val box = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            background = Taupe.panel(ctx, 20f)
+            setPadding((28 * d).toInt(), (24 * d).toInt(), (28 * d).toInt(), (20 * d).toInt())
+        }
+        box.addView(Taupe.text(ctx, title, 18f))
+        val edit = android.widget.EditText(ctx).apply {
+            setText(value); setSelection(value.length); setSingleLine()
+            setTextColor(Taupe.TEXT); setHintTextColor(Taupe.MUTED)
+            setTextSize(TypedValue.COMPLEX_UNIT_PX, sw * 0.016f)
+            background = Taupe.row(ctx)
+            setPadding((14 * d).toInt(), (10 * d).toInt(), (14 * d).toInt(), (10 * d).toInt())
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE
+            if (password) inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        box.addView(edit, LinearLayout.LayoutParams(-1, -2).apply { topMargin = (14 * d).toInt() })
+        val row = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.END }
+        fun close() = root.removeView(shade)
+        fun btn(t: String, strong: Boolean, act: () -> Unit) = Taupe.text(ctx, t, 14.5f, if (strong) Taupe.CHAMPAGNE else Taupe.TEXT).apply {
+            background = Taupe.pill(ctx, true); isFocusable = true; isClickable = true
+            setPadding((22 * d).toInt(), (10 * d).toInt(), (22 * d).toInt(), (10 * d).toInt())
+            setOnClickListener { act() }
+            setOnKeyListener { _, code, ev -> if (code == KeyEvent.KEYCODE_BACK) { if (ev.action == KeyEvent.ACTION_UP) close(); true } else false }
+            row.addView(this, LinearLayout.LayoutParams(-2, -2).apply { marginStart = (10 * d).toInt() })
+        }
+        btn(T.s("Cancel", "Otkaži", "Abbrechen", "Отмена"), false) { close() }
+        val ok = btn("OK", true) { close(); done(edit.text.toString()) }
+        edit.setOnEditorActionListener { _, _, _ -> ok.requestFocus(); true }
+        edit.setOnKeyListener { _, code, ev -> if (code == KeyEvent.KEYCODE_BACK) { if (ev.action == KeyEvent.ACTION_UP) close(); true } else false }
+        box.addView(row, LinearLayout.LayoutParams(-1, -2).apply { topMargin = (16 * d).toInt() })
+        shade.addView(box, FrameLayout.LayoutParams((sw * 0.42f).toInt(), -2, Gravity.CENTER))
+        root.addView(shade, FrameLayout.LayoutParams(-1, -1))
+        edit.requestFocus()
+    }
+}
