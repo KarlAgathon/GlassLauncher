@@ -458,12 +458,13 @@ class MainActivity : Activity() {
         // v10: glass cards, a fixed number per row (4 by default), the block centred on the screen
         val cell = Taupe.cardW(this) + Taupe.gap(this)
         val avail = if (gridArea.width > 0) gridArea.width else resources.displayMetrics.widthPixels
+        // always ONE row: as many cards as fit are visible, the rest scrolls sideways (wraps around at the ends)
         val perRow = prefs.v10Cols.coerceIn(3, 6).coerceAtMost(maxOf(1, avail / cell))
-        cols = maxOf(1, minOf(perRow, apps.size))
-        if (grid.layoutManager !== layoutManager) grid.layoutManager = layoutManager
-        layoutManager.spanCount = cols
+        val visible = maxOf(1, minOf(perRow, apps.size))
+        cols = apps.size.coerceAtLeast(1)
+        if (grid.layoutManager !== rowManager) grid.layoutManager = rowManager
         val glp = grid.layoutParams
-        glp.width = cols * cell
+        glp.width = visible * cell
         grid.layoutParams = glp
         dock.setPadding(0, 0, 0, 0)
         dock.plain = true; dock.backdrop = false; dock.tint = 0f; dock.rimMode = 0
@@ -3707,18 +3708,18 @@ class MainActivity : Activity() {
         when (k) {
             KeyEvent.KEYCODE_DPAD_UP -> {
                 if (nav.has(f)) return true
-                if (openPageIx < 0 && f != null && isInGrid(f)) {
-                    val p = focusedPos()
-                    if (p == RecyclerView.NO_POSITION || p < cols) { nav.focus(0); return true }
-                    // a card further down: simply the card above (the old status-bar logic must not take over)
-                    grid.findViewHolderForAdapterPosition(p - cols)?.itemView?.requestFocus() ?: f.focusSearch(View.FOCUS_UP)?.requestFocus()
-                    return true
-                }
+                if (openPageIx < 0 && f != null && isInGrid(f)) { nav.focus(0); return true }
                 if (openPageIx >= 0 && f != null && isIn(pageHost, f)) {
                     val next = f.focusSearch(View.FOCUS_UP)
                     if (next == null || !isIn(pageHost, next)) { nav.focus(openPageIx); return true }
                 }
                 // Undo note showing: Up from it goes back
+            }
+            KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> if (openPageIx < 0 && movingPos < 0 && f != null && isInGrid(f) && apps.size > 1) {
+                val p = focusedPos()
+                val last = apps.size - 1
+                val wrap = if (k == KeyEvent.KEYCODE_DPAD_LEFT && p == 0) last else if (k == KeyEvent.KEYCODE_DPAD_RIGHT && p == last) 0 else -1
+                if (wrap >= 0) { lastPos = wrap; focusTile(wrap); return true }
             }
             KeyEvent.KEYCODE_DPAD_DOWN -> {
                 if (nav.has(f)) {
@@ -3732,7 +3733,7 @@ class MainActivity : Activity() {
                 if (openPageIx < 0 && f != null && isInGrid(f)) {
                     V10Undo.button()?.let { b ->
                         val p = focusedPos()
-                        if (p != RecyclerView.NO_POSITION && p + cols >= apps.size) { b.requestFocus(); return true }
+                        if (p != RecyclerView.NO_POSITION) { b.requestFocus(); return true }
                     }
                 }
             }
@@ -3897,8 +3898,8 @@ class MainActivity : Activity() {
 
     private fun homeLayoutMenu() {
         menu.show(T.s("Home Layout", "Raspored početnog", "Startlayout", "Главный экран"), R.drawable.lc_columns_3, listOf(
-            GlassMenu.Item(T.s("Cards per row", "Kartica u redu", "Karten pro Reihe", "Карточек в ряду"), R.drawable.lc_columns_3, value = "${prefs.v10Cols}") {
-                choose(T.s("Cards per row", "Kartica u redu", "Karten pro Reihe", "Карточек в ряду"), R.drawable.lc_columns_3,
+            GlassMenu.Item(T.s("Cards visible at once", "Vidljivih kartica", "Sichtbare Karten", "Видимых карточек"), R.drawable.lc_columns_3, value = "${prefs.v10Cols}") {
+                choose(T.s("Cards visible at once", "Vidljivih kartica", "Sichtbare Karten", "Видимых карточек"), R.drawable.lc_columns_3,
                     (3..6).map { "$it" to it }, prefs.v10Cols) { prefs.v10Cols = it; layoutGrid() }
             },
             GlassMenu.Item(T.s("Cards at the top", "Kartice gore", "Karten oben", "Карточки сверху"), R.drawable.lc_arrow_up,
