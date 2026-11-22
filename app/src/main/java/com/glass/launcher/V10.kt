@@ -119,13 +119,16 @@ object Taupe {
 /** One tile of a category page. */
 data class V10Tile(val title: String, val icon: Int, val sub: String? = null, val action: () -> Unit)
 
-/** The top navigation: Apps · Personalize · System · Diagnostics · About */
-class V10Nav(private val ctx: Context, private val onPick: (Int) -> Unit) {
-    val view = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; clipChildren = false }
+/** The top navigation: Apps · Personalize · System · Diagnostics · About, and Power in the top-right corner (index 5) */
+class V10Nav(private val ctx: Context, private val onPick: (Int) -> Unit, private val onFocus: (Int) -> Unit = {}) {
+    val view = FrameLayout(ctx).apply { clipChildren = false }
+    private val bar = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; clipChildren = false }
     private val items = ArrayList<View>()
     private val lines = ArrayList<View>()
     private val badges = ArrayList<TextView>()
     var selected = 0; private set
+
+    companion object { const val POWER = 5 }
 
     init {
         val names = listOf(
@@ -134,8 +137,10 @@ class V10Nav(private val ctx: Context, private val onPick: (Int) -> Unit) {
             T.s("System", "Sistem", "System", "Система") to R.drawable.lc_settings,
             T.s("Diagnostics", "Dijagnostika", "Diagnose", "Диагностика") to R.drawable.lc_activity,
             T.s("About", "O LEAD-u", "Über", "О LEAD") to R.drawable.lc_info,
+            T.s("Power", "Napajanje", "Energie", "Питание") to R.drawable.lc_power,
         )
         val d = Taupe.dp(ctx, 1f)
+        val sw = ctx.resources.displayMetrics.widthPixels
         names.forEachIndexed { i, (name, ic) ->
             val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
             val row = LinearLayout(ctx).apply {
@@ -143,11 +148,11 @@ class V10Nav(private val ctx: Context, private val onPick: (Int) -> Unit) {
                 isFocusable = true; isClickable = true
                 background = Taupe.pill(ctx)
                 setPadding((14 * d).toInt(), (8 * d).toInt(), (16 * d).toInt(), (8 * d).toInt())
-                defaultFocusHighlightEnabledCompat()
+                if (android.os.Build.VERSION.SDK_INT >= 26) defaultFocusHighlightEnabled = false
                 setOnClickListener { onPick(i) }
             }
-            row.addView(Taupe.icon(ctx, ic, (ctx.resources.displayMetrics.widthPixels * 0.024f).toInt(), Taupe.MUTED))
-            val t = Taupe.text(ctx, name, 15.5f, Taupe.MUTED)
+            row.addView(Taupe.icon(ctx, ic, (sw * 0.024f).toInt(), Taupe.MUTED))
+            val t = Taupe.text(ctx, name, 15.5f, Taupe.MUTED).apply { maxLines = 1 }
             row.addView(t, LinearLayout.LayoutParams(-2, -2).apply { marginStart = (12 * d).toInt() })
             val badge = Taupe.text(ctx, "", 9f, Color.rgb(40, 34, 30), medium = true).apply {
                 background = GradientDrawable().apply { cornerRadius = 20 * d; setColor(Taupe.CHAMPAGNE) }
@@ -158,18 +163,19 @@ class V10Nav(private val ctx: Context, private val onPick: (Int) -> Unit) {
             row.setOnFocusChangeListener { _, has ->
                 t.setTextColor(if (has || i == selected) Taupe.TEXT else Taupe.MUTED)
                 (row.getChildAt(0) as ImageView).setColorFilter(if (has || i == selected) Taupe.TEXT else Taupe.MUTED)
+                if (has) onFocus(i)
             }
             // the row keeps its own full width (whole name); the underline is exactly as wide as the row
             col.addView(row, LinearLayout.LayoutParams(-2, -2))
             val line = View(ctx).apply { setBackgroundColor(Color.argb(220, 236, 226, 214)) }
             col.addView(line, LinearLayout.LayoutParams(-1, (3 * d).toInt()).apply { topMargin = (6 * d).toInt() })
-            view.addView(col, LinearLayout.LayoutParams(-2, -2).apply { marginStart = (22 * d).toInt(); marginEnd = (22 * d).toInt() })
+            if (i == POWER) view.addView(col, FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.TOP).apply { marginEnd = (sw * 0.035f).toInt() })
+            else bar.addView(col, LinearLayout.LayoutParams(-2, -2).apply { marginStart = (22 * d).toInt(); marginEnd = (22 * d).toInt() })
             items.add(row); lines.add(line); badges.add(badge)
         }
+        view.addView(bar, 0, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER_HORIZONTAL or Gravity.TOP))
         select(0)
     }
-
-    private fun View.defaultFocusHighlightEnabledCompat() { if (android.os.Build.VERSION.SDK_INT >= 26) defaultFocusHighlightEnabled = false }
 
     fun select(i: Int) {
         selected = i
@@ -196,21 +202,22 @@ object V10Page {
         val col = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             clipChildren = false; clipToPadding = false
-            setPadding((sw * 0.099f).toInt(), (118 * d).toInt(), (sw * 0.09f).toInt(), (20 * d).toInt())
+            val sh = ctx.resources.displayMetrics.heightPixels
+            setPadding((sw * 0.099f).toInt(), (sh * 0.13f).toInt(), (sw * 0.09f).toInt(), (sh * 0.025f).toInt())
         }
         col.addView(Taupe.text(ctx, title, 43f, Taupe.TEXT).apply { typeface = Fonts.regular(ctx) })
         col.addView(Taupe.text(ctx, sub, 17.5f, Taupe.SUB), LinearLayout.LayoutParams(-2, -2).apply { topMargin = (10 * d).toInt() })
-        val cw = Taupe.cardW(ctx); val ch = Taupe.cardH(ctx); val gap = Taupe.gap(ctx)
+        val cw = Taupe.cardW(ctx); val ch = (Taupe.cardH(ctx) * 0.8f).toInt(); val gap = Taupe.gap(ctx)
         val grid = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; clipChildren = false }
         // up to four per row; later rows are centred under the first (like the approved design)
         tiles.chunked(4).forEachIndexed { ri, chunk ->
             val row = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_HORIZONTAL; clipChildren = false }
             for (t in chunk) row.addView(tile(ctx, t, cw, ch), LinearLayout.LayoutParams(cw, ch).apply { marginEnd = gap / 2; marginStart = gap / 2 })
-            grid.addView(row, LinearLayout.LayoutParams(-1, -2).apply { topMargin = if (ri == 0) 0 else gap * 2 })
+            grid.addView(row, LinearLayout.LayoutParams(-1, -2).apply { topMargin = if (ri == 0) 0 else gap })
         }
         val scroll = android.widget.ScrollView(ctx).apply { isVerticalScrollBarEnabled = false; clipChildren = false; clipToPadding = false; isFillViewport = false }
         scroll.addView(grid)
-        col.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = (34 * d).toInt() })
+        col.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = (ctx.resources.displayMetrics.heightPixels * 0.035f).toInt() })
         col.addView(Taupe.text(ctx, "←  " + T.s("Back", "Nazad", "Zurück", "Назад"), 13f, Taupe.MUTED),
             LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER_HORIZONTAL; topMargin = (10 * d).toInt() })
         return col

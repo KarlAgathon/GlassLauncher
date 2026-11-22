@@ -1345,7 +1345,7 @@ class MainActivity : Activity() {
             if (event.action == KeyEvent.ACTION_UP) menu.back()
             return true
         }
-        if (!menu.isOpen && movingPos < 0 && !V10Dialog.isOpen(root) && v10Key(event)) return true
+        if (!menu.isOpen && movingPos < 0 && !V10Dialog.isOpen(root) && !V10List.isOpen(root) && v10Key(event)) return true
         if (!menu.isOpen && movingPos < 0 && k == KeyEvent.KEYCODE_DPAD_UP && event.action == KeyEvent.ACTION_DOWN) {
             val f = currentFocus
             if (f != null && (f === clock || isInGrid(f))) {
@@ -3661,11 +3661,17 @@ class MainActivity : Activity() {
 
     private fun v10Setup() {
         val d = resources.displayMetrics.density
-        nav = V10Nav(this) { i -> openPage(i) }
+        nav = V10Nav(this, { i ->
+            // OK on a menu: its content shows below, the cursor stays up on the menu (Down goes into it)
+            if (i == V10Nav.POWER) v10Power() else openPage(i, keepFocus = true)
+        }, { i ->
+            // while a page is open, moving along the menu shows each page at once
+            if (openPageIx >= 0 && i != openPageIx && i != V10Nav.POWER) openPage(i, keepFocus = true)
+        })
         val at = root.indexOfChild(updateBtn)
         pageHost = FrameLayout(this).apply { visibility = View.GONE; clipChildren = false; clipToPadding = false }
         root.addView(pageHost, at, FrameLayout.LayoutParams(-1, -1))
-        root.addView(nav.view, at + 1, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = (18 * d).toInt() })
+        root.addView(nav.view, at + 1, FrameLayout.LayoutParams(-1, -2, Gravity.TOP).apply { topMargin = (18 * d).toInt() })
         // the profile button is gone for good (no profiles in v10)
         profileBtn.visibility = View.GONE
         applyWidgets()
@@ -3682,7 +3688,7 @@ class MainActivity : Activity() {
     }
 
     /** About shows how many updates are waiting (no banners or chips on Home) */
-    private fun updateNavBadge() { if (::nav.isInitialized) nav.badge(4, runCatching { bellCount() }.getOrDefault(0)) }
+    private fun updateNavBadge() { if (::nav.isInitialized) nav.badge(4, runCatching { updCount() }.getOrDefault(0)) }
 
     private fun isIn(parent: View, v: View?): Boolean { var p: View? = v; while (p != null) { if (p === parent) return true; p = p.parent as? View }; return false }
 
@@ -3700,7 +3706,11 @@ class MainActivity : Activity() {
         val f = currentFocus
         val down = ev.action == KeyEvent.ACTION_DOWN
         if (k == KeyEvent.KEYCODE_BACK) {
-            if (openPageIx >= 0) { if (!down) closePage(); return true }
+            if (openPageIx >= 0) {
+                // inside a page: first back up to its menu, then (from the menu) back to Home
+                if (!down) { if (isIn(pageHost, f)) nav.focus(openPageIx) else closePage() }
+                return true
+            }
             if (nav.has(f)) { if (!down) focusTile(lastPos); return true }
             return false
         }
@@ -3742,7 +3752,7 @@ class MainActivity : Activity() {
     }
 
     /** a category page replaces Home completely (one menu at a time) */
-    private fun openPage(i: Int) {
+    private fun openPage(i: Int, keepFocus: Boolean = false) {
         openPageIx = i
         nav.select(i)
         val (title, sub, tiles) = pageContent(i)
@@ -3752,7 +3762,30 @@ class MainActivity : Activity() {
         gridArea.visibility = View.INVISIBLE
         findViewById<View>(R.id.movieInfo).visibility = View.GONE
         applyWidgets()
-        pageHost.post { firstFocusable(pageHost)?.requestFocus() }
+        if (!keepFocus) pageHost.post { firstFocusable(pageHost)?.requestFocus() }
+    }
+
+    /** Power (top-right): Restart, Shut down, Screensaver – one Yes / No, then it happens */
+    private fun v10Power() {
+        fun ask(title: String, q: String, go: () -> Unit) = V10Dialog.show(root, title, q,
+            listOf(T.s("No", "Ne", "Nein", "Нет") to {}, T.s("Yes", "Da", "Ja", "Да") to go), focusIndex = 1)
+        V10List.show(root, T.s("Power", "Napajanje", "Energie", "Питание"), listOf(
+            V10List.Entry(T.s("Restart", "Restart", "Neustart", "Перезагрузка"), R.drawable.lc_rotate_cw) {
+                ask(T.s("Restart", "Restart", "Neustart", "Перезагрузка"), T.s("Restart the box now?", "Restartovati box sada?", "Box jetzt neu starten?", "Перезагрузить сейчас?")) { restartBox() }
+            },
+            V10List.Entry(T.s("Shut down", "Ugasi", "Ausschalten", "Выключить"), R.drawable.lc_power) {
+                ask(T.s("Shut down", "Ugasi", "Ausschalten", "Выключить"), T.s("Switch the box off now?", "Ugasiti box sada?", "Box jetzt ausschalten?", "Выключить сейчас?")) { goSleep() }
+            },
+            V10List.Entry(T.s("Screensaver", "Screensaver", "Bildschirmschoner", "Заставка"), R.drawable.lc_monitor) {
+                ask(T.s("Screensaver", "Screensaver", "Bildschirmschoner", "Заставка"), T.s("Start the screensaver now?", "Pokrenuti screensaver sada?", "Bildschirmschoner jetzt starten?", "Запустить заставку?")) { startSaver() }
+            },
+        ), onClose = { nav.focus(V10Nav.POWER) })
+    }
+
+    /** waiting LEAD + app updates (notifications are not updates) */
+    private fun updCount(): Int {
+        if (!Updater.notifyOn(this)) return 0
+        return (if (Updater.pending(this) != null) 1 else 0) + (if (prefs.appUpdates) AppUpdates.list(this).size else 0)
     }
 
     private fun closePage() {
@@ -3794,9 +3827,10 @@ class MainActivity : Activity() {
             V10Tile(T.s("Startup & Launcher", "Pokretanje", "Start & Launcher", "Запуск"), R.drawable.lc_rocket) { startupMenu() },
             V10Tile(T.s("Security", "Sigurnost", "Sicherheit", "Безопасность"), R.drawable.lc_lock) { securityMenu() },
             V10Tile(T.s("Permissions", "Dozvole", "Berechtigungen", "Разрешения"), R.drawable.lc_shield_check) { permissionsMenu() },
+            V10Tile(T.s("Notifications", "Obavještenja", "Benachrichtigungen", "Уведомления"), R.drawable.lc_bell,
+                (if (NotifListener.connected) NotifListener.current().size else 0).takeIf { it > 0 }?.toString()) { notificationsPanel() },
             V10Tile(T.s("Backup & Restore", "Backup", "Sichern", "Резервная копия"), R.drawable.lc_archive) { backupMenu() },
             V10Tile(T.s("Add-ons", "Dodaci", "Erweiterungen", "Дополнения"), R.drawable.lc_package, "Shizuku · VLC") { addonsMenu() },
-            V10Tile(T.s("Power", "Napajanje", "Energie", "Питание"), R.drawable.lc_power) { powerMenu() },
         ))
         3 -> Triple(T.s("Diagnostics", "Dijagnostika", "Diagnose", "Диагностика"), T.s("Real measurements, only while you look", "Stvarna mjerenja, samo dok gledaš", "Echte Messungen, nur solange du schaust", "Реальные измерения"), listOf(
             V10Tile(T.s("Device Health", "Stanje uređaja", "Gerätezustand", "Состояние"), R.drawable.lc_cpu) { deviceHealth() },
@@ -3812,11 +3846,22 @@ class MainActivity : Activity() {
             V10Tile(T.s("About LEAD", "O LEAD-u", "Über LEAD", "О LEAD"), R.drawable.lc_info) { aboutLead() },
             V10Tile(T.s("Launcher Version", "Verzija", "Version", "Версия"), R.drawable.lc_tv, Updater.currentName(this) + " · " + channelLabel()) { updateMenu() },
             V10Tile(T.s("Check for Updates", "Provjeri ažuriranja", "Nach Updates suchen", "Проверить обновления"), R.drawable.lc_refresh_cw,
-                bellCount().takeIf { it > 0 }?.let { T.s("$it waiting", "$it čeka", "$it wartet", "ожидает: $it") }) { installPendingOrCheck() },
+                updCount().takeIf { it > 0 }?.let { T.s("$it waiting", "$it čeka", "$it wartet", "ожидает: $it") }) { checkForUpdates() },
             V10Tile(T.s("Release Notes", "Šta je novo", "Neuigkeiten", "Что нового"), R.drawable.lc_file_text) { whatsNew() },
             V10Tile(T.s("Support & Feedback", "Podrška", "Hilfe & Feedback", "Поддержка"), R.drawable.lc_bell) { supportPage() },
             V10Tile(T.s("Licenses & Credits", "Licence", "Lizenzen", "Лицензии"), R.drawable.lc_code) { licensesPage() },
         ))
+    }
+
+    /** Check for Updates: LEAD first, then app updates; if nothing waits, a fresh check with a clear answer */
+    private fun checkForUpdates() {
+        val p = Updater.pending(this)
+        val apps = if (prefs.appUpdates) AppUpdates.list(this).size else 0
+        when {
+            p != null && p.apk.isNotBlank() -> leadUpdateScreen(p)
+            apps > 0 -> openAppUpdates()
+            else -> { toast(T.s("Checking…", "Provjeravam…", "Prüfe…", "Проверяю…")); checkUpdate(manual = true); checkAppUpdates() }
+        }
     }
 
     /** reopen the page after a change so its small values are up to date (focus stays on the same card) */
