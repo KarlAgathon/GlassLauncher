@@ -66,6 +66,9 @@ object NetUi {
         savedMenu()
     }
 
+    /** the file manager is closing (Home, Back): stop Phone Connect and close connections */
+    fun shutdown() { if (layer != null || phone != null) runCatching { close() } }
+
     private fun close() {
         stack.filterIsInstance<Scr.Remote>().map { it.fs }.distinct().forEach { fs -> Thread { runCatching { fs.close() } }.start() }
         stack.clear()

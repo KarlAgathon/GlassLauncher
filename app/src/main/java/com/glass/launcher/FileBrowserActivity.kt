@@ -909,7 +909,12 @@ class FileBrowserActivity : Activity() {
         render()
     }
 
-    fun refreshFromNet() = render()
+    fun refreshFromNet() { if (!isFinishing && !isDestroyed) render() }
+
+    override fun onDestroy() {
+        NetUi.shutdown()
+        super.onDestroy()
+    }
 
     private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_SHORT).show()
 }

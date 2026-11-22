@@ -1,3 +1,12 @@
+LEAD Launcher 10.0.1
+- Top menu shows the full names (not only the first letter)
+- Home button always goes straight back to the start (pages, dialogs and the file manager close); Back step by step also ends on Home
+- Home cards always in one row; Left on the first jumps to the last, Right on the last to the first
+- Power in the top-right corner: Restart, Shut down, Screensaver – one Yes / No, then it happens
+- Choosing a menu shows its page and the cursor stays on the menu; Down goes into the page
+- Check for Updates works (notifications are no longer counted as updates); Notifications card in System
+- Pages fit the screen (second row no longer under "Back"); Network & Connect no longer overlaps the file manager
+
 LEAD Launcher 10.0
 - New design "Modern Taupe & Charcoal": living-room wallpaper, smoky glass cards, thin champagne focus line (no zoom), one menu at a time
 - New top navigation: Apps · Personalize · System · Diagnostics · About – each opens its own page, Back returns one step
