@@ -453,9 +453,10 @@ object V10Overlay {
                 if (ev.action != KeyEvent.ACTION_DOWN) return false
                 val dir = when (ev.keyCode) { KeyEvent.KEYCODE_DPAD_UP -> View.FOCUS_UP; KeyEvent.KEYCODE_DPAD_DOWN -> View.FOCUS_DOWN
                     KeyEvent.KEYCODE_DPAD_LEFT -> View.FOCUS_LEFT; else -> View.FOCUS_RIGHT }
-                val next = focused?.focusSearch(dir)
-                if (next == null || !inside(top, next)) return true      // stay inside the dialog
-                return false
+                // look for the next button only inside the dialog (cards behind it are never candidates)
+                val next = (top as? ViewGroup)?.let { android.view.FocusFinder.getInstance().findNextFocus(it, focused, dir) }
+                next?.requestFocus()
+                return true
             }
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
                 if (!inside(top, focused)) return true
