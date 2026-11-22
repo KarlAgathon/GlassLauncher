@@ -308,8 +308,9 @@ class FileBrowserActivity : Activity() {
     private fun renderList() {
         val s = cur
         loadRows()
+        // the list is clipped to its own area: rows never scroll over the title or the Options button
         val col = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; clipChildren = false; clipToPadding = false
+            orientation = LinearLayout.VERTICAL; clipChildren = true; clipToPadding = true
             setPadding((sw * 0.099f).toInt(), (sh * 0.06f).toInt(), (sw * 0.09f).toInt(), dp(12f).toInt())
         }
         val head = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.BOTTOM }
@@ -337,7 +338,7 @@ class FileBrowserActivity : Activity() {
         val rv = RecyclerView(this).apply {
             layoutManager = LinearLayoutManager(this@FileBrowserActivity)
             adapter = rowAdapter
-            clipToPadding = false
+            clipToPadding = true; clipChildren = true
             setPadding(0, dp(8f).toInt(), 0, dp(8f).toInt())
             itemAnimator = null
         }

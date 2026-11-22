@@ -346,7 +346,7 @@ object NetUi {
         val col = page(a, s.path.trimEnd('/').substringAfterLast('/').ifBlank { s.conn.label() },
             s.conn.proto.uppercase() + "  ·  " + s.conn.host + s.path.ifBlank { "/" } + if (s.conn.proto == "ftp") "  ·  " + T.s("not encrypted", "nije šifrirano", "unverschlüsselt", "без шифрования") else "")
         val inner = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
-        val scroll = ScrollView(a).apply { isVerticalScrollBarEnabled = false; addView(inner) }
+        val scroll = ScrollView(a).apply { isVerticalScrollBarEnabled = false; clipChildren = true; clipToPadding = true; addView(inner) }
         col.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = (sh * 0.02f).toInt() })
         val loading = Taupe.text(a, T.s("Loading…", "Učitavam…", "Lade…", "Загрузка…"), 15f, Taupe.MUTED)
         inner.addView(loading)
