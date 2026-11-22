@@ -1,3 +1,8 @@
+LEAD Launcher 10.0.4
+- Power is a page of cards like every other menu: Restart, Shut down, Screensaver – one Yes / No, then it happens
+- Home cards: logo and name sit exactly in the middle, all names on the same line
+- After a dialog closes, the cursor is back where it was
+
 LEAD Launcher 10.0.3
 - Yes / No dialogs (Power, delete …): Left / Right now reach "No" – the cursor never jumps to the cards behind
 - Card names always fit: long names use two lines or slightly smaller letters, never "…"
