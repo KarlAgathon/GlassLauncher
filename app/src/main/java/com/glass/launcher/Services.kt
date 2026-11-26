@@ -41,6 +41,7 @@ class HomeService : AccessibilityService() {
             "com.google.android.leanbacklauncher",
             "com.mitv.tvhome",
             "com.android.tv.launcher",
+            "com.amazon.tv.launcher",
         )
         private val IGNORE = setOf("com.android.systemui", "android", "com.google.android.tvrecommendations")
 
