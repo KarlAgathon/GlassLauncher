@@ -376,6 +376,10 @@ class HomeService : AccessibilityService() {
             val cls = event.className?.toString() ?: ""
             if (cls.isNotEmpty() && !cls.contains("HomeActivity") && !cls.contains(".home.")) return
         }
+        // Fire TV: redirect only the actual Amazon home screen.
+        if (pkg == "com.amazon.tv.launcher" &&
+            event.className?.toString() !=
+                "com.amazon.tv.launcher.ui.HomeActivity_vNext") return
         val prev = lastPkg
         lastPkg = pkg
         // learn which apps are used most (for the "All apps" list)
@@ -389,6 +393,37 @@ class HomeService : AccessibilityService() {
             if (now - burstStart > 20_000L) { burstStart = now; burst = 0 }
             if (++burst > 8) return
             last = now
+
+            // Fire TV fast HOME through existing Shizuku integration.
+            if (android.os.Build.MANUFACTURER.equals("Amazon", ignoreCase = true) &&
+                pkg == "com.amazon.tv.launcher") {
+                Thread {
+                    val started = android.os.SystemClock.elapsedRealtime()
+                    val success = runCatching {
+                        ShizukuCpu.run(
+                            "am", "start", "-n",
+                            "$packageName/.MainActivity"
+                        )
+                    }.getOrDefault(false)
+
+                    android.util.Log.i("LEAD_FIRETV",
+                        "SHIZUKU HOME success=$success elapsed=${android.os.SystemClock.elapsedRealtime() - started}ms")
+
+                    if (!success) {
+                        h.post {
+                            if (Prefs(this).homeRedirect &&
+                                rootInActiveWindow?.packageName?.toString() == pkg) {
+                                runCatching {
+                                    startActivity(Intent(this, MainActivity::class.java)
+                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED))
+                                }
+                            }
+                        }
+                    }
+                }.start()
+                return
+            }
+
             runCatching {
                 startActivity(Intent(this, MainActivity::class.java)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED))
