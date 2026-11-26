@@ -120,7 +120,8 @@ object Taupe {
 data class V10Tile(val title: String, val icon: Int, val sub: String? = null, val action: () -> Unit)
 
 /** The top navigation: Apps · Personalize · System · Diagnostics · About, and Power in the top-right corner (index 5) */
-class V10Nav(private val ctx: Context, private val onPick: (Int) -> Unit, private val onFocus: (Int) -> Unit = {}) {
+class V10Nav(private val ctx: Context, private val onPick: (Int) -> Unit, private val onFocus: (Int) -> Unit = {},
+             private val onSearch: (() -> Unit)? = null) {
     val view = FrameLayout(ctx).apply { clipChildren = false }
     private val bar = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; clipChildren = false }
     private val items = ArrayList<View>()
@@ -128,10 +129,13 @@ class V10Nav(private val ctx: Context, private val onPick: (Int) -> Unit, privat
     private val badges = ArrayList<TextView>()
     var selected = 0; private set
 
-    companion object { const val POWER = 5 }
+    companion object {
+        const val POWER = 5
+        private const val SEARCH = 6
+    }
 
     init {
-        val names = listOf(
+        val names = mutableListOf(
             T.s("Apps", "Aplikacije", "Apps", "Приложения") to R.drawable.lc_layout_grid,
             T.s("Personalize", "Prilagodi", "Anpassen", "Персонализация") to R.drawable.lc_palette,
             T.s("System", "Sistem", "System", "Система") to R.drawable.lc_settings,
@@ -139,6 +143,9 @@ class V10Nav(private val ctx: Context, private val onPick: (Int) -> Unit, privat
             T.s("About", "O LEAD-u", "Über", "О LEAD") to R.drawable.lc_info,
             T.s("Power", "Napajanje", "Energie", "Питание") to R.drawable.lc_power,
         )
+        if (onSearch != null) {
+            names.add(T.s("Search apps", "Pronađi aplikacije", "Apps suchen", "Поиск приложений") to android.R.drawable.ic_menu_search)
+        }
         val d = Taupe.dp(ctx, 1f)
         val sw = ctx.resources.displayMetrics.widthPixels
         names.forEachIndexed { i, (name, ic) ->
@@ -149,7 +156,7 @@ class V10Nav(private val ctx: Context, private val onPick: (Int) -> Unit, privat
                 background = Taupe.pill(ctx)
                 setPadding((14 * d).toInt(), (8 * d).toInt(), (16 * d).toInt(), (8 * d).toInt())
                 if (android.os.Build.VERSION.SDK_INT >= 26) defaultFocusHighlightEnabled = false
-                setOnClickListener { onPick(i) }
+                setOnClickListener { if (i == SEARCH) onSearch?.invoke() else onPick(i) }
             }
             row.addView(Taupe.icon(ctx, ic, (sw * 0.024f).toInt(), Taupe.MUTED))
             val t = Taupe.text(ctx, name, 15.5f, Taupe.MUTED).apply { maxLines = 1 }
@@ -163,14 +170,14 @@ class V10Nav(private val ctx: Context, private val onPick: (Int) -> Unit, privat
             row.setOnFocusChangeListener { _, has ->
                 t.setTextColor(if (has || i == selected) Taupe.TEXT else Taupe.MUTED)
                 (row.getChildAt(0) as ImageView).setColorFilter(if (has || i == selected) Taupe.TEXT else Taupe.MUTED)
-                if (has) onFocus(i)
+                if (has && i != SEARCH) onFocus(i)
             }
             // the row keeps its own full width (whole name); the underline is exactly as wide as the row
             col.addView(row, LinearLayout.LayoutParams(-2, -2))
             val line = View(ctx).apply { setBackgroundColor(Color.argb(220, 236, 226, 214)) }
             col.addView(line, LinearLayout.LayoutParams(-1, (3 * d).toInt()).apply { topMargin = (6 * d).toInt() })
             // Power is the last item, at the right end of the same row – nothing can overlap
-            bar.addView(col, LinearLayout.LayoutParams(-2, -2).apply {
+            bar.addView(col, if (i == SEARCH) POWER else bar.childCount, LinearLayout.LayoutParams(-2, -2).apply {
                 marginStart = (sw * 0.008f).toInt(); marginEnd = (sw * 0.008f).toInt()
                 if (i == POWER) marginStart = (sw * 0.03f).toInt()
             })

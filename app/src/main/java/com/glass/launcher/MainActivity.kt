@@ -30,6 +30,8 @@ import android.view.View
 import android.util.TypedValue
 import android.view.ViewGroup
 import android.widget.EditText
+import android.speech.RecognizerIntent
+import android.view.inputmethod.EditorInfo
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ImageView
@@ -1192,11 +1194,69 @@ class MainActivity : Activity() {
         menu.show(label, R.drawable.lc_package, items, pkg)
     }
 
+    private val appSearchTitle
+        get() = T.s("Search apps", "Pronađi aplikacije", "Apps suchen", "Поиск приложений")
+
+    private fun showAppSearch(initial: String = "") {
+        val voice = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+            .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            .putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+        val input = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_TEXT
+            setSingleLine()
+            imeOptions = EditorInfo.IME_ACTION_SEARCH
+            hint = T.s("App name", "Naziv aplikacije", "App-Name", "Название приложения")
+            setText(initial)
+            setSelection(text.length)
+        }
+        val builder = AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+            .setTitle(appSearchTitle).setView(input)
+            .setPositiveButton(appSearchTitle) { _, _ -> allAppsMenu(input.text.toString().trim()) }
+            .setNegativeButton(T.s("Cancel", "Odustani", "Abbrechen", "Отмена"), null)
+        if (voice.resolveActivity(packageManager) != null) {
+            builder.setNeutralButton(T.s("Speak", "Govori", "Sprechen", "Говорить")) { _, _ ->
+                @Suppress("DEPRECATION")
+                try {
+                    startActivityForResult(voice, REQ_APP_SEARCH_VOICE)
+                } catch (_: android.content.ActivityNotFoundException) {
+                    showAppSearch(input.text.toString())
+                }
+            }
+        }
+        val dialog = builder.create()
+        input.setOnEditorActionListener { _, action, _ ->
+            if (action != EditorInfo.IME_ACTION_SEARCH) return@setOnEditorActionListener false
+            dialog.dismiss()
+            allAppsMenu(input.text.toString().trim())
+            true
+        }
+        input.requestFocus()
+        dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
+        dialog.show()
+    }
+
     /** Every app on the box (also system apps) – just open it, nothing is added to the home screen. */
-    private fun allAppsMenu() {
+    private fun allAppsMenu(query: String = "") {
         Thread {
-            val list = AppLoader.choosable(this)
+            val terms = query.replace("+", " plus ").split(Regex("""\s+""")).filter { it.isNotBlank() }
+            val list = AppLoader.choosable(this).filter { (pkg, label) ->
+                val name = (prefs.label(pkg) ?: label).replace("+", " plus ")
+                terms.all { name.contains(it, ignoreCase = true) || pkg.contains(it, ignoreCase = true) }
+            }
             handler.post {
+                if (isFinishing || isDestroyed) return@post
+                if (query.isNotEmpty()) {
+                    menu.show(appSearchTitle, android.R.drawable.ic_menu_search,
+                        list.map { (pkg, defaultLabel, icon) ->
+                            val label = prefs.label(pkg) ?: defaultLabel
+                            GlassMenu.Item(label, drawable = icon) {
+                                if (pkg == AppEntry.FILES) startActivity(Intent(this, FileBrowserActivity::class.java))
+                                else launch(pkg, label)
+                            }
+                        } + GlassMenu.Item(appSearchTitle, android.R.drawable.ic_menu_search) { showAppSearch(query) },
+                        if (list.isEmpty()) T.s("No matching apps", "Nema rezultata", "Keine passenden Apps", "Приложения не найдены") else query)
+                    return@post
+                }
                 menu.show(T.s("All apps", "Sve aplikacije", "Alle Apps") + " (${list.size})", R.drawable.lc_layout_grid,
                     list.map { (pkg, label, icon) ->
                         GlassMenu.Item(label, drawable = icon,
@@ -3694,6 +3754,12 @@ class MainActivity : Activity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         @Suppress("DEPRECATION")
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_APP_SEARCH_VOICE) {
+            val query = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.trim()
+            if (resultCode == RESULT_OK && !query.isNullOrEmpty()) allAppsMenu(query)
+            else showAppSearch()
+            return
+        }
         if (requestCode == REQ_ACCOUNT) {
             val name = data?.getStringExtra(AccountManager.KEY_ACCOUNT_NAME)
             if (resultCode == RESULT_OK && name != null) { Profiles.saveAccount(this, name); toast(name) }
@@ -3800,7 +3866,7 @@ class MainActivity : Activity() {
         }, { i ->
             // while a page is open, moving along the menu shows each page at once
             if (openPageIx >= 0 && i != openPageIx) openPage(i, keepFocus = true)
-        })
+        }, onSearch = if (HomeService.isFireTv) ({ showAppSearch() }) else null)
         val at = root.indexOfChild(updateBtn)
         pageHost = FrameLayout(this).apply { visibility = View.GONE; clipChildren = false; clipToPadding = false }
         root.addView(pageHost, at, FrameLayout.LayoutParams(-1, -1))
@@ -4301,6 +4367,7 @@ class MainActivity : Activity() {
         private const val REQ_ACCOUNT = 15
         private const val REQ_BACKUP = 16
         private const val REQ_NOTIF = 17
+        private const val REQ_APP_SEARCH_VOICE = 18
         const val EXTRA_SHOW_UPDATE = "show_update"
         const val EXTRA_SHOW_APP_UPDATES = "show_app_updates"
     }
