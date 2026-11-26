@@ -81,7 +81,7 @@ object Profiles {
     val GROUPS = listOf("apps", "look", "wallpaper", "status", "weather", "saver", "lang", "other")
 
     fun groupOf(k: String): String = when {
-        k == "pinned" || k.startsWith("label_") -> "apps"
+        k == "pinned" || k.startsWith("label_") || k.startsWith("isz_") || k.startsWith("iox_") || k.startsWith("ioy_") -> "apps"
         k.startsWith("wp") || k.startsWith("tmdb") || k in setOf("blur", "movieInfo", "leadWp", "nightDim") -> "wallpaper"
         k in setOf("city", "lat", "lon", "weatherMin", "wF", "wIcons") -> "weather"
         k.startsWith("saver") || k.startsWith("idle") -> "saver"
@@ -229,7 +229,20 @@ class Prefs(ctx: Context) {
     var notifMode: Int get() = int("nMode", 2); set(v) = putInt("nMode", v)
     /** number keys 1–9 of the remote open the first nine apps */
     var numberKeys: Boolean get() = bool("numKeys", true); set(v) = putBool("numKeys", v)
+
+    // ---- LEAD v10
+    /** Clock & widgets (the old status row under the navigation) – off by default */
+    var v10Widgets: Boolean get() = bool("v10Widgets", false); set(v) = putBool("v10Widgets", v)
+    /** Icon appearance: 0 automatic adaptation, 1 original app icons, 2 monochrome */
+    var iconMode: Int get() = int("iconMode", IconAdapt.AUTO); set(v) = putInt("iconMode", v)
+    /** cards per row on Home (3–6) */
+    var v10Cols: Int get() = int("v10Cols", 4); set(v) = putInt("v10Cols", v)
+    /** apps hidden from All apps / Add to Home */
+    var hiddenApps: Set<String>
+        get() = str("hiddenApps", "").split(',').filter { it.isNotBlank() }.toSet()
+        set(v) = putStr("hiddenApps", v.joinToString(","))
     /** the name of the selected app shows under its logo (also when names are off) */
+    var homeHintSeen: Boolean get() = bool("homeHintSeen", true); set(v) = putBool("homeHintSeen", v)
     var nameOnFocus: Boolean get() = bool("nameFocus", true); set(v) = putBool("nameFocus", v)
     /** GitHub apps (TizenTube, PRETORIAN, SofaDrop …) update themselves at night (needs Shizuku) */
     var nightUpdates: Boolean get() = bool("nightUpd", true); set(v) = putBool("nightUpd", v)
@@ -243,6 +256,12 @@ class Prefs(ctx: Context) {
     var showPowerBtn: Boolean get() = bool("showPowerBtn", true); set(v) = putBool("showPowerBtn", v)
     /** Light's "everything on demand" was put on this profile once */
     var lightDemandSet: Boolean get() = bool("lightDemand", false); set(v) = putBool("lightDemand", v)
+
+    /** one icon only (long press on it): size in % and position in dp */
+    fun iconScale(pkg: String) = int("isz_$pkg", 100)
+    fun setIconScale(pkg: String, v: Int) = putInt("isz_$pkg", v)
+    fun iconOffset(pkg: String) = int("iox_$pkg", 0) to int("ioy_$pkg", 0)
+    fun setIconOffset(pkg: String, x: Int, y: Int) { putInt("iox_$pkg", x); putInt("ioy_$pkg", y) }
 
     /** clock and date: 0 always, 1 auto-hide (appear when you go to the top), 2 on demand (one more Up at the top) */
     var clockMode: Int get() = int("clockMode", 2); set(v) = putInt("clockMode", v)
@@ -265,7 +284,7 @@ class Prefs(ctx: Context) {
     /** one of the three looks: changes only how things look; TizenTube is the YouTube in every look */
     fun applyVisualLook(v: Int) {
         visualLook = v
-        pinned = DefaultApps.putTizenTube(pinned); tizenTubeSet = true
+        tizenTubeSet = true
         when (v) {
             2 -> { tileShape = 0; logoWhite = false; logoNoBg = true; tileAlpha = 0; tileBorder = 0; tileClean = true; tileFrost = false
                 dock = false; showLabels = false; reflect = true; tileSize = 2; tileGap = 48; focusScale = 35; focusFrame = false
@@ -378,9 +397,25 @@ class Prefs(ctx: Context) {
     var saverSrc: Int get() = int("saverSrc", 0); set(v) = putInt("saverSrc", v)
     var saverFolder: String get() = str("saverFolder", ""); set(v) = putStr("saverFolder", v)
     var saverReddit: String get() = str("saverReddit", "EarthPorn"); set(v) = putStr("saverReddit", v)
+    internal var ambientMode: AmbientMode
+        get() = AmbientMode.entries.getOrElse(int("saverMode", 1)) { AmbientMode.BALANCED }
+        set(value) = putInt("saverMode", value.ordinal)
+    var saverClockFormat: Int get() = int("saverClockFormat", -1); set(value) = putInt("saverClockFormat", value)
+    var saverSeconds: Boolean get() = bool("saverSeconds", false); set(value) = putBool("saverSeconds", value)
+    var saverMotion: Boolean get() = bool("saverMotion", true); set(value) = putBool("saverMotion", value)
+    var saverDim: Boolean get() = bool("saverDim", false); set(value) = putBool("saverDim", value)
+    internal fun ambientMetric(metric: AmbientMetric) = bool("saverMetric_" + metric.name, true)
+    internal fun setAmbientMetric(metric: AmbientMetric, enabled: Boolean) =
+        putBool("saverMetric_" + metric.name, enabled)
     var saverInterval: Int get() = int("saverInt", 30); set(v) = putInt("saverInt", v)
     /** Home button of the remote opens LEAD Launcher (needs the accessibility service) */
     var homeRedirect: Boolean get() = bool("homeRedir", true); set(v) = putBool("homeRedir", v)
+
+    /** Google TV came back by itself (restart, sleep, screensaver): go back to LEAD automatically */
+    var autoReturn: Boolean get() = bool("autoReturn", true); set(v) = putBool("autoReturn", v)
+
+    /** hide empty system notices (Google TV "Notification Center", "… running in the background") from the bell */
+    var hideSysNotifs: Boolean get() = bool("hideSysNotifs", true); set(v) = putBool("hideSysNotifs", v)
 
     /** what to do when the home screen is idle: 0 nothing, 1 screensaver, 2 sleep */
     var idleAction: Int get() = int("idleAct", 0); set(v) = putInt("idleAct", v)
@@ -464,15 +499,15 @@ object AppLoader {
             val ri = all[p] ?: run {
                 // one of LEAD's default apps that is not installed yet: keep its place, a click installs it
                 if (!DefaultApps.isDefault(p)) return@mapNotNull null
-                val pic = BuiltinIcons.bitmap(ctx, p, wPx * 2, hPx * 2) ?: return@mapNotNull null
-                return@mapNotNull AppEntry(p, prefs.label(p) ?: DefaultApps.name(p), pic, missing = true)
+                // no picture built into LEAD (yet): the app's name as a clean white word
+                val pic = BuiltinIcons.bitmap(ctx, p, wPx * 2, hPx * 2) ?: wordmark(DefaultApps.name(p), wPx * 2, hPx * 2)
+                return@mapNotNull AppEntry(p, prefs.label(p) ?: DefaultApps.homeName(p) ?: DefaultApps.name(p), pic, missing = true)
             }
-            val label = prefs.label(p) ?: ri.loadLabel(pm).toString()
-            val icon = own?.let { if (prefs.logoWhite) IconRender.whiten(it) else it }
-                ?: runCatching {
-                    if (wide) TileArt.wide(ctx, ri, label, null, wPx, hPx, prefs)
-                    else IconRender.render(ri.loadIcon(pm), size, if (prefs.logoWhite) 2 else style)
-                }.getOrNull()
+            // TizenTube is LEAD's YouTube; PRETORIAN is Media Center – unless you renamed them
+            val label = prefs.label(p) ?: DefaultApps.homeName(p) ?: ri.loadLabel(pm).toString()
+            // a picture you chose (or one built into LEAD) always wins; otherwise the Icon Adaptation Engine
+            val icon = (if (own != null && prefs.iconMode == IconAdapt.MONO) IconRender.whiten(own) else own)
+                ?: runCatching { IconAdapt.icon(ctx, p, ri, maxOf(size, (192 * d).toInt()), prefs.iconMode) }.getOrNull()
             AppEntry(p, label, icon)
         }
     }
@@ -480,7 +515,8 @@ object AppLoader {
     /** All apps (plus the built-in file browser) for the "choose apps" list, sorted by name. */
     fun choosable(ctx: Context): List<Triple<String, String, Drawable?>> {
         val pm = ctx.packageManager
-        val list = launchable(ctx).map { (p, ri) ->
+        val hidden = Prefs(ctx).hiddenApps
+        val list = launchable(ctx).filter { it.key !in hidden }.map { (p, ri) ->
             Triple(p, ri.loadLabel(pm).toString(), runCatching { ri.loadIcon(pm) }.getOrNull())
         }
         val all = listOf(Triple(AppEntry.FILES, T.s("Files", "Fajlovi", "Dateien"), ctx.getDrawable(R.drawable.lc_folder))) + list
@@ -505,6 +541,22 @@ object AppLoader {
 }
 
 /** How often each app was opened – the "All apps" list learns from it. Older use slowly counts less. */
+/** the app's name written big and white – stands in for an app logo LEAD does not have */
+fun wordmark(name: String, w: Int, h: Int): Bitmap {
+    val b = Bitmap.createBitmap(w.coerceAtLeast(64), h.coerceAtLeast(36), Bitmap.Config.ARGB_8888)
+    val c = android.graphics.Canvas(b)
+    val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        typeface = android.graphics.Typeface.create(android.graphics.Typeface.SANS_SERIF, android.graphics.Typeface.BOLD)
+        textAlign = android.graphics.Paint.Align.CENTER
+        textSize = b.height * 0.42f
+    }
+    while (paint.measureText(name) > b.width * 0.9f && paint.textSize > 8f) paint.textSize *= 0.92f
+    val y = b.height / 2f - (paint.descent() + paint.ascent()) / 2f
+    c.drawText(name, b.width / 2f, y, paint)
+    return b
+}
+
 object Usage {
     private fun sp(ctx: Context) = ctx.getSharedPreferences("app_usage", Context.MODE_PRIVATE)
 
@@ -626,9 +678,11 @@ object Bitmaps {
     }
 
     /** the LEAD wallpaper in the chosen colour */
+    /** LEAD's own wallpapers: 0 = the v10 living room (default), then the earlier ones */
     fun leadWallpaper(colour: Int) = when (colour) {
-        1 -> R.drawable.wallpaper_lead_black; 2 -> R.drawable.wallpaper_lead_green; 3 -> R.drawable.wallpaper_lead_purple
-        else -> R.drawable.wallpaper_default
+        1 -> R.drawable.wallpaper_default; 2 -> R.drawable.wallpaper_lead_black; 3 -> R.drawable.wallpaper_lead_green
+        4 -> R.drawable.wallpaper_lead_purple
+        else -> R.drawable.wallpaper_living
     }
 
     /** cuts away the empty (transparent) border around a logo, so equal gaps look equal */
@@ -1046,6 +1100,56 @@ object SysStats {
 /* ================================================================ internet */
 
 object Http {
+    /** Bounded requests owned by a visible screensaver session. */
+    internal class Session {
+        private val active = mutableSetOf<HttpURLConnection>()
+        @Volatile private var closed = false
+
+        private fun <T> read(url: String, headers: Map<String, String>, consume: (java.io.InputStream) -> T): T {
+            val connection = URL(url).openConnection() as HttpURLConnection
+            connection.connectTimeout = 8_000
+            connection.readTimeout = 10_000
+            connection.setRequestProperty("User-Agent", "Mozilla/5.0 GlassLauncher")
+            for ((name, value) in headers) connection.setRequestProperty(name, value)
+            synchronized(active) {
+                check(!closed) { "Screensaver session ended" }
+                active.add(connection)
+            }
+            return try {
+                connection.inputStream.use(consume)
+            } finally {
+                synchronized(active) { active.remove(connection) }
+                connection.disconnect()
+            }
+        }
+
+        fun text(url: String, headers: Map<String, String> = emptyMap()): String =
+            read(url, headers) { input -> input.bufferedReader().readText() }
+
+        fun download(url: String, file: File) = read(url, emptyMap()) { input ->
+            file.outputStream().use { output ->
+                val buffer = ByteArray(32 * 1024)
+                var size = 0L
+                while (!closed) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    size += count
+                    check(size <= 32L * 1024 * 1024) { "Wallpaper download exceeds size limit" }
+                    output.write(buffer, 0, count)
+                }
+                check(!closed) { "Screensaver session ended" }
+            }
+        }
+
+        fun cancel() {
+            val pending = synchronized(active) {
+                closed = true
+                active.toList()
+            }
+            if (pending.isNotEmpty()) Thread { pending.forEach { runCatching { it.disconnect() } } }.start()
+        }
+    }
+
     fun open(url: String): HttpURLConnection {
         var conn = URL(url).openConnection() as HttpURLConnection
         conn.setRequestProperty("User-Agent", "Mozilla/5.0 GlassLauncher")

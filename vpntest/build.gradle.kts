@@ -12,8 +12,8 @@ android {
         applicationId = "com.glass.launcher.vpntest"
         minSdk = 24
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.1"
+        versionCode = 3
+        versionName = "1.2"
     }
     sourceSets["main"].java.srcDirs("src/main/java", "../shared/src")
     val keyPass: String? = System.getenv("LEAD_KEY_PASSWORD")
@@ -26,8 +26,9 @@ android {
     buildTypes {
         getByName("release") {
             isMinifyEnabled = false
+            val wantsRelease = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
             signingConfig = signingConfigs.findByName("lead")
-                ?: throw GradleException("Signing key missing")
+                ?: if (wantsRelease) throw GradleException("Signing key missing") else null
         }
     }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }

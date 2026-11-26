@@ -9,17 +9,19 @@ import java.net.URL
 /** Icons that come with LEAD: put on the matching apps automatically (once – your own changes stay). */
 object BuiltinIcons {
     private val MAP = mapOf(
-        DefaultApps.PRETORIAN to R.drawable.builtin_pretorian_iptv,
+        DefaultApps.PRETORIAN to R.drawable.builtin_media_center,
+        DefaultApps.SILO to R.drawable.builtin_silo,
         DefaultApps.NETFLIX to R.drawable.builtin_netflix,
         "ar.tvplayer.tv" to R.drawable.builtin_tivimate,
         "com.google.android.youtube.tv" to R.drawable.builtin_youtube,
         "com.teamsmart.videomanager.tv" to R.drawable.builtin_youtube,
         "com.liskovsoft.smarttubetv" to R.drawable.builtin_youtube,
         "com.liskovsoft.smarttubetv.beta" to R.drawable.builtin_youtube,
-        "io.gh.reisxd.tizentube.cobalt" to R.drawable.builtin_youtube_premium,
+        "io.gh.reisxd.tizentube.cobalt" to R.drawable.builtin_youtube,
         "com.disney.disneyplus" to R.drawable.builtin_disney,
         "com.nuvio.tv" to R.drawable.builtin_nuvio,
         "org.siloserver.silo" to R.drawable.builtin_silo,
+        "com.nordvpn.android" to R.drawable.builtin_nordvpn,
     )
     /** raise when the pictures in the app change: the new ones then replace the old built-in ones once */
     private const val VERSION = 2
@@ -37,6 +39,11 @@ object BuiltinIcons {
                 changed = true
             }
             done.add(pkg)
+        }
+        // new PRETORIAN logo (blue / silver, no red): replace the old one once on every box
+        if (!g.getBoolean("pretorianLogo2", false)) {
+            if (restore(ctx, DefaultApps.PRETORIAN)) changed = true
+            g.edit().putBoolean("pretorianLogo2", true).apply()
         }
         g.edit().putString(key, done.joinToString(",")).apply()
         return changed
@@ -70,14 +77,45 @@ object DefaultApps {
     const val TIZENTUBE_REPO = "reisxd/TizenTubeCobalt"
     const val YOUTUBE_OFFICIAL = "com.google.android.youtube.tv"
 
-    fun isDefault(pkg: String) = pkg == PRETORIAN || pkg == NETFLIX || pkg == DISNEY || pkg == TIZENTUBE
+    const val NUVIO = "com.nuvio.tv"
+    const val STREMIO = "com.stremio.one"
+    const val SILO = "org.siloserver.silo"
+    const val NORDVPN = "com.nordvpn.android"
+    const val PROTONVPN = "ch.protonvpn.android"
+    const val VLC = "org.videolan.vlc"
 
-    fun name(pkg: String) = when (pkg) {
-        PRETORIAN -> "PRETORIAN IPTV"; NETFLIX -> "Netflix"; DISNEY -> "Disney+"; else -> "YouTube"
-    }
+    /** names on the Home cards (v10): Media Center and YouTube, whatever the apps call themselves */
+    fun homeName(pkg: String) = when (pkg) { PRETORIAN -> "Media Center"; TIZENTUBE -> "YouTube"; else -> null }
 
-    /** GitHub repo a default app is installed from (newest stable release), or null = Google Play */
-    fun repo(pkg: String) = when (pkg) { PRETORIAN -> PRETORIAN_REPO; TIZENTUBE -> TIZENTUBE_REPO; else -> null }
+    /** one app LEAD knows: name on the home screen and where it comes from (GitHub repo, or null = Google Play) */
+    data class App(val pkg: String, val name: String, val repo: String?)
+
+    /**
+     * Apps LEAD offers (setup wizard, home screen). They can sit on the home screen before they are installed:
+     * a click with the ⬇ installs the newest stable GitHub release, or opens Google Play for the others.
+     */
+    val CATALOG = listOf(
+        App(PRETORIAN, "Media Center", PRETORIAN_REPO),
+        App(TIZENTUBE, "YouTube", TIZENTUBE_REPO),
+        App(DISNEY, "Disney+", null),
+        App(NETFLIX, "Netflix", null),
+        App(NUVIO, "Nuvio", "NuvioMedia/NuvioTV"),
+        App(SILO, "Silo", "Silo-Server/silo-android"),
+        App(STREMIO, "Stremio", null),
+        App(NORDVPN, "NordVPN", null),
+        App(PROTONVPN, "Proton VPN", null),
+        App(Extras.SHIZUKU, "Shizuku", "thedjchi/Shizuku"),
+        App(VLC, "VLC", null),
+    )
+
+    fun find(pkg: String) = CATALOG.firstOrNull { it.pkg == pkg }
+
+    fun isDefault(pkg: String) = find(pkg) != null
+
+    fun name(pkg: String) = find(pkg)?.name ?: "YouTube"
+
+    /** GitHub repo an app is installed from (newest stable release), or null = Google Play */
+    fun repo(pkg: String) = find(pkg)?.repo
 
     @Suppress("UNUSED_PARAMETER")
     fun list(ctx: Context) = listOf(PRETORIAN, TIZENTUBE, DISNEY, NETFLIX)

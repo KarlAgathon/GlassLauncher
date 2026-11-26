@@ -42,7 +42,7 @@
     </queries>
 
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:banner="@drawable/banner_lead"
         android:icon="@drawable/ic_lead"
         android:label="@string/app_name"

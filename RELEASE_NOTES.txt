@@ -1,3 +1,80 @@
+LEAD Launcher 10.0.7
+- Show app names and focus-only labels independently in Personalize → Home Layout.
+- Home artwork centers by its visible bounds and keeps manual icon offsets.
+- File replacement and backup restore protect existing data with staged writes and rollback.
+- Permission prompts appear when you choose the feature that needs them. Phone Connect limits uploads and closes connections when you leave.
+
+LEAD Launcher 10.0.6
+- Ambient 2.0 brings Minimal, Balanced and Full Dashboard modes to Personalize → Screensaver.
+- The living-room dashboard shows a large clock, current weather and seven forecast days. The last successful forecast is available offline.
+- See VPN status, device RAM and available thermal information. Full Dashboard shows connection details and the last verified VPN and direct speed tests.
+- Press OK on the VPN card in Diagnostics → Speed Test to install or update the VPN test helper.
+
+LEAD Launcher 10.0.5
+- Home cards: every logo is optically centred exactly above its name (Silo, Disney+, YouTube …), all names on one line
+
+LEAD Launcher 10.0.4
+- Power is a page of cards like every other menu: Restart, Shut down, Screensaver – one Yes / No, then it happens
+- Home cards: logo and name sit exactly in the middle, all names on the same line
+- After a dialog closes, the cursor is back where it was
+
+LEAD Launcher 10.0.3
+- Yes / No dialogs (Power, delete …): Left / Right now reach "No" – the cursor never jumps to the cards behind
+- Card names always fit: long names use two lines or slightly smaller letters, never "…"
+
+LEAD Launcher 10.0.2
+- Dialogs keep the cursor: Yes / No can be chosen, nothing behind gets selected; Back closes every dialog
+- Power is the last item at the right end of the top row (no longer over "About")
+- File lists no longer scroll over the title and the Options button
+- Pages with many cards fit above "Back" (5 per row); Add-ons card without the extra line
+- Numbers on cards (notifications, updates) refresh after closing a menu
+- Darker, calmer dialogs
+
+LEAD Launcher 10.0.1
+- Top menu shows the full names (not only the first letter)
+- Home button always goes straight back to the start (pages, dialogs and the file manager close); Back step by step also ends on Home
+- Home cards always in one row; Left on the first jumps to the last, Right on the last to the first
+- Power in the top-right corner: Restart, Shut down, Screensaver – one Yes / No, then it happens
+- Choosing a menu shows its page and the cursor stays on the menu; Down goes into the page
+- Check for Updates works (notifications are no longer counted as updates); Notifications card in System
+- Pages fit the screen (second row no longer under "Back"); Network & Connect no longer overlaps the file manager
+
+LEAD Launcher 10.0
+- New design "Modern Taupe & Charcoal": living-room wallpaper, smoky glass cards, thin champagne focus line (no zoom), one menu at a time
+- New top navigation: Apps · Personalize · System · Diagnostics · About – each opens its own page, Back returns one step
+- Home: Media Center, YouTube, Disney+, Netflix as equal cards; long OK: change position, size, picture, rename, remove (with Undo), uninstall, app info
+- Automatic icon adaptation: app logos sit cleanly in the cards (original or monochrome on request; your own pictures always win)
+- Apps page: Add to Home, All Apps, Manage Apps, Install Apps, Hidden Apps, App Updates, Files
+- Diagnostics: device health, network quality (real latency, jitter, packet loss, VPN path shown), connection, VPN, storage, speed test, crash logs
+- New File Manager: six start cards, clean lists, long OK to select (range, select all, invert), smart Move/Copy with last-used, recent and favourite places, Paste here, name clashes (skip / keep both / replace, also for all), Recycle Bin with Undo or permanent delete (asked twice)
+- Network & Connect: SMB 2/3 Windows and NAS shares, FTP, FTPS, SFTP, saved locations (passwords encrypted on the box), network discovery
+- Phone Connect: QR code on the TV, phone or computer browser sends and receives files after you press Allow (home network only)
+- Clock and status are off by default (Personalize › Clock & Widgets); Light / Semi / Modern looks and profiles removed
+
+LEAD Launcher 9.1.5
+- Home-screen icon menu: Move left and Move right now shift an app by one position and save the new order immediately.
+
+LEAD Launcher 9.1.4 BETA
+- Restart: one question in LEAD (Yes / No), then the box restarts by itself – no more system menu that the remote can't reach (S3 and other boxes)
+- After a restart LEAD opens by itself; it checks for Google TV from the first second
+
+LEAD Launcher 9.1.3 BETA
+- Google TV came back by itself (after a restart, sleep or the screensaver): LEAD opens again on its own, no need to press Home (Settings › Default launcher › Return to LEAD automatically)
+- Uninstalling an app from Android's App info no longer leaves an empty page with only the app's name
+- Empty system notices (Google TV "Notification Center", "… running in the background") no longer count at the bell (can be switched off in the notification center)
+- New PRETORIAN IPTV logo (blue and silver)
+- TizenTube is called "Premium" on the home screen; long press › Rename this icon
+- Apps LEAD knows: Silo and Nuvio install from GitHub (TV version), Stremio, NordVPN, Proton VPN open in Google Play; built-in Silo logo
+- Safer updates: a downloaded update is checked again (SHA-256) before installing; Mark as Stable shows and publishes exactly the tested Beta commit
+- The GitHub token is never copied into backups
+- Several installs at once no longer cancel each other; night updates try again after a failure
+- Fixed: a normal-size icon could lose its rounded edge after a bigger one
+
+LEAD Launcher 9.1.2 BETA
+- New default LEAD wallpaper (blue glass horizon), also in black, green and purple (Wallpaper › LEAD wallpaper)
+- Long press on an icon: options only for that icon – size (60–160 %), move left/right/up/down, change picture, rename, reset; options for all icons stay in Settings › Icons and tiles
+- Built-in NordVPN icon
+
 LEAD Launcher 9.1.1 BETA
 - Light: all logos the same size class with exactly equal gaps; the selected one grows 35 % and lifts up
 - Status bar, buttons, VPN key, clock and date: On demand by default (change in Status bar settings)

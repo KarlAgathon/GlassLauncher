@@ -1,25 +1,33 @@
 package com.glass.speed
 
+import android.net.ConnectivityManager
 import android.net.Network
+import android.net.NetworkCapabilities
 import android.os.SystemClock
 import java.net.HttpURLConnection
+import java.net.Proxy
 import java.net.URL
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
 /**
  * The measuring part of the LEAD speed test, shared by LEAD Launcher and the small "LEAD VPN test" helper app.
- * Cloudflare speed test servers. [net] = null: the app's normal network (inside or outside the VPN,
- * depending on the VPN's app list); otherwise a specific network.
+ * Every transfer uses the same explicitly selected Android network.
  */
-class SpeedEngine(private val net: Network?) {
+class SpeedEngine(private val manager: ConnectivityManager, private val net: Network, private val vpn: Boolean) {
     @Volatile var stop = false
+
+    fun routeValid(): Boolean {
+        if (stop) return false
+        if (!matchesRoute(manager, net, vpn)) stop = true
+        return !stop
+    }
 
     data class Where(val ip: String, val country: String)
 
     private fun open(url: String): HttpURLConnection {
-        val u = URL(url)
-        val c = (if (net != null) net.openConnection(u) else u.openConnection()) as HttpURLConnection
+        check(routeValid()) { "Test network unavailable" }
+        val c = net.openConnection(URL(url), Proxy.NO_PROXY) as HttpURLConnection
         c.connectTimeout = 8000; c.readTimeout = 10000
         c.setRequestProperty("User-Agent", "LEAD-Speedtest")
         return c
@@ -29,7 +37,7 @@ class SpeedEngine(private val net: Network?) {
     fun where(): Where? = runCatching {
         // 1.1.1.1 = IPv4 only, so the address shown is the one the VPN changes
         val c = open("https://1.1.1.1/cdn-cgi/trace")
-        val t = c.inputStream.bufferedReader().use { it.readText() }; c.disconnect()
+        val t = try { c.inputStream.bufferedReader().use { it.readText() } } finally { c.disconnect() }
         val m = t.lines().mapNotNull { l -> l.split('=', limit = 2).takeIf { it.size == 2 }?.let { it[0] to it[1] } }.toMap()
         Where(m["ip"] ?: "?", m["loc"] ?: "")
     }.getOrNull()
@@ -40,7 +48,7 @@ class SpeedEngine(private val net: Network?) {
             runCatching {
                 val t0 = SystemClock.elapsedRealtime()
                 val c = open("https://speed.cloudflare.com/__down?bytes=0")
-                c.inputStream.use { it.readBytes() }; c.disconnect()
+                try { c.inputStream.use { it.readBytes() } } finally { c.disconnect() }
                 times.add(SystemClock.elapsedRealtime() - t0)
             }
         }
@@ -61,12 +69,17 @@ class SpeedEngine(private val net: Network?) {
                     val i = src.get()
                     runCatching {
                         val c = open(DOWN_URLS[i % DOWN_URLS.size])
-                        if (c.responseCode !in 200..299) { c.disconnect(); throw java.io.IOException("HTTP ${c.responseCode}") }
-                        c.inputStream.use { inp ->
-                            val buf = ByteArray(64 * 1024)
-                            while (!done.get() && !stop) { val n = inp.read(buf); if (n < 0) break; bytes.addAndGet(n.toLong()) }
-                        }
-                        c.disconnect()
+                        try {
+                            check(c.responseCode in 200..299) { "Download rejected" }
+                            c.inputStream.use { input ->
+                                val buffer = ByteArray(64 * 1024)
+                                while (!done.get() && !stop) {
+                                    val count = input.read(buffer)
+                                    if (count < 0) break
+                                    bytes.addAndGet(count.toLong())
+                                }
+                            }
+                        } finally { c.disconnect() }
                     }.onFailure { src.compareAndSet(i, i + 1); Thread.sleep(150) }
                 }
             }.apply { start() }
@@ -86,17 +99,20 @@ class SpeedEngine(private val net: Network?) {
                 while (!done.get() && !stop) {
                     runCatching {
                         val c = open("https://speed.cloudflare.com/__up")
-                        c.doOutput = true; c.requestMethod = "POST"
-                        c.setFixedLengthStreamingMode(chunk.size)
-                        c.outputStream.use { out ->
-                            var off = 0
-                            while (off < chunk.size && !done.get()) {
-                                val n = minOf(64 * 1024, chunk.size - off)
-                                out.write(chunk, off, n); off += n; bytes.addAndGet(n.toLong())
+                        try {
+                            c.doOutput = true
+                            c.requestMethod = "POST"
+                            c.setFixedLengthStreamingMode(chunk.size)
+                            c.outputStream.use { output ->
+                                var offset = 0
+                                while (offset < chunk.size && !done.get() && !stop) {
+                                    val count = minOf(64 * 1024, chunk.size - offset)
+                                    output.write(chunk, offset, count)
+                                    offset += count
+                                }
                             }
-                        }
-                        runCatching { c.inputStream.use { it.readBytes() } }
-                        c.disconnect()
+                            if (c.responseCode in 200..299) bytes.addAndGet(chunk.size.toLong())
+                        } finally { c.disconnect() }
                     }.onFailure { if (bytes.get() == 0L) Thread.sleep(300) }
                 }
             }.apply { start() }
@@ -108,7 +124,7 @@ class SpeedEngine(private val net: Network?) {
 
     private fun measure(bytes: AtomicLong, t0: Long, seconds: Int, sample: (Float) -> Unit): Double {
         var lastB = 0L; var lastT = t0; var warmB = 0L; var warmT = 0L; var firstT = 0L
-        while (!stop) {
+        while (routeValid()) {
             Thread.sleep(250)
             val now = SystemClock.elapsedRealtime(); val b = bytes.get()
             sample(((b - lastB) * 8.0 / ((now - lastT).coerceAtLeast(1) / 1000.0) / 1_000_000.0).toFloat())
@@ -125,6 +141,15 @@ class SpeedEngine(private val net: Network?) {
     }
 
     companion object {
+        fun matchesRoute(manager: ConnectivityManager, network: Network, vpn: Boolean): Boolean = runCatching {
+            val caps = manager.getNetworkCapabilities(network) ?: return false
+            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == vpn &&
+                (if (vpn) manager.activeNetwork == network
+                 else caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN))
+        }.getOrDefault(false)
+
+
         /** download sources in order: Cloudflare, Hetzner (Falkenstein, Nuremberg), OVH */
         val DOWN_URLS = listOf(
             "https://speed.cloudflare.com/__down?bytes=50000000",
@@ -143,6 +168,8 @@ class SpeedEngine(private val net: Network?) {
         const val MSG_SAMPLE = 3     // data "v" float
         const val MSG_RESULT = 4     // data: ip, cc, ping, down, up, vpn
         const val MSG_ERROR = 5
+        const val MSG_NO_VPN_ROUTE = 6
+        const val VERIFIED_ROUTE = "verifiedRouteV1"
         const val PROBE_PKG = "com.glass.launcher.vpntest"
         const val PROBE_SERVICE = "com.glass.launcher.vpntest.ProbeService"
     }

@@ -90,7 +90,21 @@ object Updater {
      * Mark as Stable from the TV: the beta branch becomes master on GitHub, GitHub then builds the Stable release
      * for every box. Needs a GitHub token (saved once). Returns null when it worked, otherwise the reason.
      */
-    fun promote(ctx: Context): String? {
+    /** what "Mark as Stable" would publish: the beta's newest commit (sha, first line of its message) */
+    fun betaHead(ctx: Context): Pair<String, String>? {
+        val tok = (g(ctx).getString("ghToken", "") ?: "").trim()
+        if (tok.isBlank()) return null
+        return runCatching {
+            val c = java.net.URL("https://api.github.com/repos/KarlAgathon/GlassLauncher/commits/beta").openConnection() as java.net.HttpURLConnection
+            c.setRequestProperty("Authorization", "Bearer $tok"); c.setRequestProperty("Accept", "application/vnd.github+json")
+            c.connectTimeout = 15_000; c.readTimeout = 20_000
+            val j = JSONObject(c.inputStream.bufferedReader().readText()); c.disconnect()
+            j.getString("sha") to j.getJSONObject("commit").getString("message").lineSequence().first()
+        }.getOrNull()
+    }
+
+    /** [expect]: exactly the commit that was shown and confirmed – if the beta moved on since then, nothing happens */
+    fun promote(ctx: Context, expect: String? = null): String? {
         val tok = (g(ctx).getString("ghToken", "") ?: "").trim()
         if (tok.isBlank()) return T.s("No GitHub token", "Nema GitHub tokena", "Kein GitHub-Token")
         fun call(method: String, path: String, body: String? = null): Pair<Int, String> {
@@ -107,6 +121,8 @@ object Updater {
             val (c1, t1) = call("GET", "/git/ref/heads/beta")
             if (c1 != 200) return "GitHub: $c1"
             val sha = JSONObject(t1).getJSONObject("object").getString("sha")
+            if (expect != null && sha != expect) return T.s("The Beta changed meanwhile – check again", "Beta se u međuvremenu promijenila – provjeri ponovo",
+                "Die Beta hat sich inzwischen geändert – bitte erneut prüfen", "Бета за это время изменилась – проверьте снова")
             val (c2, t2) = call("PATCH", "/git/refs/heads/master", JSONObject().put("sha", sha).put("force", false).toString())
             if (c2 !in 200..299) "GitHub: $c2 " + runCatching { JSONObject(t2).optString("message") }.getOrDefault("") else null
         } catch (e: Exception) { e.message ?: "?" }
@@ -133,7 +149,20 @@ object Updater {
     }
 
     /** The already downloaded APK of [info], or null. */
-    fun ready(ctx: Context, info: Info): File? = apkFile(ctx, info).takeIf { it.isFile && it.length() > 100_000 }
+    /** files already checked against update.json (path + size + time), so the check runs once per file */
+    private val verified = HashSet<String>()
+
+    /** an already downloaded update counts only if it still matches the SHA-256 from update.json */
+    fun ready(ctx: Context, info: Info): File? {
+        val f = apkFile(ctx, info).takeIf { it.isFile && it.length() > 100_000 } ?: return null
+        if (info.sha256.isBlank()) return f
+        val key = "${f.path}|${f.length()}|${f.lastModified()}|${info.sha256}"
+        if (key in verified) return f
+        val ok = runCatching { sha256(f).equals(info.sha256, ignoreCase = true) }.getOrDefault(false)
+        if (!ok) { f.delete(); return null }
+        verified.add(key)
+        return f
+    }
 
     /** Blocking download of the new APK (skipped when it is already there). Old update files are removed. */
     fun download(ctx: Context, info: Info, progress: ((Int) -> Unit)? = null): File {

@@ -26,6 +26,28 @@ class NotifListener : NotificationListenerService() {
             return if (mode == 1) critical else critical || imp >= 3
         }
 
+        /** hide empty system notices (see junk) */
+        @Volatile var hideJunk: Boolean = true
+
+        /**
+         * Notices that only look new: Google TV's "Notification Center – Notification Center" (title = text,
+         * a click does nothing) and "… is running in the background" service notes.
+         */
+        private fun junk(sbn: StatusBarNotification): Boolean {
+            val n = sbn.notification
+            val ex = n.extras
+            val title = ex?.getCharSequence(android.app.Notification.EXTRA_TITLE)?.toString()?.trim() ?: ""
+            val text = ex?.getCharSequence(android.app.Notification.EXTRA_TEXT)?.toString()?.trim() ?: ""
+            if (title.isEmpty() && text.isEmpty()) return true
+            if (title.equals(text, ignoreCase = true) && n.contentIntent == null) return true
+            if (n.contentIntent == null && (n.actions == null || n.actions.isEmpty())) return true
+            if (n.category == android.app.Notification.CATEGORY_SERVICE) return true
+            if ((n.flags and android.app.Notification.FLAG_FOREGROUND_SERVICE) != 0) return true
+            val low = text.lowercase()
+            if (low.contains("running in the background") || low.contains("läuft im hintergrund")) return true
+            return false
+        }
+
         /** apps whose notifications the user hid from the bell */
         @Volatile var muted: Set<String> = emptySet()
 
@@ -37,7 +59,8 @@ class NotifListener : NotificationListenerService() {
             runCatching {
                 instance?.activeNotifications?.filter {
                     !it.isOngoing && it.isClearable && it.packageName !in muted &&
-                        (it.notification.flags and android.app.Notification.FLAG_GROUP_SUMMARY) == 0 && passes(it)
+                        (it.notification.flags and android.app.Notification.FLAG_GROUP_SUMMARY) == 0 && passes(it) &&
+                        !(hideJunk && junk(it))
                 } ?: emptyList()
             }.getOrDefault(emptyList())
 

@@ -13,6 +13,7 @@ object CrashWatch {
         val app = ctx.applicationContext
         val prev = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { t, e ->
+            CrashLog.write(app, t, e)
             runCatching {
                 val now = System.currentTimeMillis()
                 val list = times(app).filter { now - it < 10 * 60_000L } + now

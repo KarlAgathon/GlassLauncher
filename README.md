@@ -1,69 +1,44 @@
-# LEAD Launcher 2.1
+# LEAD Launcher v10
 
-Open-source launcher za Android TV (Mi Box) sa zamućenim staklenim pločicama, samuraj pozadinom i bez reklama.
-Interfejs je na engleskom, bosanskom i njemačkom.
+An open-source launcher for Android TV and Google TV. The Modern Taupe & Charcoal theme pairs smoky glass cards with the built-in living-room wallpaper. Home starts with four shortcuts in a single row. Add more from **Apps → Add to Home** and use Left or Right to scroll and wrap.
 
-## Šta ima
-- **Početni ekran samo sa +.** Aplikacije koje želiš dodaješ sam: iz instaliranih, preko Google Playa, s telefona ili iz APK fajla.
-- **Stakleni izgled.** Zamućena pozadina se vidi kroz pločice, statusnu traku i menije. Font je Inter, a ikone su tanke, u iOS stilu.
-- **Vlastite ikone** za svaku aplikaciju (slika s boxa, iz file browsera ili s interneta), uz pomjeranje, preimenovanje i uklanjanje.
-- **Statusna traka:** vrijeme, Wi-Fi s imenom mreže ili LAN, VPN ključ (zeleno = radi, crveno = ne radi), obavještenja, CPU % i RAM %. Svaki dio se može uključiti ili isključiti.
-- **Dok gledaš film:** u gornjem desnom ćošku ostaje samo VPN ključ, a po želji i sat.
-- **Sat:** kao Android, 24h ili 12h, opcija za sekunde i automatska vremenska zona.
-- **Profili** s vlastitim aplikacijama, pozadinom i postavkama, plus prečica do Google računa (prijava, odjava, promjena).
-- **Backup i vraćanje** svih profila, ikona, pozadina i postavki u jedan fajl.
-- **File browser bez reklama,** koji se vidi i kao posebna aplikacija "Fajlovi".
-- **Zadani launcher:** dugme Home na daljinskom otvara LEAD Launcher.
-- **Napajanje:** spavanje, restart i gašenje.
-- **Screensaver:** samuraj sa satom, i opcija šta box radi kad miruje.
-- **Private DNS** (AdGuard, Cloudflare, Google, Quad9 ili vlastiti server).
-- **Blokiranje auto-starta** aplikacija nakon paljenja boxa.
-- **Update preko interneta.**
+| Remote button | Action |
+| --- | --- |
+| OK | Open the focused app or menu item |
+| Hold OK | Open options for the focused Home shortcut |
+| Left / Right | Move along the Home row or top navigation |
+| Back | Close the current menu or return one level |
+| Home | Return to the launcher Home when LEAD handles the system Home action |
 
-## Novo u 2.1
-- Pločice: Banner (široki logo), Dock (Apple izgled), White Snow, Klasično, uz providnost od 0 do 100 %, okvir, uglove, veličine S/M/L/XL, razmak, FIT/STRETCH, fokus uvećanje i poziciju gore/dole/lijevo/desno.
-- Klikabilna statusna traka: vrijeme (prognoza za 5 dana), Wi-Fi/LAN (IP adresa, signal), VPN (otvara VPN aplikaciju), obavještenja (otvori, obriši, obriši sve).
-- Pozadina se može mijenjati: slideshow iz foldera ili filmovi i serije s TMDB-a, s nazivom, ocjenom i opisom.
-- Kad izađe nova verzija, na boxu iskoči obavještenje "Nova verzija dostupna".
+The main sections are **Apps**, **Personalize**, **System**, **Diagnostics**, and **About**, with separate Power access. Manage Home labels under **Personalize → Home Layout**. Home shortcuts support custom pictures, names, and manual icon positioning.
 
-## Daljinski
-| Šta | Kako |
-|---|---|
-| Otvori aplikaciju | OK |
-| Meni aplikacije (ikona, pomjeri, preimenuj, ukloni) | **Drži OK** ili dugme Menu |
-| Postavke | Zupčanik gore desno, ili drži OK na + |
-| Profil | Krug sa slovom gore desno |
-| Napajanje | Dugme za gašenje gore desno |
+**Apps → Files** opens File Manager with Internal Storage, USB Drive, Downloads, Network & Connect, Recycle Bin, and Recent Files. Phone Connect lives under **Network & Connect**. It uses unencrypted local HTTP with TV approval. Use it on a trusted network.
 
-## 1. Napravi APK (GitHub)
-1. Uploaduj sve fajlove iz ovog foldera u svoj GitHub repozitorij, zajedno sa `.github/workflows/build.yml`.
-2. Otvori tab **Actions**, pa "Build APK". Nakon oko 5 minuta pod Artifacts preuzmi **GlassLauncher-apk**.
+Create or restore launcher settings under **System → Backup & Restore**. Full backups also contain the APKs they successfully copied. Android handles installation and its confirmations. Application account data and passwords belong to the installed apps.
 
-## 2. Jednokratna ADB komanda (preporučeno)
-Na boxu uključi Opcije za programere i mrežno otklanjanje grešaka, pa na računaru pokreni:
+**Personalize → Screensaver** controls Ambient 2.0, including Minimal, Balanced, and Full Dashboard modes. **Diagnostics → Speed Test** runs manual route-specific tests. **About → Check for Updates** checks the installed version against the update channel.
+
+## Build and test
+
+Use JDK 17, Gradle 8.9, and Android SDK 34. Both APKs target API 34 and support API 24 and later.
+
+```sh
+gradle :app:assembleDebug :vpntest:assembleDebug :app:testDebugUnitTest :app:assembleDebugAndroidTest --no-daemon
+gradle :app:connectedDebugAndroidTest --no-daemon
 ```
-adb connect <IP-boxa>
-adb shell pm grant com.glass.launcher android.permission.WRITE_SECURE_SETTINGS
-```
-Ova komanda omogućava da launcher sam uključi:
-- dugme Home
-- ikonicu u ćošku
-- Private DNS
-- automatsku vremensku zonu
 
-Bez nje sve ostalo i dalje radi, samo te za ove opcije šalje u postavke Androida.
+The second command requires an attached Android device or emulator. For the VPN helper to communicate with the launcher, both APKs need the same signer. Stable APKs and update metadata are published through the repository's signed release workflow.
 
-## 3. Update preko interneta
-- U `app/build.gradle.kts` povećaj `versionCode` (npr. sa 2 na 3) i promijeni `versionName`.
-- Napravi tag, npr. `v2.1`. GitHub tada sam napravi Release sa `GlassLauncher.apk` i `update.json`.
-- Na boxu otvori Postavke → Ažuriranje → Adresa za update i upiši:
-  `https://github.com/<TVOJ-USER>/<REPO>/releases/latest/download/update.json`
+## Android TV regression checks
 
-Svi buildovi su potpisani istim ključem (`app/glass.keystore`), pa svaka nova verzija može ažurirati prethodnu. Ako zamijeniš ključ, novi moraš zadržati zauvijek.
+Use a test box or emulator with a disposable profile and files. Repeat navigation checks at 720p and 1080p, on Android 7 and a current Google TV version when available.
 
-## Ograničenja Androida (nije greška)
-- **Prijava u Google račun i lozinke:** njih čuva Android, ne launcher. Launcher otvara stranicu s računima u postavkama.
-- **CPU %:** novije verzije Androida ne daju aplikacijama stvarno opterećenje procesora. Tada se prikazuje procjena na osnovu brzine procesora.
-- **Ime Wi-Fi mreže (SSID):** Android ga pokazuje samo uz dozvolu za lokaciju, koju launcher traži jednom.
+1. On a fresh install without permissions, check that Home opens directly. Use OK and hold OK on an installed app and a missing shortcut. Cover an unavailable Play Store and cancel an Android install prompt.
+2. On an upgrade, verify custom wallpaper, logos, pins, and saved label settings. Toggle both Home label switches independently, restart, and recheck. Scroll far enough to recycle cards and inspect YouTube, Silo, Media Center, Disney+, and padded custom icons where available.
+3. Exercise Home wrap-around, Back from category pages, menus and dialogs, Home return, and focus after canceling. Repeat using English, Bosnian, German, and Russian.
+4. Verify the six File Manager tiles. Copy, move, replace, rename, recycle, restore, and permanently delete disposable items. Cancel a large copy and unplug a test USB drive during a move. Inspect both paths. Test the SAF picker and SMB, FTP, FTPS, and SFTP separately.
+5. Restore valid and malformed backups. Check that a failed restore leaves the original pins, preferences, and artwork in place. On a disposable profile, repeat with low storage or a forced interruption.
+6. In Phone Connect, approve and deny pairing, interrupt an upload, test a large upload, and leave the screen with the browser still open. Confirm that the connection closes.
+7. Check low-memory and offline startup, VPN on and off, Ambient preview and wake, updater, notifications, and Diagnostics.
 
-Licenca: MIT. Ikone su iz seta Lucide (ISC licenca), a font je Inter (SIL OFL).
+License: MIT. Icons are from Lucide (ISC). Inter is licensed under the SIL Open Font License.

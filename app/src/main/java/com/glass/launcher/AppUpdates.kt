@@ -33,6 +33,8 @@ object AppUpdates {
         "moe.shizuku.privileged.api" to "thedjchi/Shizuku",
         "io.gh.reisxd.tizentube.cobalt" to "reisxd/TizenTubeCobalt",
         "com.pretorian.tv" to "KarlAgathon/PRETORIAN",
+        "com.nuvio.tv" to "NuvioMedia/NuvioTV",
+        "org.siloserver.silo" to "Silo-Server/silo-android",
         "com.rfmarcos.sofadrop" to "rfmarcos/sofadrop",
     )
 
@@ -141,6 +143,9 @@ object AppUpdates {
             if ("universal" in name || "all" in name) s += 2
             if (listOf("x86", "arm64", "armeabi", "v7a", "v8a").any { it in name } && want.none { it in name }) s -= 6
             if ("debug" in name) s -= 2
+            // phone and TV builds in one release (Silo, Nuvio …): a box takes the TV one
+            if (Regex("(^|[^a-z])(tv|androidtv|leanback)([^a-z]|$)").containsMatchIn(name) || "androidtv" in name) s += 4
+            if (listOf("phone", "mobile").any { it in name }) s -= 4
             if (s > bestScore) { bestScore = s; best = a.optString("browser_download_url") }
         }
         return tag to best
@@ -236,9 +241,12 @@ object AppUpdates {
         val today = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US).format(java.util.Date())
         val st = store(ctx)
         if (st.getString("nightDay", "") == today) return
-        st.edit().putString("nightDay", today).apply()
+        val tries = if (st.getString("nightTryDay", "") == today) st.getInt("nightTries", 0) else 0
+        if (tries >= 3) return
+        st.edit().putString("nightTryDay", today).putInt("nightTries", tries + 1).apply()
         val todo = checkAll(ctx).filter { it.source == "github" && it.apk.isNotBlank() }
         val done = mutableListOf<String>()
+        var failed = 0
         val dir = File(ctx.cacheDir, "night-updates").apply { mkdirs() }
         for (u in todo) runCatching {
             val f = File(dir, u.pkg + ".apk")
@@ -246,9 +254,11 @@ object AppUpdates {
             c.connectTimeout = 15_000; c.readTimeout = 60_000
             c.inputStream.use { inp -> f.outputStream().use { inp.copyTo(it) } }
             c.disconnect()
-            if (AppInstaller.silent(f)) done.add(u.label + " " + u.remote)
+            if (AppInstaller.silent(f)) done.add(u.label + " " + u.remote) else failed++
             f.delete()
-        }
+        }.onFailure { failed++ }
+        // finished without a failure = done for today; otherwise the next check tonight tries again
+        if (failed == 0) st.edit().putString("nightDay", today).apply()
         if (done.isEmpty()) return
         save(ctx, list(ctx).filter { u -> done.none { it.startsWith(u.label + " ") } })
         val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -271,8 +281,8 @@ object AppUpdates {
             Thread {
                 try {
                     val dir = File(act.cacheDir, "app-updates").apply { mkdirs() }
-                    dir.listFiles()?.forEach { it.delete() }
-                    val f = File(dir, u.pkg + ".apk")
+                    // only this app's old file – another update running at the same time keeps its own
+                    val f = File(dir, u.pkg + ".apk").apply { delete() }
                     val c = URL(u.apk).openConnection() as HttpURLConnection
                     c.connectTimeout = 15_000; c.readTimeout = 30_000
                     val total = c.contentLengthLong
