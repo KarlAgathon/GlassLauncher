@@ -185,6 +185,10 @@ class HomeService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
+        if (isFireTv) {
+            // Deliver each transition so a later dialog event cannot replace the HOME event in the queue.
+            serviceInfo = serviceInfo.apply { notificationTimeout = 0 }
+        }
         createOverlay()
         runCatching {
             val f = android.content.IntentFilter().apply {
@@ -391,12 +395,9 @@ class HomeService : AccessibilityService() {
             try {
                 if (!isCurrent(request)) return@Thread
                 if (ShizukuCpu.permitted()) {
-                    val focus = ShizukuCpu.fireTvFocusedWindow()
-                    Log.d(FIRE_TV_TAG, "HOME foreground=$focus current=${isCurrent(request)}")
-                    if (focus == "$AMAZON_LAUNCHER/$AMAZON_HOME" && isCurrent(request)) {
-                        val result = ShizukuCpu.startFireTvHome(packageName)
-                        Log.i(FIRE_TV_TAG, "HOME Shizuku response=$result age=${SystemClock.uptimeMillis() - request.eventTime}ms")
-                    }
+                    if (!isCurrent(request)) return@Thread
+                    val result = ShizukuCpu.startFireTvHome("$AMAZON_LAUNCHER/$AMAZON_HOME", packageName)
+                    Log.i(FIRE_TV_TAG, "HOME Shizuku response=$result age=${SystemClock.uptimeMillis() - request.eventTime}ms")
                     return@Thread
                 }
 
@@ -485,7 +486,12 @@ class HomeService : AccessibilityService() {
      */
     override fun onKeyEvent(event: android.view.KeyEvent): Boolean {
         // Fire OS handles HOME itself, including returning from Alexa results to Amazon HOME.
-        if (isFireTv) return false
+        if (isFireTv) {
+            if (event.keyCode == android.view.KeyEvent.KEYCODE_HOME) {
+                Log.d(FIRE_TV_TAG, "HOME key action=${event.action} device=${event.deviceId}")
+            }
+            return false
+        }
         if (event.keyCode != android.view.KeyEvent.KEYCODE_HOME) return false
         if (!Prefs(this).homeRedirect) return false
         when (event.action) {

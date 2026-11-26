@@ -42,7 +42,7 @@ object ShizukuCpu {
 
     private fun fireTvCommand(script: String, vararg args: String): String? = runCatching {
         // Fire OS 7 supplies toybox timeout. The shell merges stderr and emits only filtered output.
-        val process = shell("timeout", "-k", "0.1s", "0.5s", "sh", "-c", script, "lead", *args)
+        val process = shell("timeout", "-k", "0.1s", "1s", "sh", "-c", script, "lead", *args)
             ?: return null
         try {
             val output = process.inputStream.bufferedReader().use { it.readText() }
@@ -52,16 +52,17 @@ object ShizukuCpu {
         }
     }.getOrNull()
 
-    fun fireTvFocusedWindow(): String? {
-        val output = fireTvCommand("dumpsys window windows 2>&1 | grep -m 1 mCurrentFocus=")
-            ?: return null
-        return FOCUSED_COMPONENT.find(output)?.groupValues?.get(1)
-    }
-
-    fun startFireTvHome(packageName: String): String? =
-        fireTvCommand("am start -n \"\$1\" 2>&1", "$packageName/.MainActivity")?.trim()
-
-    private val FOCUSED_COMPONENT = Regex("""mCurrentFocus=Window\{\S+ u\d+ ([\w.]+/[\w.]+)\}""")
+    fun startFireTvHome(stockHome: String, packageName: String): String? = fireTvCommand(
+        """
+        focus=$(timeout 0.55s dumpsys window windows 2>/dev/null | grep -m 1 mCurrentFocus=)
+        case "${'$'}focus" in
+          *" ${'$'}1}") exec cmd activity start-activity -n "${'$'}2" 2>&1 ;;
+          *) printf 'Foreground changed: %s\n' "${'$'}focus" ;;
+        esac
+        """.trimIndent(),
+        stockHome,
+        "$packageName/.MainActivity"
+    )?.trim()
 
     /** Output of a shell command through Shizuku, or null. Blocking. */
     fun output(vararg cmd: String): String? {
