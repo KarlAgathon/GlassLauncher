@@ -178,9 +178,11 @@ object NetUi {
                 LinearLayout.LayoutParams(-2, -2).apply { topMargin = (sw * 0.03f).toInt() })
             l.addView(col); return
         }
-        val pc = phone ?: PhoneConnect({ who, answer ->
+        val pc = phone ?: runCatching { PhoneConnect({ who, answer ->
             h.post {
-                V10Dialog.show(root!!, T.s("Allow this device?", "Dozvoliti ovaj uređaj?", "Dieses Gerät erlauben?", "Разрешить устройство?"),
+                val activeRoot = root ?: return@post
+                if (stack.lastOrNull() !is Scr.Phone) return@post
+                V10Dialog.show(activeRoot, T.s("Allow this device?", "Dozvoliti ovaj uređaj?", "Dieses Gerät erlauben?", "Разрешить устройство?"),
                     T.s("$who wants to exchange files with this TV.", "$who želi razmjenjivati fajlove s ovim TV-om.",
                         "$who möchte Dateien mit diesem Fernseher austauschen.", "$who хочет обмениваться файлами."),
                     listOf(T.s("Deny", "Odbij", "Ablehnen", "Запретить") to { answer(false) }, T.s("Allow", "Dozvoli", "Erlauben", "Разрешить") to { answer(true) }))
@@ -190,7 +192,12 @@ object NetUi {
                 if (e.startsWith("received:")) { toast(T.s("Received", "Primljeno", "Empfangen", "Получено") + ": " + e.removePrefix("received:")); if (stack.lastOrNull() is Scr.Phone) render() }
                 if (e == "expired") { toast(T.s("Phone Connect stopped (unused)", "Povezivanje zaustavljeno (nekorišteno)", "Verbindung beendet (unbenutzt)", "Остановлено")); if (stack.lastOrNull() is Scr.Phone) back() }
             }
-        }).also { it.start(); phone = it }
+        }).also { it.start(); phone = it } }.getOrElse {
+            col.addView(Taupe.text(a, T.s("Could not start Phone Connect", "Povezivanje telefona nije pokrenuto",
+                "Handy-Verbindung konnte nicht starten", "Не удалось запустить подключение телефона"), 18f))
+            l.addView(col)
+            return
+        }
         val row = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val q = (sw * 0.17f).toInt()
         row.addView(ImageView(a).apply {
@@ -203,10 +210,10 @@ object NetUi {
         line(T.s("2  Open the link – the TV asks you to allow it", "2  Otvori link – TV pita za dozvolu", "2  Link öffnen – der Fernseher fragt nach Erlaubnis", "2  Откройте ссылку и разрешите"))
         line(T.s("3  Send files, or download the ones offered here", "3  Šalji fajlove ili preuzmi ponuđene", "3  Dateien senden oder angebotene laden", "3  Отправляйте или скачивайте файлы"))
         line(pc.url(), Taupe.SUB, 13f)
-        line(T.s("Also works on a computer browser. Home network only · not encrypted · stops when you leave this screen.",
-            "Radi i u browseru računara. Samo kućna mreža · nije šifrirano · prestaje kad izađeš s ovog ekrana.",
-            "Geht auch im Browser am Computer. Nur Heimnetz · unverschlüsselt · endet beim Verlassen dieses Bildschirms.",
-            "Работает и в браузере компьютера. Только домашняя сеть · без шифрования."), Taupe.MUTED, 12.5f)
+        line(T.s("Also works on a computer browser. Trusted local network only · unencrypted · stops when you leave this screen.",
+            "Radi i u browseru računara. Samo pouzdana lokalna mreža · nije šifrirano · prestaje kad izađeš s ovog ekrana.",
+            "Geht auch im Browser am Computer. Nur vertrauenswürdiges lokales Netz · unverschlüsselt · endet beim Verlassen dieses Bildschirms.",
+            "Работает и в браузере компьютера. Только доверенная локальная сеть · без шифрования."), Taupe.MUTED, 12.5f)
         row.addView(info, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = (sw * 0.03f).toInt() })
         col.addView(row, LinearLayout.LayoutParams(-1, -2).apply { topMargin = (sw * 0.025f).toInt() })
         val btns = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL }
@@ -424,7 +431,11 @@ object NetUi {
 
     private fun download(s: Scr.Remote, f: RFile, dir: File, done: (File) -> Unit) {
         val a = act ?: return
-        val target = File(dir, FileOps.uniqueName(dir, f.name))
+        val activeRoot = root ?: return
+        if (f.name.isBlank() || f.name == "." || f.name == ".." || f.name.any { it == '/' || it == '\\' || it.isISOControl() }) {
+            toast(T.s("Invalid file name", "Neispravan naziv fajla", "Ungültiger Dateiname", "Недопустимое имя файла"))
+            return
+        }
         val tmp = File(dir, ".part_" + System.nanoTime())
         val (shade, label) = progress(a, T.s("Downloading…", "Preuzimam…", "Lade…", "Загрузка…"))
         var last = 0L
@@ -432,18 +443,30 @@ object NetUi {
             val res = runCatching { s.fs.download(f.path, tmp) { n ->
                 val now = System.currentTimeMillis(); if (now - last > 250) { last = now; h.post { label.text = Formatter.formatShortFileSize(a, n) + " / " + Formatter.formatShortFileSize(a, f.size) } }
             } }
+            val result = runCatching {
+                res.getOrThrow()
+                check(tmp.isFile && (f.size < 0 || tmp.length() == f.size))
+                val target = File(dir, FileOps.uniqueName(dir, f.name))
+                check(FileOps.transfer(tmp, target, move = true, replace = false))
+                target
+            }
+            tmp.delete()
             h.post {
-                root?.removeView(shade)
-                // only a complete file counts
-                if (res.isSuccess && (f.size <= 0 || tmp.length() == f.size) && tmp.renameTo(target)) done(target)
-                else { tmp.delete(); V10Dialog.show(root!!, T.s("Download failed", "Preuzimanje nije uspjelo", "Download fehlgeschlagen", "Ошибка загрузки"),
-                    f.name + "\n" + (res.exceptionOrNull()?.message ?: T.s("incomplete", "nepotpuno", "unvollständig", "не полностью")).take(160), listOf("OK" to {})) }
+                if (root !== activeRoot || a.isDestroyed) return@post
+                activeRoot.removeView(shade)
+                result.onSuccess(done).onFailure {
+                    V10Dialog.show(activeRoot, T.s("Download failed", "Preuzimanje nije uspjelo", "Download fehlgeschlagen", "Ошибка загрузки"),
+                        f.name + "\n" + (res.exceptionOrNull()?.message ?: T.s("Incomplete or could not save",
+                            "Nepotpuno ili se ne može sačuvati", "Unvollständig oder nicht speicherbar", "Неполный файл или ошибка сохранения")).take(160),
+                        listOf("OK" to {}))
+                }
             }
         }.start()
     }
 
     private fun upload(s: Scr.Remote) {
         val a = act ?: return
+        val activeRoot = root ?: return
         val files = pending.filter { it.isFile }
         val skippedDirs = pending.size - files.size
         val (shade, label) = progress(a, T.s("Uploading…", "Šaljem…", "Lade hoch…", "Загрузка…"))
@@ -456,7 +479,8 @@ object NetUi {
                 if (runCatching { s.fs.upload(f, s.path) { } }.isSuccess) done++ else failed.add(f.name)
             }
             h.post {
-                root?.removeView(shade)
+                if (root !== activeRoot || a.isDestroyed) return@post
+                activeRoot.removeView(shade)
                 pending = emptyList(); afterUpload()
                 render()
                 val extra = listOfNotNull(
