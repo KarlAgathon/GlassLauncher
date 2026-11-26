@@ -46,6 +46,7 @@ class SpeedTestActivity : Activity() {
     override fun attachBaseContext(newBase: android.content.Context) = super.attachBaseContext(FontScale.wrap(newBase))
 
     companion object {
+        private const val VERIFIED_PROBE_VERSION = 3
         const val PROBE_APK = "https://github.com/KarlAgathon/GlassLauncher/releases/latest/download/LEAD-VPN-test.apk"
     }
 
@@ -154,8 +155,13 @@ class SpeedTestActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        if (!vpnCard.running && !probeInstalled()) vpnCard.status.text = T.s("OK = install the helper \"LEAD VPN test\"",
-            "OK = instaliraj pomoćnu aplikaciju \"LEAD VPN test\"", "OK = Hilfs-App \"LEAD VPN test\" installieren")
+        if (vpnCard.running) return
+        val version = probeVersion()
+        if (version == 0) {
+            vpnCard.status.text = T.s("OK = install the helper", "OK = instaliraj pomoćnu aplikaciju", "OK = Hilfs-App installieren", "OK — установить помощник")
+        } else if (version < VERIFIED_PROBE_VERSION) {
+            vpnCard.status.text = T.s("OK = update the helper", "OK = ažuriraj pomoćnu aplikaciju", "OK = Hilfs-App aktualisieren", "OK — обновить помощник")
+        }
     }
 
     override fun onDestroy() {
@@ -220,12 +226,15 @@ class SpeedTestActivity : Activity() {
 
     // ------------------------------------------------------------------ through VPN (helper app)
 
-    private fun probeInstalled() = runCatching { packageManager.getPackageInfo(SpeedEngine.PROBE_PKG, 0); true }.getOrDefault(false)
+    @Suppress("DEPRECATION")
+    private fun probeVersion(): Int = runCatching {
+        packageManager.getPackageInfo(SpeedEngine.PROBE_PKG, 0).versionCode
+    }.getOrDefault(0)
 
     private fun startVpn() {
         val card = vpnCard
         if (card.running) return
-        if (!probeInstalled()) { installProbe(); return }
+        if (probeVersion() < VERIFIED_PROBE_VERSION) { installProbe(); return }
         card.reset(); card.running = true
         val attempt = ++vpnAttempt
         card.status.text = T.s("Connecting to LEAD VPN test…", "Povezujem se sa LEAD VPN test…", "Verbinde mit LEAD VPN test…")
