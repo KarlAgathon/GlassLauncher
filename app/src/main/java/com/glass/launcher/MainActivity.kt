@@ -1204,7 +1204,7 @@ class MainActivity : Activity() {
         val input = EditText(this).apply {
             inputType = InputType.TYPE_CLASS_TEXT
             setSingleLine()
-            imeOptions = EditorInfo.IME_ACTION_SEARCH
+            imeOptions = EditorInfo.IME_ACTION_DONE
             hint = T.s("App name", "Naziv aplikacije", "App-Name", "Название приложения")
             setText(initial)
             setSelection(text.length)
@@ -1213,6 +1213,13 @@ class MainActivity : Activity() {
             .setTitle(appSearchTitle).setView(input)
             .setPositiveButton(appSearchTitle) { _, _ -> allAppsMenu(input.text.toString().trim()) }
             .setNegativeButton(T.s("Cancel", "Odustani", "Abbrechen", "Отмена"), null)
+        if (Settings.Secure.getString(contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)
+                ?.substringBefore('/') == "com.amazon.tv.ime") {
+            builder.setMessage(T.s("With the keyboard open, hold the remote microphone button and say an app name.",
+                "Dok je tastatura otvorena, drži tipku mikrofona i izgovori naziv aplikacije.",
+                "Halte bei geöffneter Tastatur die Mikrofontaste gedrückt und sage einen App-Namen.",
+                "При открытой клавиатуре удерживайте кнопку микрофона и произнесите название приложения."))
+        }
         if (voice.resolveActivity(packageManager) != null) {
             builder.setNeutralButton(T.s("Speak", "Govori", "Sprechen", "Говорить")) { _, _ ->
                 @Suppress("DEPRECATION")
@@ -1225,7 +1232,7 @@ class MainActivity : Activity() {
         }
         val dialog = builder.create()
         input.setOnEditorActionListener { _, action, _ ->
-            if (action != EditorInfo.IME_ACTION_SEARCH) return@setOnEditorActionListener false
+            if (action != EditorInfo.IME_ACTION_DONE) return@setOnEditorActionListener false
             dialog.dismiss()
             allAppsMenu(input.text.toString().trim())
             true

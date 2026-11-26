@@ -154,7 +154,8 @@ class V10Nav(private val ctx: Context, private val onPick: (Int) -> Unit, privat
                 orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
                 isFocusable = true; isClickable = true
                 background = Taupe.pill(ctx)
-                setPadding((14 * d).toInt(), (8 * d).toInt(), (16 * d).toInt(), (8 * d).toInt())
+                val horizontal = if (onSearch != null) 9 else 14
+                setPadding((horizontal * d).toInt(), (8 * d).toInt(), ((horizontal + 2) * d).toInt(), (8 * d).toInt())
                 if (android.os.Build.VERSION.SDK_INT >= 26) defaultFocusHighlightEnabled = false
                 setOnClickListener { if (i == SEARCH) onSearch?.invoke() else onPick(i) }
             }
@@ -178,8 +179,9 @@ class V10Nav(private val ctx: Context, private val onPick: (Int) -> Unit, privat
             col.addView(line, LinearLayout.LayoutParams(-1, (3 * d).toInt()).apply { topMargin = (6 * d).toInt() })
             // Power is the last item, at the right end of the same row – nothing can overlap
             bar.addView(col, if (i == SEARCH) POWER else bar.childCount, LinearLayout.LayoutParams(-2, -2).apply {
-                marginStart = (sw * 0.008f).toInt(); marginEnd = (sw * 0.008f).toInt()
-                if (i == POWER) marginStart = (sw * 0.03f).toInt()
+                val gap = if (onSearch != null) 0.006f else 0.008f
+                marginStart = (sw * gap).toInt(); marginEnd = (sw * gap).toInt()
+                if (i == POWER) marginStart = (sw * if (onSearch != null) 0.015f else 0.03f).toInt()
             })
             items.add(row); lines.add(line); badges.add(badge)
         }
