@@ -11,9 +11,10 @@ android {
         applicationId = "com.glass.launcher"
         minSdk = 24
         targetSdk = 34
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // raise both numbers for every new version you publish (needed for web updates)
-        versionCode = 81
-        versionName = "10.0.5"
+        versionCode = 82
+        versionName = "10.0.6"
     }
 
     // Private signing key: it is NOT in this repository. GitHub Actions writes it from the secrets
@@ -59,6 +60,10 @@ android {
 }
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
+    androidTestImplementation("androidx.test:runner:1.5.2")
+
     implementation("androidx.core:core:1.12.0")
     implementation("androidx.recyclerview:recyclerview:1.3.2")
     // Shizuku: on newer Android (e.g. Google TV Streamer) the CPU load can only be read with ADB ("shell") rights

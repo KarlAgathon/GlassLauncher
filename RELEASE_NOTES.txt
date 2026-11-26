@@ -1,3 +1,9 @@
+LEAD Launcher 10.0.6
+- Ambient 2.0 brings Minimal, Balanced and Full Dashboard modes to Personalize → Screensaver.
+- The living-room dashboard shows a large clock, current weather and seven forecast days. The last successful forecast is available offline.
+- See VPN status, device RAM and available thermal information. Full Dashboard shows connection details and the last verified VPN and direct speed tests.
+- Press OK on the VPN card in Diagnostics → Speed Test to install or update the VPN test helper.
+
 LEAD Launcher 10.0.5
 - Home cards: every logo is optically centred exactly above its name (Silo, Disney+, YouTube …), all names on one line
 

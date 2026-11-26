@@ -396,6 +396,16 @@ class Prefs(ctx: Context) {
     var saverSrc: Int get() = int("saverSrc", 0); set(v) = putInt("saverSrc", v)
     var saverFolder: String get() = str("saverFolder", ""); set(v) = putStr("saverFolder", v)
     var saverReddit: String get() = str("saverReddit", "EarthPorn"); set(v) = putStr("saverReddit", v)
+    internal var ambientMode: AmbientMode
+        get() = AmbientMode.entries.getOrElse(int("saverMode", 1)) { AmbientMode.BALANCED }
+        set(value) = putInt("saverMode", value.ordinal)
+    var saverClockFormat: Int get() = int("saverClockFormat", -1); set(value) = putInt("saverClockFormat", value)
+    var saverSeconds: Boolean get() = bool("saverSeconds", false); set(value) = putBool("saverSeconds", value)
+    var saverMotion: Boolean get() = bool("saverMotion", true); set(value) = putBool("saverMotion", value)
+    var saverDim: Boolean get() = bool("saverDim", false); set(value) = putBool("saverDim", value)
+    internal fun ambientMetric(metric: AmbientMetric) = bool("saverMetric_" + metric.name, true)
+    internal fun setAmbientMetric(metric: AmbientMetric, enabled: Boolean) =
+        putBool("saverMetric_" + metric.name, enabled)
     var saverInterval: Int get() = int("saverInt", 30); set(v) = putInt("saverInt", v)
     /** Home button of the remote opens LEAD Launcher (needs the accessibility service) */
     var homeRedirect: Boolean get() = bool("homeRedir", true); set(v) = putBool("homeRedir", v)
@@ -1089,6 +1099,56 @@ object SysStats {
 /* ================================================================ internet */
 
 object Http {
+    /** Bounded requests owned by a visible screensaver session. */
+    internal class Session {
+        private val active = mutableSetOf<HttpURLConnection>()
+        @Volatile private var closed = false
+
+        private fun <T> read(url: String, headers: Map<String, String>, consume: (java.io.InputStream) -> T): T {
+            val connection = URL(url).openConnection() as HttpURLConnection
+            connection.connectTimeout = 8_000
+            connection.readTimeout = 10_000
+            connection.setRequestProperty("User-Agent", "Mozilla/5.0 GlassLauncher")
+            for ((name, value) in headers) connection.setRequestProperty(name, value)
+            synchronized(active) {
+                check(!closed) { "Screensaver session ended" }
+                active.add(connection)
+            }
+            return try {
+                connection.inputStream.use(consume)
+            } finally {
+                synchronized(active) { active.remove(connection) }
+                connection.disconnect()
+            }
+        }
+
+        fun text(url: String, headers: Map<String, String> = emptyMap()): String =
+            read(url, headers) { input -> input.bufferedReader().readText() }
+
+        fun download(url: String, file: File) = read(url, emptyMap()) { input ->
+            file.outputStream().use { output ->
+                val buffer = ByteArray(32 * 1024)
+                var size = 0L
+                while (!closed) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    size += count
+                    check(size <= 32L * 1024 * 1024) { "Wallpaper download exceeds size limit" }
+                    output.write(buffer, 0, count)
+                }
+                check(!closed) { "Screensaver session ended" }
+            }
+        }
+
+        fun cancel() {
+            val pending = synchronized(active) {
+                closed = true
+                active.toList()
+            }
+            if (pending.isNotEmpty()) Thread { pending.forEach { runCatching { it.disconnect() } } }.start()
+        }
+    }
+
     fun open(url: String): HttpURLConnection {
         var conn = URL(url).openConnection() as HttpURLConnection
         conn.setRequestProperty("User-Agent", "Mozilla/5.0 GlassLauncher")

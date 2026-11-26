@@ -46,6 +46,7 @@ class SpeedTestActivity : Activity() {
     override fun attachBaseContext(newBase: android.content.Context) = super.attachBaseContext(FontScale.wrap(newBase))
 
     companion object {
+        private const val VERIFIED_PROBE_VERSION = 3
         const val PROBE_APK = "https://github.com/KarlAgathon/GlassLauncher/releases/latest/download/LEAD-VPN-test.apk"
     }
 
@@ -69,7 +70,6 @@ class SpeedTestActivity : Activity() {
         val down = text(16f, Color.argb(230, 255, 255, 255))
         val up = text(16f, Color.argb(230, 255, 255, 255))
         val graph = Graph(this@SpeedTestActivity, color)
-        var ip: String? = null
         var running = false
 
         init {
@@ -109,14 +109,12 @@ class SpeedTestActivity : Activity() {
             down.text = "↓ Download: –"
             up.text = "↑ Upload: –"
             graph.clear()
-            ip = null
         }
 
         fun showWhere(ipAddr: String?, cc: String?) {
-            ip = ipAddr
             val country = if (cc.isNullOrBlank()) "" else Locale("", cc).getDisplayCountry(T.locale)
             where.text = if (ipAddr == null) "?" else "${SpeedEngine.flag(cc ?: "")}  $country  ·  $ipAddr"
-            compare()
+
         }
     }
 
@@ -157,8 +155,13 @@ class SpeedTestActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        if (!vpnCard.running && !probeInstalled()) vpnCard.status.text = T.s("OK = install the helper \"LEAD VPN test\"",
-            "OK = instaliraj pomoćnu aplikaciju \"LEAD VPN test\"", "OK = Hilfs-App \"LEAD VPN test\" installieren")
+        if (vpnCard.running) return
+        val version = probeVersion()
+        if (version == 0) {
+            vpnCard.status.text = T.s("OK = install the helper", "OK = instaliraj pomoćnu aplikaciju", "OK = Hilfs-App installieren", "OK — установить помощник")
+        } else if (version < VERIFIED_PROBE_VERSION) {
+            vpnCard.status.text = T.s("OK = update the helper", "OK = ažuriraj pomoćnu aplikaciju", "OK = Hilfs-App aktualisieren", "OK — обновить помощник")
+        }
     }
 
     override fun onDestroy() {
@@ -167,31 +170,20 @@ class SpeedTestActivity : Activity() {
         super.onDestroy()
     }
 
-    private fun ui(f: () -> Unit) { h.post { if (!isFinishing) f() } }
+    private fun ui(f: () -> Unit) { h.post { if (!isFinishing && !isDestroyed) f() } }
 
-    /** both addresses known: same = the VPN card did not really go through the VPN */
-    private fun compare() {
-        val a = vpnCard.ip; val b = directCard.ip
-        if (a == null || b == null) return
-        hint.text = if (a == b) T.s("⚠ Same address on both cards: the helper app is NOT going through the VPN. Add \"LEAD VPN test\" to the VPN's app list.",
-            "⚠ Ista adresa na obje kartice: pomoćna aplikacija NE ide kroz VPN. Dodaj \"LEAD VPN test\" u listu aplikacija u VPN-u.",
-            "⚠ Gleiche Adresse auf beiden Karten: die Hilfs-App geht NICHT über das VPN. \"LEAD VPN test\" in die App-Liste des VPN eintragen.")
-        else T.s("✓ Different addresses – the VPN is working.", "✓ Različite adrese – VPN radi.", "✓ Verschiedene Adressen – das VPN funktioniert.")
-    }
+    private var vpnAttempt = 0
+    private val measurements by lazy { AmbientSpeedStore(applicationContext) }
 
-    // ------------------------------------------------------------------ without VPN (LEAD itself)
-
-    private fun cm() = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-
-    /** if LEAD itself is inside a VPN: the Wi-Fi / Ethernet network underneath it */
     @Suppress("DEPRECATION")
-    private fun directNetwork(): Network? = runCatching {
-        val c = cm().getNetworkCapabilities(cm().activeNetwork)
-        if (c?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) != true) return@runCatching null
-        cm().allNetworks.firstOrNull { n ->
-            val nc = cm().getNetworkCapabilities(n) ?: return@firstOrNull false
-            !nc.hasTransport(NetworkCapabilities.TRANSPORT_VPN) && nc.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-                (nc.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) || nc.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET))
+    private fun directNetwork(manager: ConnectivityManager): Network? = runCatching {
+        val active = manager.activeNetwork
+        if (active != null && SpeedEngine.matchesRoute(manager, active, vpn = false)) return active
+        if (active == null || !SpeedEngine.matchesRoute(manager, active, vpn = true)) return null
+        manager.allNetworks.singleOrNull { network ->
+            val caps = manager.getNetworkCapabilities(network)
+            SpeedEngine.matchesRoute(manager, network, vpn = false) &&
+                caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
         }
     }.getOrNull()
 
@@ -199,7 +191,16 @@ class SpeedTestActivity : Activity() {
         if (!directRunning.compareAndSet(false, true)) return
         val card = directCard
         card.reset()
-        val e = SpeedEngine(directNetwork()); directEngine = e
+        val manager = getSystemService(ConnectivityManager::class.java)
+        val network = directNetwork(manager)
+        if (network == null) {
+            measurements.record(AmbientRoute.DIRECT, null)
+            card.status.text = "Direct route unavailable"
+            directRunning.set(false)
+            return
+        }
+        val e = SpeedEngine(manager, network, vpn = false)
+        directEngine = e
         Thread {
             try {
                 ui { card.status.text = T.s("Finding address…", "Tražim adresu…", "Suche Adresse…") }
@@ -211,9 +212,13 @@ class SpeedTestActivity : Activity() {
                 ui { card.down.text = "↓ Download: %.1f Mbit/s".format(d); card.big.text = "%.0f".format(d)
                     card.graph.mark(); card.status.text = T.s("Upload…", "Slanje…", "Upload…") }
                 val u = e.upload { v -> ui { card.graph.add(v) } }
+                val result = AmbientSpeed(System.currentTimeMillis(), d, u)
+                check(e.routeValid() && result.valid) { "Direct measurement incomplete" }
+                measurements.record(AmbientRoute.DIRECT, result)
                 ui { card.up.text = "↑ Upload: %.1f Mbit/s".format(u); card.big.text = "%.0f".format(d)
                     card.status.text = T.s("Done · OK = again", "Gotovo · OK = ponovo", "Fertig · OK = nochmal") }
             } catch (ex: Exception) {
+                measurements.record(AmbientRoute.DIRECT, null)
                 ui { card.status.text = T.s("No connection to the test server", "Nema veze sa test serverom", "Keine Verbindung zum Testserver") }
             } finally { directRunning.set(false) }
         }.start()
@@ -221,18 +226,22 @@ class SpeedTestActivity : Activity() {
 
     // ------------------------------------------------------------------ through VPN (helper app)
 
-    private fun probeInstalled() = runCatching { packageManager.getPackageInfo(SpeedEngine.PROBE_PKG, 0); true }.getOrDefault(false)
+    @Suppress("DEPRECATION")
+    private fun probeVersion(): Int = runCatching {
+        packageManager.getPackageInfo(SpeedEngine.PROBE_PKG, 0).versionCode
+    }.getOrDefault(0)
 
     private fun startVpn() {
         val card = vpnCard
         if (card.running) return
-        if (!probeInstalled()) { installProbe(); return }
+        if (probeVersion() < VERIFIED_PROBE_VERSION) { installProbe(); return }
         card.reset(); card.running = true
+        val attempt = ++vpnAttempt
         card.status.text = T.s("Connecting to LEAD VPN test…", "Povezujem se sa LEAD VPN test…", "Verbinde mit LEAD VPN test…")
         probeConn?.let { runCatching { unbindService(it) } }
         val replies = Messenger(object : Handler(Looper.getMainLooper()) {
             override fun handleMessage(m: Message) {
-                if (isFinishing) return
+                if (isFinishing || isDestroyed || !card.running || attempt != vpnAttempt) return
                 val b = m.data
                 when (m.what) {
                     SpeedEngine.MSG_PHASE -> when (m.arg1) {
@@ -240,6 +249,7 @@ class SpeedTestActivity : Activity() {
                         1 -> card.status.text = "Ping…"
                         2 -> {
                             if (!b.getBoolean("vpn")) {
+                                measurements.record(AmbientRoute.VPN, null)
                                 // VPN is off (or the helper is not on its list): don't measure, warn instead
                                 probeConn?.let { runCatching { unbindService(it) } }; probeConn = null
                                 card.running = false
@@ -266,10 +276,19 @@ class SpeedTestActivity : Activity() {
                         card.running = false
                         card.up.text = "↑ Upload: %.1f Mbit/s".format(b.getDouble("up"))
                         card.big.text = "%.0f".format(b.getDouble("down"))
-                        card.status.text = if (b.getBoolean("vpn")) T.s("Done · VPN active ✓ · OK = again", "Gotovo · VPN aktivan ✓ · OK = ponovo", "Fertig · VPN aktiv ✓ · OK = nochmal")
-                            else T.s("Done · ⚠ not through VPN · OK = again", "Gotovo · ⚠ nije kroz VPN · OK = ponovo", "Fertig · ⚠ nicht über VPN · OK = nochmal")
+                        val result = AmbientSpeed(System.currentTimeMillis(), b.getDouble("down"), b.getDouble("up"))
+                        val verified = b.getBoolean("vpn") && b.getBoolean(SpeedEngine.VERIFIED_ROUTE) && result.valid
+                        measurements.record(AmbientRoute.VPN, result.takeIf { verified })
+                        card.status.text = if (verified) "Done · VPN route verified" else "VPN route unverified · Update the helper"
                     }
-                    SpeedEngine.MSG_ERROR -> { card.running = false
+                    SpeedEngine.MSG_NO_VPN_ROUTE -> {
+                        measurements.record(AmbientRoute.VPN, null)
+                        card.running = false
+                        card.status.text = "VPN route unavailable for the helper"
+                    }
+                    SpeedEngine.MSG_ERROR -> {
+                        measurements.record(AmbientRoute.VPN, null)
+                        card.running = false
                         card.status.text = T.s("No connection to the test server", "Nema veze sa test serverom", "Keine Verbindung zum Testserver") }
                 }
             }
@@ -277,16 +296,18 @@ class SpeedTestActivity : Activity() {
         val conn = object : ServiceConnection {
             override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
                 runCatching { Messenger(service).send(Message.obtain(null, SpeedEngine.MSG_START).apply { replyTo = replies }) }
-                    .onFailure { card.running = false; card.status.text = T.s("Helper app not reachable", "Pomoćna aplikacija ne odgovara", "Hilfs-App nicht erreichbar") }
+                    .onFailure { measurements.record(AmbientRoute.VPN, null); card.running = false; card.status.text = T.s("Helper app not reachable", "Pomoćna aplikacija ne odgovara", "Hilfs-App nicht erreichbar") }
             }
-            override fun onServiceDisconnected(name: ComponentName?) { if (card.running) { card.running = false
+            override fun onServiceDisconnected(name: ComponentName?) { if (card.running && attempt == vpnAttempt) {
+                measurements.record(AmbientRoute.VPN, null)
+                card.running = false
                 card.status.text = T.s("Helper app stopped", "Pomoćna aplikacija se ugasila", "Hilfs-App beendet") } }
         }
         probeConn = conn
         val ok = runCatching {
             bindService(Intent().setComponent(ComponentName(SpeedEngine.PROBE_PKG, SpeedEngine.PROBE_SERVICE)), conn, Context.BIND_AUTO_CREATE)
         }.getOrDefault(false)
-        if (!ok) { card.running = false; card.status.text = T.s("Helper app not reachable – reinstall it", "Pomoćna aplikacija ne odgovara – instaliraj je ponovo", "Hilfs-App nicht erreichbar – neu installieren") }
+        if (!ok) { measurements.record(AmbientRoute.VPN, null); card.running = false; card.status.text = T.s("Helper app not reachable – reinstall it", "Pomoćna aplikacija ne odgovara – instaliraj je ponovo", "Hilfs-App nicht erreichbar – neu installieren") }
     }
 
     /** downloads "LEAD VPN test" from the LEAD release and installs it */

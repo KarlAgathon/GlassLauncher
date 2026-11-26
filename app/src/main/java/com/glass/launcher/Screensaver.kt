@@ -4,49 +4,57 @@ import android.app.Activity
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.drawable.GradientDrawable
+import android.graphics.Paint
+import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.Drawable
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.service.dreams.DreamService
-import android.util.TypedValue
-import android.view.Gravity
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
-import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.ImageView
-import android.widget.LinearLayout
-import android.widget.TextView
 import org.json.JSONObject
 import java.io.File
+import java.text.DateFormat
 import java.text.SimpleDateFormat
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.util.Date
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 import kotlin.random.Random
 
 /** Where the screensaver pictures come from. */
 object SaverPictures {
-    const val OWN = 0; const val FOLDER = 1; const val REDDIT = 2; const val BING = 3
+    const val OWN = 0; const val FOLDER = 1; const val REDDIT = 2; const val BING = 3; const val DEFAULT = 4; const val LOCAL = 5
 
     val REDDITS = listOf("EarthPorn", "wallpapers", "SpacePorn", "CityPorn", "SkyPorn", "AnimalPorn")
 
     /** list of picture addresses (files or https links); call off the main thread */
-    fun list(ctx: Context, p: Prefs): List<String> = runCatching {
+    internal fun list(p: Prefs, requests: Http.Session): List<String> = runCatching {
         when (p.saverSrc) {
             FOLDER -> (File(p.saverFolder).listFiles() ?: emptyArray())
                 .filter { it.isFile && ImageScanner.isImage(it) }.map { it.absolutePath }.shuffled()
-            REDDIT -> reddit(p.saverReddit)
-            BING -> bing()
+            REDDIT -> reddit(p.saverReddit, requests)
+            BING -> bing(requests)
             else -> emptyList()
         }
     }.getOrDefault(emptyList())
 
     /** big landscape pictures from a subreddit (top of the month, no adult posts) */
-    private fun reddit(sub: String): List<String> {
-        val j = JSONObject(Http.text("https://www.reddit.com/r/$sub/top.json?t=month&limit=80&raw_json=1",
+    private fun reddit(sub: String, requests: Http.Session): List<String> {
+        val j = JSONObject(requests.text("https://www.reddit.com/r/$sub/top.json?t=month&limit=80&raw_json=1",
             mapOf("User-Agent" to "android:lead.launcher:1.0 (screensaver)")))
         val posts = j.getJSONObject("data").getJSONArray("children")
         val out = ArrayList<String>()
@@ -64,280 +72,471 @@ object SaverPictures {
     }
 
     /** Bing's picture of the day – the last 16 */
-    private fun bing(): List<String> {
+    private fun bing(requests: Http.Session): List<String> {
         val out = ArrayList<String>()
         for (idx in listOf(0, 8)) runCatching {
-            val arr = JSONObject(Http.text("https://www.bing.com/HPImageArchive.aspx?format=js&idx=$idx&n=8&mkt=en-US")).getJSONArray("images")
+            val arr = JSONObject(requests.text("https://www.bing.com/HPImageArchive.aspx?format=js&idx=$idx&n=8&mkt=en-US")).getJSONArray("images")
             for (i in 0 until arr.length()) out.add("https://www.bing.com" + arr.getJSONObject(i).getString("urlbase") + "_1920x1080.jpg")
         }
         return out.distinct().shuffled()
     }
 }
 
-/** Weather for the screensaver: now + the next 6 days. */
-object SaverWeather {
-    data class Now(val temp: Int, val code: Int, val day: Boolean, val feels: Int, val humidity: Int, val wind: Int, val max: Int, val min: Int)
-    data class Day(val name: String, val code: Int, val max: Int, val min: Int)
-
-    fun load(lat: Float, lon: Float): Pair<Now, List<Day>>? = runCatching {
-        val j = JSONObject(Http.text("https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon" +
-            "&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code,is_day" +
-            "&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=7" +
-            (if (Weather.fahrenheit) "&temperature_unit=fahrenheit" else "")))
-        val c = j.getJSONObject("current"); val d = j.getJSONObject("daily")
-        val days = d.getJSONArray("time"); val codes = d.getJSONArray("weather_code")
-        val mx = d.getJSONArray("temperature_2m_max"); val mn = d.getJSONArray("temperature_2m_min")
-        val inFmt = SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
-        val outFmt = SimpleDateFormat("EEE", T.locale)
-        val now = Now(Math.round(c.getDouble("temperature_2m")).toInt(), c.getInt("weather_code"), c.optInt("is_day", 1) == 1,
-            Math.round(c.optDouble("apparent_temperature")).toInt(), c.optInt("relative_humidity_2m"),
-            Math.round(c.optDouble("wind_speed_10m")).toInt(), Math.round(mx.getDouble(0)).toInt(), Math.round(mn.getDouble(0)).toInt())
-        val next = (1 until days.length()).map { i ->
-            Day(outFmt.format(inFmt.parse(days.getString(i))!!).trimEnd('.').replaceFirstChar { it.uppercase() },
-                codes.getInt(i), Math.round(mx.getDouble(i)).toInt(), Math.round(mn.getDouble(i)).toInt())
-        }
-        now to next.take(6)
-    }.getOrNull()
-
-    fun icon(code: Int, day: Boolean = true) = when (code) {
-        0 -> if (day) R.drawable.lc_sun else R.drawable.lc_moon
-        1, 2 -> if (day) R.drawable.lc_cloud_sun else R.drawable.lc_cloud_moon
-        3 -> R.drawable.lc_cloud
-        45, 48 -> R.drawable.lc_cloud_fog
-        in 51..67, in 80..82 -> R.drawable.lc_cloud_rain
-        in 71..77, 85, 86 -> R.drawable.lc_cloud_snow
-        in 95..99 -> R.drawable.lc_cloud_lightning
-        else -> R.drawable.lc_cloud
-    }
-
-    /** colours like a modern weather app */
-    fun color(code: Int, day: Boolean = true) = when (code) {
-        0 -> if (day) Color.rgb(255, 204, 77) else Color.rgb(226, 221, 255)
-        1, 2 -> if (day) Color.rgb(255, 222, 140) else Color.rgb(226, 221, 255)
-        in 51..67, in 80..82 -> Color.rgb(110, 196, 255)
-        in 71..77, 85, 86 -> Color.rgb(220, 242, 255)
-        in 95..99 -> Color.rgb(255, 213, 74)
-        else -> Color.rgb(235, 240, 248)
-    }
-
-    fun text(code: Int) = when (code) {
-        0 -> T.s("Clear", "Vedro", "Klar")
-        1 -> T.s("Mostly clear", "Pretežno vedro", "Überwiegend klar")
-        2 -> T.s("Partly cloudy", "Djelimično oblačno", "Teilweise bewölkt")
-        3 -> T.s("Cloudy", "Oblačno", "Bewölkt")
-        45, 48 -> T.s("Fog", "Magla", "Nebel")
-        in 51..57 -> T.s("Drizzle", "Rosulja", "Nieselregen")
-        in 61..67, in 80..82 -> T.s("Rain", "Kiša", "Regen")
-        in 71..77, 85, 86 -> T.s("Snow", "Snijeg", "Schnee")
-        in 95..99 -> T.s("Thunderstorm", "Grmljavina", "Gewitter")
-        else -> ""
-    }
-}
-
-/**
- * Screensaver: changing pictures, on the left a glass weather card (now + 6 days),
- * on the right a big clock with seconds and the date. Everything drifts a little now and then (no burn-in).
- */
+/** Shared renderer for Android's dream and LEAD's idle and preview activity. */
 class SaverView(ctx: Context) : FrameLayout(ctx) {
     private val prefs = Prefs(ctx)
-    init { Weather.fahrenheit = prefs.weatherF }
-    private val h = Handler(Looper.getMainLooper())
-    private val imgA = ImageView(ctx).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
-    private val imgB = ImageView(ctx).apply { scaleType = ImageView.ScaleType.CENTER_CROP; alpha = 0f }
-    private var front = imgA
-    private val content = FrameLayout(ctx)
-    private val clock = TextView(ctx); private val secs = TextView(ctx)
-    private val dayName = TextView(ctx); private val dateLine = TextView(ctx)
-    private val weatherCol = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
-    private var pictures: List<String> = emptyList()
-    private var picIndex = 0
-    private var ticks = 0
-    private val dm = resources.displayMetrics
-
-    private fun dp(v: Float) = (v * dm.density).toInt()
-    private fun tv(sp: Float, color: Int = Color.WHITE, font: android.graphics.Typeface? = Fonts.regular(context)) = TextView(context).apply {
-        setTextColor(color); setTextSize(TypedValue.COMPLEX_UNIT_SP, sp); typeface = font
-        setShadowLayer(14f, 0f, 2f, Color.argb(130, 0, 0, 0))
-    }
-
-    private fun glass(radius: Float = 30f) = GradientDrawable().apply {
-        cornerRadius = dp(radius).toFloat()
-        // almost clear glass: just a hint of white and a thin light edge
-        colors = intArrayOf(Color.argb(26, 255, 255, 255), Color.argb(10, 255, 255, 255))
-        orientation = GradientDrawable.Orientation.TL_BR
-        setStroke(dp(1f), Color.argb(55, 255, 255, 255))
-    }
-
-    private val tick = object : Runnable {
-        override fun run() {
-            val now = Date()
-            clock.text = SimpleDateFormat(if (ClockFmt.is24(context, prefs)) "HH:mm" else "h:mm", T.locale).format(now)
-            secs.text = SimpleDateFormat(":ss", T.locale).format(now)
-            dayName.text = SimpleDateFormat("EEEE", T.locale).format(now).replaceFirstChar { it.uppercase() }
-            dateLine.text = SimpleDateFormat("d. MMMM yyyy", T.locale).format(now)
-            ticks++
-            if (ticks % prefs.saverInterval.coerceAtLeast(10) == 0) nextPicture()
-            if (ticks % 60 == 0) drift()
-            if (ticks % (20 * 60) == 0) loadWeather()
-            h.postDelayed(this, 1000)
-        }
-    }
+    private val main = Handler(Looper.getMainLooper())
+    private val images = List(2) { ImageView(ctx).apply { scaleType = ImageView.ScaleType.CENTER_CROP } }
+    private val dashboard = Dashboard(ctx)
+    private val connectivity = ctx.getSystemService(ConnectivityManager::class.java)
+    private val speeds = AmbientSpeedStore(ctx)
+    private var requests: Http.Session? = null
+    private var workers: ExecutorService? = null
+    internal val isRunning: Boolean get() = workers != null
+    private var session = 0
+    private val callbacks = mutableListOf<ConnectivityManager.NetworkCallback>()
+    private var pictures = emptyList<String>()
+    private var pictureIndex = 0
+    private var front = 0
+    private var forecast: AmbientForecast? = null
+    private var cached = false
+    private var time = ""
+    private var period = ""
+    private var weekday = ""
+    private var date = ""
+    private var memory: AmbientMemory? = null
+    private var network = AmbientNetwork(null, "Unavailable")
+    private var thermal: String? = null
+    private var cpuTemperature: Float? = null
+    private var vpnSpeed: AmbientSpeed? = null
+    private var directSpeed: AmbientSpeed? = null
+    private var mode = AmbientMode.BALANCED
+    private var metrics = emptyList<AmbientMetric>()
 
     init {
         T.init(prefs.lang)
         setBackgroundColor(Color.BLACK)
-        addView(imgA, LayoutParams(-1, -1)); addView(imgB, LayoutParams(-1, -1))
-        // darker edges so text stays readable on any picture
-        addView(View(ctx).apply { background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
-            intArrayOf(Color.argb(150, 0, 0, 0), Color.argb(30, 0, 0, 0), Color.argb(150, 0, 0, 0))) }, LayoutParams(-1, -1))
-
-        // right: big clock + date
-        val right = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.END }
-        val clockRow = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.BOTTOM }
-        clock.apply { setTextColor(Color.WHITE); setTextSize(TypedValue.COMPLEX_UNIT_SP, 120f); typeface = Fonts.light(ctx)
-            setShadowLayer(18f, 0f, 3f, Color.argb(140, 0, 0, 0)); includeFontPadding = false }
-        secs.apply { setTextColor(Color.argb(200, 255, 255, 255)); setTextSize(TypedValue.COMPLEX_UNIT_SP, 48f); typeface = Fonts.light(ctx)
-            setShadowLayer(14f, 0f, 2f, Color.argb(130, 0, 0, 0)); setPadding(0, 0, 0, dp(14f)) }
-        clockRow.addView(clock); clockRow.addView(secs)
-        right.addView(clockRow)
-        dayName.apply { setTextColor(Color.WHITE); setTextSize(TypedValue.COMPLEX_UNIT_SP, 34f); typeface = Fonts.medium(ctx)
-            setShadowLayer(14f, 0f, 2f, Color.argb(130, 0, 0, 0)); gravity = Gravity.END }
-        dateLine.apply { setTextColor(Color.argb(225, 255, 255, 255)); setTextSize(TypedValue.COMPLEX_UNIT_SP, 26f); typeface = Fonts.regular(ctx)
-            setShadowLayer(14f, 0f, 2f, Color.argb(130, 0, 0, 0)); gravity = Gravity.END }
-        right.addView(dayName); right.addView(dateLine)
-        content.addView(right, LayoutParams(-2, -2, Gravity.END or Gravity.CENTER_VERTICAL).apply { marginEnd = dp(64f) })
-
-        // left: weather
-        content.addView(weatherCol, LayoutParams(dp(420f), -2, Gravity.START or Gravity.CENTER_VERTICAL).apply { marginStart = dp(56f) })
-        addView(content, LayoutParams(-1, -1))
-
-        loadWeather()
-        loadPictures()
+        images.forEach { addView(it, LayoutParams(-1, -1)) }
+        addView(dashboard, LayoutParams(-1, -1))
     }
 
-    // ------------------------------------------------------------------ pictures
+    private fun periodic(task: () -> Long) = object : Runnable {
+        override fun run() {
+            if (!isRunning) return
+            main.postDelayed(this, task())
+        }
+    }
 
-    private fun loadPictures() {
-        Thread {
-            val list = SaverPictures.list(context, prefs)
-            h.post {
-                pictures = list; picIndex = 0
-                if (pictures.isEmpty()) showOwn() else nextPicture()
+    private val clockTick = periodic {
+        val now = Date()
+        val is24 = when (prefs.saverClockFormat) {
+            0 -> android.text.format.DateFormat.is24HourFormat(context)
+            1 -> true
+            2 -> false
+            else -> ClockFmt.is24(context, prefs)
+        }
+        val pattern = ambientClockPattern(is24, prefs.saverSeconds)
+        time = SimpleDateFormat(pattern, T.locale).format(now)
+        period = if (is24) "" else SimpleDateFormat("a", T.locale).format(now)
+        weekday = SimpleDateFormat("EEEE", T.locale).format(now).replaceFirstChar { it.uppercase() }
+        date = SimpleDateFormat("d MMMM yyyy", T.locale).format(now)
+        dashboard.invalidate()
+        val interval = if (prefs.saverSeconds) 1_000L else 60_000L
+        interval - now.time.mod(interval)
+    }
+
+    private val ramTick = periodic {
+        memory = AmbientMemory.read(context)
+        dashboard.invalidate()
+        20_000L
+    }
+    private val thermalTick = periodic {
+        work({ ambientCpuTemperature(context) to ambientThermalStatus(context) }) { (temperature, status) ->
+            cpuTemperature = temperature
+            thermal = status
+            dashboard.invalidate()
+        }
+        60_000L
+    }
+    private val driftTick = periodic {
+        val scale = minOf(width / 1920f, height / 1080f)
+        dashboard.animate().translationX(Random.nextInt(-8, 9) * scale)
+            .translationY(Random.nextInt(-6, 7) * scale).setDuration(4_000).start()
+        90_000L
+    }
+    private val weatherTick = periodic { loadWeather(); 30 * 60_000L }
+
+    private fun <T> work(task: () -> T, apply: (T) -> Unit) {
+        val generation = session
+        workers?.submit {
+            val result = runCatching(task)
+            if (!Thread.currentThread().isInterrupted) main.post {
+                if (isRunning && generation == session) result.onSuccess(apply)
             }
-        }.start()
+        }
     }
 
-    private fun showOwn() {
-        val f = File(context.filesDir, Profiles.wallpaperName(prefs.profile))
-        // only your own picture or the built-in one – never the film pictures (SofaDrop / TMDB)
-        Thread {
-            val b: Bitmap? = runCatching {
-                if (f.exists()) Bitmaps.decodeScaled(f, dm.widthPixels, dm.heightPixels)
-                else Bitmaps.decodeResScaled(context, Bitmaps.leadWallpaper(prefs.leadWp), dm.widthPixels, dm.heightPixels)
-            }.getOrNull()
-            h.post { if (b != null) crossfade(b) }
-        }.start()
+    fun start() {
+        if (isRunning) return
+        val http = Http.Session()
+        requests = http
+        workers = Executors.newFixedThreadPool(2)
+        mode = prefs.ambientMode
+        foreground = if (prefs.saverDim) ColorDrawable(Color.argb(66, 0, 0, 0)) else null
+        metrics = AmbientMetric.entries.filter {
+            prefs.ambientMetric(it) && when (mode) {
+                AmbientMode.MINIMAL -> false
+                AmbientMode.BALANCED -> it in setOf(AmbientMetric.VPN, AmbientMetric.RAM, AmbientMetric.TEMPERATURE)
+                AmbientMode.FULL -> true
+            }
+        }
+        vpnSpeed = if (AmbientMetric.VPN_SPEED in metrics) speeds.latest(AmbientRoute.VPN) else null
+        directSpeed = if (AmbientMetric.DIRECT_SPEED in metrics) speeds.latest(AmbientRoute.DIRECT) else null
+        val targetWidth = resources.displayMetrics.widthPixels.coerceIn(1, 1920)
+        val targetHeight = resources.displayMetrics.heightPixels.coerceIn(1, 1080)
+        work({ loadOwnPicture(targetWidth, targetHeight) }) { bitmap ->
+            if (bitmap != null) showPicture(bitmap)
+            work({ SaverPictures.list(prefs, http) }) { addresses ->
+                pictures = addresses
+                pictureIndex = 0
+                if (pictures.isNotEmpty()) nextPicture()
+            }
+        }
+        clockTick.run()
+        weatherTick.run()
+        if (AmbientMetric.RAM in metrics) ramTick.run()
+        if (AmbientMetric.TEMPERATURE in metrics) thermalTick.run()
+        if (AmbientMetric.VPN in metrics || AmbientMetric.CONNECTION in metrics) observeNetwork()
+        if (prefs.saverMotion) main.postDelayed(driftTick, 90_000L)
+    }
+
+    private fun observeNetwork() {
+        fun update() {
+            network = AmbientNetwork.read(context)
+            dashboard.invalidate()
+        }
+        update()
+        val generation = session
+        val updateStatus = Runnable { if (session == generation && isRunning) update() }
+        fun listener() = object : ConnectivityManager.NetworkCallback() {
+            private fun changed() {
+                main.removeCallbacks(updateStatus)
+                main.post(updateStatus)
+            }
+
+            override fun onAvailable(network: Network) = changed()
+            override fun onLost(network: Network) = changed()
+            override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) = changed()
+        }
+        if (AmbientMetric.VPN in metrics) {
+            val request = NetworkRequest.Builder()
+                .removeCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN).build()
+            val vpnListener = listener()
+            runCatching { connectivity.registerNetworkCallback(request, vpnListener) }
+                .onSuccess { callbacks.add(vpnListener) }
+        }
+        if (AmbientMetric.CONNECTION in metrics) {
+            val connectionListener = listener()
+            runCatching { connectivity.registerDefaultNetworkCallback(connectionListener) }
+                .onSuccess { callbacks.add(connectionListener) }
+        }
+    }
+
+    fun stop() {
+        if (!isRunning) return
+        session++
+        requests?.cancel()
+        requests = null
+        workers?.shutdownNow()
+        workers = null
+        main.removeCallbacksAndMessages(null)
+        callbacks.forEach { runCatching { connectivity.unregisterNetworkCallback(it) } }
+        callbacks.clear()
+        pictures = emptyList()
+        dashboard.animate().cancel()
+        dashboard.translationX = 0f
+        dashboard.translationY = 0f
+        images.forEach {
+            it.animate().cancel()
+            it.setImageDrawable(null)
+            it.alpha = 0f
+        }
+    }
+
+    override fun onDetachedFromWindow() {
+        stop()
+        super.onDetachedFromWindow()
+    }
+
+    private fun loadWeather() {
+        val http = requests ?: return
+        val lat = prefs.lat
+        val lon = prefs.lon
+        val fahrenheit = prefs.weatherF
+        if (forecast == null) {
+            forecast = SaverWeather.cached(context, lat, lon, fahrenheit)
+            cached = forecast != null
+            dashboard.invalidate()
+        }
+        if (!SaverWeather.needsRefresh(forecast, System.currentTimeMillis())) return
+        work({ SaverWeather.refresh(context, http, lat, lon, fahrenheit) }) { result ->
+            if (result != null) forecast = result
+            cached = result == null && forecast != null
+            dashboard.invalidate()
+        }
+    }
+
+    private fun loadOwnPicture(targetWidth: Int, targetHeight: Int): Bitmap? {
+        val own = if (prefs.saverSrc == SaverPictures.LOCAL) File(context.filesDir, "ambient_${prefs.profile}.img")
+            else File(context.filesDir, Profiles.wallpaperName(prefs.profile))
+        val local = if (prefs.saverSrc != SaverPictures.DEFAULT && own.isFile)
+            runCatching { decodeAmbientFile(own, targetWidth, targetHeight) }.getOrNull() else null
+        return local ?: Bitmaps.decodeResScaled(context,
+            Bitmaps.leadWallpaper(if (prefs.saverSrc == SaverPictures.DEFAULT) 0 else prefs.leadWp),
+            targetWidth, targetHeight)
     }
 
     private fun nextPicture() {
-        if (pictures.isEmpty()) return
-        val src = pictures[picIndex++ % pictures.size]
-        Thread {
-            val b: Bitmap? = runCatching {
-                if (src.startsWith("http")) {
-                    // every picture its own temp file: two downloads can never write into the same file
-                    val tmp = File(context.cacheDir, "saver_pic_${System.nanoTime()}.img")
+        val http = requests ?: return
+        val targetWidth = resources.displayMetrics.widthPixels.coerceIn(1, 1920)
+        val targetHeight = resources.displayMetrics.heightPixels.coerceIn(1, 1080)
+        val address = pictures[pictureIndex++ % pictures.size]
+        work({
+            runCatching {
+                if (address.startsWith("https://")) {
+                    val tmp = File.createTempFile("ambient", ".img", context.cacheDir)
                     try {
-                        Http.download(src, tmp)
-                        Bitmaps.decodeScaled(tmp, dm.widthPixels, dm.heightPixels)
+                        http.download(address, tmp)
+                        decodeAmbientFile(tmp, targetWidth, targetHeight)
                     } finally { tmp.delete() }
-                } else Bitmaps.decodeScaled(File(src), dm.widthPixels, dm.heightPixels)
+                } else decodeAmbientFile(File(address), targetWidth, targetHeight)
             }.getOrNull()
-            h.post { if (b != null) crossfade(b) }
-        }.start()
-    }
-
-    private fun crossfade(b: Bitmap) {
-        val back = if (front === imgA) imgB else imgA
-        back.setImageBitmap(b)
-        back.scaleX = 1f; back.scaleY = 1f
-        back.animate().alpha(1f).setDuration(1500).start()
-        front.animate().alpha(0f).setDuration(1500).start()
-        // slow zoom for a bit of life
-        back.animate().scaleX(1.06f).scaleY(1.06f).setDuration(prefs.saverInterval.coerceAtLeast(10) * 1000L + 3000).start()
-        front = back
-    }
-
-    // ------------------------------------------------------------------ weather
-
-    private fun loadWeather() {
-        Thread {
-            val w = SaverWeather.load(prefs.lat, prefs.lon)
-            h.post { if (w != null) showWeather(w.first, w.second) }
-        }.start()
-    }
-
-    private fun showWeather(now: SaverWeather.Now, days: List<SaverWeather.Day>) {
-        weatherCol.removeAllViews()
-        // card 1: now
-        val card = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; background = glass(); setPadding(dp(28f), dp(22f), dp(28f), dp(22f)) }
-        card.addView(tv(18f, Color.argb(230, 255, 255, 255)).apply { text = "📍 " + prefs.city })
-        val row = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        row.addView(ImageView(context).apply {
-            setImageResource(SaverWeather.icon(now.code, now.day)); setColorFilter(SaverWeather.color(now.code, now.day))
-        }, LinearLayout.LayoutParams(dp(78f), dp(78f)).apply { marginEnd = dp(16f) })
-        row.addView(tv(76f, Color.WHITE, Fonts.light(context)).apply { text = "${now.temp}°"; includeFontPadding = false })
-        card.addView(row, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(6f) })
-        card.addView(tv(22f, Color.WHITE, Fonts.medium(context)).apply { text = SaverWeather.text(now.code) })
-        card.addView(tv(16f, Color.argb(210, 255, 255, 255)).apply {
-            text = "↑ ${now.max}°   ↓ ${now.min}°   ·   " + T.s("Feels like", "Osjećaj", "Gefühlt") + " ${now.feels}°"
-            setPadding(0, dp(6f), 0, 0)
-        })
-        card.addView(tv(15f, Color.argb(180, 255, 255, 255)).apply {
-            text = "💧 ${now.humidity}%    💨 ${now.wind} km/h"; setPadding(0, dp(4f), 0, 0)
-        })
-        weatherCol.addView(card, LinearLayout.LayoutParams(-1, -2))
-
-        // card 2: next 6 days
-        if (days.isEmpty()) return
-        val fc = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; background = glass(); setPadding(dp(24f), dp(14f), dp(24f), dp(14f)) }
-        val lo = days.minOf { it.min }; val hi = days.maxOf { it.max }
-        for (d in days) {
-            val r = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(5f), 0, dp(5f)) }
-            r.addView(tv(17f).apply { text = d.name }, LinearLayout.LayoutParams(dp(64f), -2))
-            r.addView(ImageView(context).apply { setImageResource(SaverWeather.icon(d.code)); setColorFilter(SaverWeather.color(d.code)) },
-                LinearLayout.LayoutParams(dp(28f), dp(28f)).apply { marginEnd = dp(14f) })
-            r.addView(tv(16f, Color.argb(190, 255, 255, 255)).apply { text = "${d.min}°"; gravity = Gravity.END }, LinearLayout.LayoutParams(dp(42f), -2))
-            r.addView(TempBar(context, lo, hi, d.min, d.max), LinearLayout.LayoutParams(0, dp(6f), 1f).apply { marginStart = dp(10f); marginEnd = dp(10f) })
-            r.addView(tv(16f).apply { text = "${d.max}°" }, LinearLayout.LayoutParams(dp(42f), -2))
-            fc.addView(r)
-        }
-        weatherCol.addView(fc, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(16f) })
-    }
-
-    /** small range bar like modern weather apps: where today's min–max sits within the week */
-    private class TempBar(ctx: Context, val lo: Int, val hi: Int, val mn: Int, val mx: Int) : View(ctx) {
-        private val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
-        override fun onDraw(c: android.graphics.Canvas) {
-            val w = width.toFloat(); val hh = height.toFloat(); val r = hh / 2
-            p.shader = null; p.color = Color.argb(60, 255, 255, 255)
-            c.drawRoundRect(0f, 0f, w, hh, r, r, p)
-            val span = (hi - lo).coerceAtLeast(1).toFloat()
-            val a = (mn - lo) / span * w; val b = ((mx - lo) / span * w).coerceAtLeast(a + hh)
-            p.shader = android.graphics.LinearGradient(a, 0f, b, 0f, Color.rgb(110, 196, 255), Color.rgb(255, 196, 77), android.graphics.Shader.TileMode.CLAMP)
-            c.drawRoundRect(a, 0f, b, hh, r, r, p)
+        }) { bitmap ->
+            if (bitmap != null) showPicture(bitmap)
+            if (pictures.size > 1 || bitmap == null)
+                main.postDelayed({ nextPicture() }, prefs.saverInterval.coerceAtLeast(10) * 1_000L)
         }
     }
 
-    /** moves everything a few pixels now and then, so nothing burns into the screen */
-    private fun drift() {
-        val m = dp(14f)
-        content.animate().translationX(Random.nextInt(-m, m + 1).toFloat()).translationY(Random.nextInt(-m, m + 1).toFloat())
-            .setDuration(4000).start()
+    private fun showPicture(bitmap: Bitmap) {
+        val outgoing = images[front]
+        front = 1 - front
+        val incoming = images[front]
+        incoming.bringToFront()
+        dashboard.bringToFront()
+        incoming.setImageBitmap(bitmap)
+        if (!prefs.saverMotion || outgoing.drawable == null) {
+            incoming.alpha = 1f
+            outgoing.setImageDrawable(null)
+            outgoing.alpha = 0f
+            return
+        }
+        incoming.alpha = 0f
+        incoming.animate().alpha(1f).setDuration(1_200).withEndAction {
+            outgoing.setImageDrawable(null)
+            outgoing.alpha = 0f
+        }.start()
     }
 
-    fun start() { h.removeCallbacks(tick); h.post(tick) }
-    fun stop() { h.removeCallbacks(tick) }
+    private inner class Dashboard(context: Context) : View(context) {
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val regular = Fonts.regular(context)
+        private val light = Fonts.light(context)
+        private val medium = Fonts.medium(context)
+        private val warm = Color.rgb(247, 239, 228)
+        private val muted = Color.rgb(219, 207, 192)
+        private val champagne = Color.rgb(206, 176, 141)
+        private val icons = mutableMapOf<Int, Drawable>()
+        private val dayFormat by lazy { DateTimeFormatter.ofPattern("EEE", T.locale) }
+
+        private fun label(c: Canvas, value: String, x: Float, y: Float, size: Float,
+                          color: Int = warm, font: Typeface? = regular,
+                          align: Paint.Align = Paint.Align.LEFT,
+                          maxWidth: Float = Float.MAX_VALUE) {
+            paint.style = Paint.Style.FILL
+            paint.color = color
+            paint.textSize = size
+            paint.typeface = font
+            paint.textAlign = align
+            val measured = paint.measureText(value)
+            if (measured > maxWidth) paint.textSize *= maxWidth / measured
+            c.drawText(value, x, y, paint)
+        }
+
+        private fun glass(c: Canvas, left: Float, top: Float, right: Float, bottom: Float) {
+            paint.style = Paint.Style.FILL
+            paint.color = Color.argb(171, 37, 32, 29)
+            c.drawRoundRect(left, top, right, bottom, 25f, 25f, paint)
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = 1.5f
+            paint.color = Color.argb(83, 228, 210, 192)
+            c.drawRoundRect(left, top, right, bottom, 25f, 25f, paint)
+            paint.style = Paint.Style.FILL
+        }
+
+        private fun icon(c: Canvas, id: Int, x: Int, y: Int, size: Int) {
+            val drawable = icons[id] ?: context.getDrawable(id)?.mutate()?.apply { setTint(champagne) }
+                ?.also { icons[id] = it } ?: return
+            drawable.setBounds(x, y, x + size, y + size)
+            drawable.draw(c)
+        }
+
+        override fun onDraw(c: Canvas) {
+            super.onDraw(c)
+            val scale = minOf(width / 1920f, height / 1080f)
+            if (scale <= 0f) return
+            c.save()
+            c.translate((width - 1920 * scale) / 2, (height - 1080 * scale) / 2)
+            c.scale(scale, scale)
+            weather(c)
+            val end = Paint.Align.RIGHT
+            paint.setShadowLayer(12f, 0f, 2f, Color.BLACK)
+            label(c, time, 1810f, 480f, 174f, font = light, align = end, maxWidth = 1030f)
+            label(c, period, 1810f, 520f, 28f, champagne, medium, end)
+            label(c, weekday, 1810f, 580f, 48f, font = medium, align = end, maxWidth = 980f)
+            label(c, date, 1810f, 628f, 35f, muted, regular, end, 980f)
+            paint.clearShadowLayer()
+            if (metrics.isNotEmpty()) system(c)
+            c.restore()
+        }
+
+        private fun weather(c: Canvas) {
+            val data = forecast
+            val now = data?.current
+            glass(c, 104f, 70f, 674f, if (now != null) 392f else 208f)
+            label(c, prefs.city, 134f, 116f, 32f, font = medium, maxWidth = 510f)
+            if (data == null || now == null) {
+                label(c, T.s("Weather unavailable", "Vrijeme nije dostupno", "Wetter nicht verfügbar", "Погода недоступна"), 134f, 169f, 26f, muted)
+                return
+            }
+            val unit = if (prefs.weatherF) "F" else "C"
+            if (now.code >= 0) icon(c, SaverWeather.icon(now.code, now.day), 138, 143, 82)
+            label(c, "${now.temp}°$unit", if (now.code >= 0) 249f else 134f, 220f, 94f, font = light)
+            label(c, SaverWeather.text(now.code), 134f, 265f, 30f, maxWidth = 510f)
+            val week = data.week()
+            val today = week[0]
+            val temperatureDetails = listOfNotNull(
+                today?.let { "↑ ${it.max}°   ↓ ${it.min}°" },
+                now.feels?.let { T.s("Feels like $it°", "Osjećaj $it°", "Gefühlt $it°", "Ощущается как $it°") }
+            )
+            label(c, temperatureDetails.joinToString("   ·   "), 134f, 295f, 23f, muted, maxWidth = 510f)
+            val currentDetails = listOfNotNull(
+                now.humidity?.let { T.s("Humidity $it%", "Vlažnost $it%", "Feuchte $it%", "Влажность $it%") },
+                now.wind?.let { T.s("Wind", "Vjetar", "Wind", "Ветер") + " $it ${now.windUnit}" },
+                today?.rain?.let { T.s("Precip. $it%", "Padavine $it%", "Niederschl. $it%", "Осадки $it%") }
+            )
+            label(c, currentDetails.joinToString("   ·   "), 134f, 322f, 23f, muted, maxWidth = 510f)
+            val sunlight = listOfNotNull(
+                today?.sunrise?.let { T.s("Sunrise $it", "Izlazak $it", "Aufgang $it", "Восход $it") },
+                today?.sunset?.let { T.s("Sunset $it", "Zalazak $it", "Untergang $it", "Закат $it") }
+            )
+            label(c, sunlight.joinToString("   ·   "), 134f, 349f, 23f, muted, maxWidth = 510f)
+            val stamp = DateFormat.getDateTimeInstance(DateFormat.SHORT,
+                DateFormat.SHORT, T.locale).format(Date(data.updatedAt))
+            label(c, if (cached) T.s("Cached", "Sačuvano", "Gespeichert", "Из кэша") + " · $stamp"
+                else T.s("Updated", "Ažurirano", "Aktualisiert", "Обновлено") + " · $stamp", 134f, 376f, 21f, champagne, maxWidth = 510f)
+            if (mode == AmbientMode.MINIMAL) return
+            glass(c, 104f, 410f, 674f, 774f)
+            val valid = week.filterNotNull()
+            val low = valid.minOfOrNull { it.min } ?: 0
+            val high = valid.maxOfOrNull { it.max } ?: low
+            val todayDate = LocalDate.now(data.timeZone)
+            week.forEachIndexed { i, day ->
+                val y = 430f + 47f * i
+                if (i == 0) {
+                    paint.color = Color.argb(43, 219, 184, 146)
+                    c.drawRoundRect(121f, y, 657f, y + 42, 10f, 10f, paint)
+                }
+                val name = if (i == 0) T.s("Today", "Danas", "Heute", "Сегодня") else dayFormat.format(todayDate.plusDays(i.toLong()))
+                label(c, name, 137f, y + 29, 25f, maxWidth = 86f)
+                if (day == null) {
+                    label(c, T.s("Unavailable", "Nedostupno", "Nicht verfügbar", "Недоступно"), 247f, y + 29, 23f, muted)
+                } else {
+                    if (day.code >= 0) icon(c, SaverWeather.icon(day.code), 233, y.toInt() + 7, 27)
+                    label(c, "${day.min}°", 329f, y + 29, 24f, muted, align = Paint.Align.RIGHT)
+                    val span = (high - low).coerceAtLeast(1).toFloat()
+                    val start = ((day.min - low) / span).coerceIn(0f, 1f)
+                    val end = ((day.max - low) / span).coerceIn(0f, 1f)
+                    bar(c, 349f, y + 19, 222f, start, end)
+                    label(c, "${day.max}°", 590f, y + 29, 24f)
+                }
+            }
+        }
+
+        private fun bar(c: Canvas, left: Float, top: Float, width: Float, from: Float, to: Float) {
+            paint.color = Color.argb(65, 223, 203, 182)
+            c.drawRoundRect(left, top, left + width, top + 5, 3f, 3f, paint)
+            if (to < 0f) return
+            val a = (left + width * from).coerceAtMost(left + width - 5)
+            val b = (left + width * to).coerceIn(a + 5, left + width)
+            paint.color = champagne
+            c.drawRoundRect(a, top, b, top + 5, 3f, 3f, paint)
+        }
+
+        private fun system(c: Canvas) {
+            val width = 1712f / metrics.size
+            glass(c, 104f, 822f, 1816f, 1004f)
+            metrics.forEachIndexed { index, metric ->
+                val left = 104f + width * index
+                icon(c, metric.icon, left.toInt() + 22, 843, 25)
+                label(c, metric.title(), left + 57, 864f, 24f, champagne, medium, maxWidth = width - 76)
+                val lines = when (metric) {
+                    AmbientMetric.VPN -> listOfNotNull(when (network.vpn) {
+                        true -> T.s("Connected", "Povezan", "Verbunden", "Подключён")
+                        false -> T.s("Disconnected", "Odspojen", "Getrennt", "Отключён")
+                        null -> T.s("Unknown", "Nepoznato", "Unbekannt", "Неизвестно")
+                    }, network.vpnName)
+                    AmbientMetric.CONNECTION -> network.connection.split(" · ")
+                    AmbientMetric.RAM -> memory?.let {
+                        val gib = 1_073_741_824.0
+                        listOf(String.format(T.locale, "%.1f / %.1f GiB", it.used / gib, it.total / gib), "${it.percent}%")
+                    } ?: listOf(T.s("Unavailable", "Nedostupno", "Nicht verfügbar", "Недоступно"))
+                    AmbientMetric.TEMPERATURE -> listOfNotNull(
+                        cpuTemperature?.let { String.format(T.locale, "CPU %.0f °C", it) } ?: T.s("Temperature unavailable", "Temperatura nedostupna", "Temperatur nicht verfügbar", "Температура недоступна"),
+                        thermal?.let { T.s("Thermal status", "Termalno stanje", "Wärmestatus", "Тепловой статус") + " · $it" }
+                    )
+                    AmbientMetric.VPN_SPEED -> speedLines(vpnSpeed)
+                    AmbientMetric.DIRECT_SPEED -> speedLines(directSpeed)
+                }
+                lines.forEachIndexed { i, line ->
+                    label(c, line, left + 22, 904f + 31 * i, if (i == 0) 26f else 22f,
+                        if (i == 0) warm else muted, maxWidth = width - 44)
+                }
+                if (metric == AmbientMetric.RAM) memory?.let {
+                    bar(c, left + 22, 962f, minOf(230f, width - 44), 0f, if (it.percent > 0) it.percent / 100f else -1f)
+                }
+            }
+        }
+
+        private fun speedLines(record: AmbientSpeed?): List<String> {
+            if (record == null) return listOf(T.s("Not measured", "Nije izmjereno", "Nicht gemessen", "Нет замера"))
+            val format = DateFormat.getTimeInstance(DateFormat.SHORT, T.locale)
+            val stamp = format.format(Date(record.time))
+            val age = if (record.isStale(System.currentTimeMillis()))
+                " · " + T.s("Stale", "Zastarjelo", "Veraltet", "Устарело") else ""
+            val tested = T.s("Last tested", "Zadnji test", "Letzter Test", "Последний замер")
+            return listOf(String.format(T.locale, "↓ %.1f Mbps", record.download),
+                String.format(T.locale, "↑ %.1f Mbps", record.upload), "$tested $stamp$age")
+        }
+    }
+}
+
+internal fun ambientSampleSize(width: Int, height: Int, targetWidth: Int, targetHeight: Int): Int {
+    if (width <= 0 || height <= 0) return 1
+    var sample = 1
+    while ((width / sample).toLong() * (height / sample) > 4_150_000L ||
+        width / sample > 4096 || height / sample > 4096 ||
+        (width / sample / 2 >= targetWidth && height / sample / 2 >= targetHeight)) sample *= 2
+    return sample
+}
+
+private fun decodeAmbientFile(file: File, targetWidth: Int, targetHeight: Int): Bitmap? {
+    val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(file.absolutePath, options)
+    if (options.outWidth <= 0 || options.outHeight <= 0) return null
+    options.inSampleSize = ambientSampleSize(options.outWidth, options.outHeight, targetWidth, targetHeight)
+    options.inJustDecodeBounds = false
+    return BitmapFactory.decodeFile(file.absolutePath, options)
 }
 
 /** Screensaver that Android can use (Settings → Screensaver → LEAD Launcher). */
