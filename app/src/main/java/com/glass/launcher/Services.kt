@@ -188,7 +188,10 @@ class HomeService : AccessibilityService() {
         instance = this
         if (isFireTv) {
             // Deliver each transition so a later dialog event cannot replace the HOME event in the queue.
-            serviceInfo = serviceInfo.apply { notificationTimeout = 0 }
+            serviceInfo = serviceInfo.apply {
+                notificationTimeout = 0
+                flags = flags and android.accessibilityservice.AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS.inv()
+            }
         }
         createOverlay()
         runCatching {
@@ -492,12 +495,7 @@ class HomeService : AccessibilityService() {
      */
     override fun onKeyEvent(event: android.view.KeyEvent): Boolean {
         // Fire OS handles HOME itself, including returning from Alexa results to Amazon HOME.
-        if (isFireTv) {
-            if (event.keyCode == android.view.KeyEvent.KEYCODE_HOME) {
-                Log.d(FIRE_TV_TAG, "HOME key action=${event.action} device=${event.deviceId}")
-            }
-            return false
-        }
+        if (isFireTv) return false
         if (event.keyCode != android.view.KeyEvent.KEYCODE_HOME) return false
         if (!Prefs(this).homeRedirect) return false
         when (event.action) {

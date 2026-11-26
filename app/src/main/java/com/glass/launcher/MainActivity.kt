@@ -1240,6 +1240,23 @@ class MainActivity : Activity() {
         input.requestFocus()
         dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
         dialog.show()
+        val showKeyboard = {
+            if (dialog.isShowing && input.hasWindowFocus()) {
+                val keyboard = getSystemService(android.view.inputmethod.InputMethodManager::class.java)
+                keyboard?.showSoftInput(input, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+            }
+        }
+        if (input.hasWindowFocus()) {
+            input.post { showKeyboard() }
+        } else {
+            input.viewTreeObserver.addOnWindowFocusChangeListener(object : android.view.ViewTreeObserver.OnWindowFocusChangeListener {
+                override fun onWindowFocusChanged(hasFocus: Boolean) {
+                    if (!hasFocus) return
+                    input.viewTreeObserver.removeOnWindowFocusChangeListener(this)
+                    input.post { showKeyboard() }
+                }
+            })
+        }
     }
 
     /** Every app on the box (also system apps) – just open it, nothing is added to the home screen. */
