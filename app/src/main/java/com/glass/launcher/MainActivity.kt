@@ -3017,6 +3017,11 @@ class MainActivity : Activity() {
             T.s("Nothing (Android decides)", "Ništa (odlučuje Android)", "Nichts (Android entscheidet)") to 0,
             T.s("Glass screensaver", "Glass screensaver", "Glass-Bildschirmschoner") to 1,
             T.s("Sleep (standby)", "Spavanje (standby)", "Ruhemodus (Standby)") to 2)
+        val modes = listOf(
+            T.s("Minimal", "Minimalno", "Minimal", "Минимальный"),
+            T.s("Balanced", "Uravnoteženo", "Ausgewogen", "Сбалансированный"),
+            T.s("Full Dashboard", "Puni pregled", "Vollständige Übersicht", "Полная панель")
+        )
         menu.show(T.s("Screensaver and idle", "Screensaver i mirovanje", "Bildschirmschoner und Leerlauf"), R.drawable.lc_monitor, listOf(
             GlassMenu.Item(T.s("When the home screen is idle", "Kad početni ekran miruje", "Wenn der Startbildschirm ruht"), R.drawable.lc_moon,
                 value = actions.first { it.second == prefs.idleAction }.first) {
@@ -3029,10 +3034,27 @@ class MainActivity : Activity() {
                 choose(T.s("After", "Nakon", "Nach"), R.drawable.lc_clock,
                     listOf(1, 5, 10, 15, 30, 60).map { (if (it < 60) "$it min" else "1 h") to it }, prefs.idleMinutes) { prefs.idleMinutes = it }
             },
-            GlassMenu.Item(T.s("Pictures", "Slike", "Bilder"), R.drawable.lc_image, value = saverSources().first { it.second == prefs.saverSrc }.first) {
+            GlassMenu.Item(T.s("Information mode", "Način prikaza", "Anzeigemodus", "Режим информации"),
+                R.drawable.lc_monitor, value = modes[prefs.ambientMode.ordinal]) {
+                choose(T.s("Information mode", "Način prikaza", "Anzeigemodus", "Режим информации"),
+                    R.drawable.lc_monitor, modes.mapIndexed { index, label -> label to index }, prefs.ambientMode.ordinal) {
+                    prefs.ambientMode = AmbientMode.entries[it]
+                    screensaverMenu()
+                }
+            },
+            GlassMenu.Item(T.s("Wallpaper source", "Izvor pozadine", "Hintergrundquelle", "Источник обоев"), R.drawable.lc_image, value = (saverSources().firstOrNull { it.second == prefs.saverSrc } ?: saverSources().first()).first) {
                 choose(T.s("Screensaver pictures", "Slike za screensaver", "Bilder für den Bildschirmschoner"), R.drawable.lc_image,
                     saverSources(), prefs.saverSrc) { v ->
                     when (v) {
+                        SaverPictures.LOCAL -> pickImage { file ->
+                            try {
+                                file.copyTo(File(filesDir, "ambient_${prefs.profile}.img"), overwrite = true)
+                                prefs.saverSrc = SaverPictures.LOCAL
+                                screensaverMenu()
+                            } catch (error: java.io.IOException) {
+                                toast(T.s("Can't read this file", "Ne mogu pročitati ovaj fajl", "Datei nicht lesbar"))
+                            }
+                        }
                         SaverPictures.FOLDER -> {
                             pendingPick = { f -> prefs.saverFolder = f.absolutePath; prefs.saverSrc = SaverPictures.FOLDER; screensaverMenu() }
                             @Suppress("DEPRECATION")
@@ -3051,17 +3073,53 @@ class MainActivity : Activity() {
                 choose(T.s("Change picture every", "Mijenjaj sliku svakih", "Bild wechseln alle"), R.drawable.lc_clock,
                     listOf(30, 60, 300, 600, 900).map { intervalLabel(it) to it }, prefs.saverInterval) { prefs.saverInterval = it; screensaverMenu() }
             },
+            GlassMenu.Item(T.s("Clock & date", "Sat i datum", "Uhr und Datum", "Часы и дата"), R.drawable.lc_clock) { ambientClockMenu() },
+            GlassMenu.Item(T.s("Weather", "Vrijeme", "Wetter", "Погода"), R.drawable.lc_cloud_sun, value = prefs.city) { weatherMenu() },
+            GlassMenu.Item(T.s("System information", "Podaci o uređaju", "Systeminformationen", "Сведения о системе"), R.drawable.lc_cpu) {
+                menu.show(T.s("System information", "Podaci o uređaju", "Systeminformationen", "Сведения о системе"),
+                    R.drawable.lc_cpu, AmbientMetric.entries.map { metric ->
+                        GlassMenu.Item(metric.title(), metric.icon, checked = prefs.ambientMetric(metric), toggle = true) {
+                            prefs.setAmbientMetric(metric, it.checked)
+                        }
+                    })
+            },
+            GlassMenu.Item(T.s("Animation & dimming", "Animacije i zatamnjenje", "Animation und Abdunklung", "Анимация и затемнение"),
+                R.drawable.lc_activity) {
+                menu.show(T.s("Animation & dimming", "Animacije i zatamnjenje", "Animation und Abdunklung", "Анимация и затемнение"),
+                    R.drawable.lc_activity, listOf(
+                        GlassMenu.Item(T.s("Gentle movement and crossfade", "Blago kretanje i prijelazi", "Sanfte Bewegung und Überblendung", "Плавное движение и переходы"),
+                            checked = prefs.saverMotion, toggle = true) { prefs.saverMotion = it.checked },
+                        GlassMenu.Item(T.s("Dim screensaver", "Zatamni screensaver", "Bildschirmschoner abdunkeln", "Затемнять экран"),
+                            checked = prefs.saverDim, toggle = true) { prefs.saverDim = it.checked }
+                    ))
+            },
             GlassMenu.Item(T.s("Preview screensaver", "Pregled screensavera", "Bildschirmschoner-Vorschau"), R.drawable.lc_eye) { startSaver() },
             GlassMenu.Item(T.s("Android screensaver settings", "Android postavke screensavera", "Android-Bildschirmschoner-Einstellungen"), R.drawable.lc_settings) {
                 safeStart(Intent(Settings.ACTION_DREAM_SETTINGS))
             },
-        ), T.s("Tip: in the Android screensaver settings you can also choose \"LEAD Launcher\" – then the samurai clock shows in every app.",
-            "Savjet: u Android postavkama screensavera možeš izabrati i \"LEAD Launcher\" – tada se samuraj sat prikazuje u svakoj aplikaciji.",
-            "Tipp: In den Android-Einstellungen kannst du auch \"LEAD Launcher\" als Bildschirmschoner wählen."))
+        ))
+    }
+
+    private fun ambientClockMenu() {
+        val formats = listOf(T.s("Launcher setting", "Postavka pokretača", "Launcher-Einstellung", "Настройка лаунчера") to -1,
+            T.s("Like Android", "Kao Android", "Wie Android", "Как в Android") to 0, "24 h" to 1, "12 h (AM/PM)" to 2)
+        menu.show(T.s("Clock & date", "Sat i datum", "Uhr und Datum", "Часы и дата"), R.drawable.lc_clock, listOf(
+            GlassMenu.Item(T.s("Format", "Format", "Format", "Формат"), R.drawable.lc_clock,
+                value = (formats.firstOrNull { it.second == prefs.saverClockFormat } ?: formats.first()).first) {
+                choose(T.s("Format", "Format", "Format", "Формат"), R.drawable.lc_clock, formats, prefs.saverClockFormat) {
+                    prefs.saverClockFormat = it
+                    ambientClockMenu()
+                }
+            },
+            GlassMenu.Item(T.s("Show seconds", "Prikaži sekunde", "Sekunden anzeigen", "Показывать секунды"),
+                checked = prefs.saverSeconds, toggle = true) { prefs.saverSeconds = it.checked }
+        ))
     }
 
     private fun saverSources() = listOf(
         T.s("My wallpaper", "Moja pozadina", "Mein Hintergrund") to SaverPictures.OWN,
+        T.s("LEAD living room", "LEAD dnevna soba", "LEAD-Wohnzimmer", "Гостиная LEAD") to SaverPictures.DEFAULT,
+        T.s("Local picture", "Lokalna slika", "Lokales Bild", "Локальное изображение") to SaverPictures.LOCAL,
         T.s("Folder on the box / USB", "Folder na boxu / USB", "Ordner auf der Box / USB") to SaverPictures.FOLDER,
         T.s("Reddit (nature, space, cities…)", "Reddit (priroda, svemir, gradovi…)", "Reddit (Natur, Weltall, Städte…)") to SaverPictures.REDDIT,
         T.s("Bing picture of the day", "Bing slika dana", "Bing-Bild des Tages") to SaverPictures.BING,
