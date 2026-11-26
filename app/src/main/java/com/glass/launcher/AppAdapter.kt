@@ -76,6 +76,7 @@ class AppAdapter(
         h.icon.layoutParams = ilp
         val pad = if (e.isAdd || e.isFiles) (ih * 0.12f).toInt() else 0
         h.icon.setPadding(pad, pad, pad, pad)
+        h.icon.cropToPadding = true
         h.icon.scaleType = ImageView.ScaleType.FIT_CENTER
         h.reflect.visibility = View.GONE
         h.icon.alpha = if (e.missing) 0.45f else 1f
@@ -85,45 +86,50 @@ class AppAdapter(
         val own = prefs.iconScale(e.pkg) / 100f
         val (ox, oy) = prefs.iconOffset(e.pkg)
         h.icon.scaleX = own; h.icon.scaleY = own
-        // optical centring: logos with a swoosh or symbol on one side (Silo, Disney+ …) are shifted so their
-        // visible weight sits exactly above the centred name
-        val shift = e.icon?.let { b ->
-            val sc = minOf(iw.toFloat() / b.width, ih.toFloat() / b.height)
-            (b.width / 2f - massCenterX(b)) * sc * own
-        } ?: 0f
-        h.icon.translationX = ox * d + shift; h.icon.translationY = oy * d
+        h.icon.translationX = ox * d; h.icon.translationY = oy * d
+        val bitmap = e.icon
+        val drawable = h.icon.drawable
+        if (bitmap != null && drawable != null && !e.isAdd && !e.isFiles && !bitmap.isRecycled) {
+            val visible = logoBounds.getOrPut(bitmap) { measureLogo(bitmap) }
+            val width = drawable.intrinsicWidth.toFloat()
+            val height = drawable.intrinsicHeight.toFloat()
+            val scale = minOf(iw / (width * visible.width()), ih / (height * visible.height()))
+            h.icon.scaleType = ImageView.ScaleType.MATRIX
+            h.icon.imageMatrix = android.graphics.Matrix().apply {
+                setScale(scale, scale)
+                postTranslate(iw / 2f - visible.centerX() * width * scale,
+                    ih / 2f - visible.centerY() * height * scale)
+            }
+        }
+        h.itemView.contentDescription = e.label
 
         h.label.text = e.label
-        h.label.visibility = View.VISIBLE
         h.label.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, ctx.resources.displayMetrics.widthPixels * 0.0185f)
         h.label.typeface = Fonts.regular(ctx)
         (h.label.layoutParams as LinearLayout.LayoutParams).also { it.width = (cw * 0.88f).toInt(); it.topMargin = (ch * 0.08f).toInt(); it.gravity = android.view.Gravity.CENTER_HORIZONTAL }
         h.label.gravity = android.view.Gravity.CENTER
-        h.label.maxLines = 1
+        h.label.isSingleLine = false
+        h.label.maxLines = 2
+        h.label.ellipsize = android.text.TextUtils.TruncateAt.END
         h.label.includeFontPadding = false
         style(h, h.itemView.hasFocus())
     }
 
-    private val massCache = java.util.WeakHashMap<android.graphics.Bitmap, Float>()
+    private val logoBounds = java.util.WeakHashMap<android.graphics.Bitmap, android.graphics.RectF>()
 
-    /** horizontal centre of the logo's visible pixels (alpha-weighted), measured once per picture */
-    private fun massCenterX(b: android.graphics.Bitmap): Float = massCache.getOrPut(b) {
-        if (b.isRecycled || (android.os.Build.VERSION.SDK_INT >= 26 && b.config == android.graphics.Bitmap.Config.HARDWARE)) return@getOrPut b.width / 2f
-        val step = maxOf(1, b.width / 96)
-        var sum = 0.0; var wsum = 0.0
-        var y = 0
-        while (y < b.height) {
-            var x = 0
-            while (x < b.width) {
-                val a = (b.getPixel(x, y) ushr 24) / 255.0
-                if (a > 0.1) { sum += a * x; wsum += a }
-                x += step
+    private fun measureLogo(bitmap: android.graphics.Bitmap): android.graphics.RectF {
+        val full = android.graphics.RectF(0f, 0f, 1f, 1f)
+        if (android.os.Build.VERSION.SDK_INT >= 26 && bitmap.config == android.graphics.Bitmap.Config.HARDWARE) return full
+        return runCatching {
+            val columns = minOf(80, bitmap.width)
+            val rows = minOf(80, bitmap.height)
+            val sample = IntArray(columns * rows) { index ->
+                bitmap.getPixel(index % columns * bitmap.width / columns, index / columns * bitmap.height / rows)
             }
-            y += step
-        }
-        val c = if (wsum > 0) (sum / wsum).toFloat() else b.width / 2f
-        // never more than 12 % of the width – a real logo is only nudged, not moved away
-        c.coerceIn(b.width * 0.38f, b.width * 0.62f)
+            val bounds = visibleLogoBounds(sample, columns, rows)
+            android.graphics.RectF(bounds[0].toFloat() / columns, bounds[1].toFloat() / rows,
+                bounds[2].toFloat() / columns, bounds[3].toFloat() / rows)
+        }.getOrDefault(full)
     }
 
     private fun style(h: VH, focused: Boolean) {
@@ -132,7 +138,40 @@ class AppAdapter(
         h.itemView.isSelected = moving
         h.tile.scaleX = 1f; h.tile.scaleY = 1f; h.tile.translationY = 0f
         h.tile.translationZ = 0f; h.itemView.translationZ = 0f
+        h.label.visibility = if (showHomeLabel(prefs.showLabels, prefs.nameOnFocus, focused)) View.VISIBLE else View.GONE
         h.label.alpha = 1f; h.label.translationY = 0f
         h.label.setTextColor(if (focused || moving) Taupe.TEXT else Color.argb(232, 246, 241, 234))
     }
+}
+
+
+internal fun showHomeLabel(persistent: Boolean, focusOnly: Boolean, focused: Boolean): Boolean =
+    persistent || (focusOnly && focused)
+
+/** Use transparent bounds, or a uniform opaque border that surrounds distinct artwork. */
+internal fun visibleLogoBounds(pixels: IntArray, width: Int, height: Int): IntArray {
+    val full = intArrayOf(0, 0, width, height)
+    val hasTransparency = pixels.any { it ushr 24 < 32 }
+    val background = pixels.first()
+    val opaqueBorder = !hasTransparency && (0 until width).all { x ->
+        pixels[x] == background && pixels[(height - 1) * width + x] == background
+    } && (0 until height).all { y ->
+        pixels[y * width] == background && pixels[y * width + width - 1] == background
+    }
+    if (!hasTransparency && !opaqueBorder) return full
+    var left = width
+    var right = 0
+    var top = height
+    var bottom = 0
+    pixels.forEachIndexed { index, color ->
+        if (if (hasTransparency) color ushr 24 >= 32 else color != background) {
+            val x = index % width
+            val y = index / width
+            left = minOf(left, x); right = maxOf(right, x + 1)
+            top = minOf(top, y); bottom = maxOf(bottom, y + 1)
+        }
+    }
+    return if (right - left >= 2 && bottom - top >= 2) {
+        intArrayOf(maxOf(0, left - 1), maxOf(0, top - 1), minOf(width, right + 1), minOf(height, bottom + 1))
+    } else full
 }

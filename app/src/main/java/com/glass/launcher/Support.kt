@@ -242,6 +242,7 @@ class Prefs(ctx: Context) {
         get() = str("hiddenApps", "").split(',').filter { it.isNotBlank() }.toSet()
         set(v) = putStr("hiddenApps", v.joinToString(","))
     /** the name of the selected app shows under its logo (also when names are off) */
+    var homeHintSeen: Boolean get() = bool("homeHintSeen", true); set(v) = putBool("homeHintSeen", v)
     var nameOnFocus: Boolean get() = bool("nameFocus", true); set(v) = putBool("nameFocus", v)
     /** GitHub apps (TizenTube, PRETORIAN, SofaDrop …) update themselves at night (needs Shizuku) */
     var nightUpdates: Boolean get() = bool("nightUpd", true); set(v) = putBool("nightUpd", v)
@@ -283,7 +284,7 @@ class Prefs(ctx: Context) {
     /** one of the three looks: changes only how things look; TizenTube is the YouTube in every look */
     fun applyVisualLook(v: Int) {
         visualLook = v
-        pinned = DefaultApps.putTizenTube(pinned); tizenTubeSet = true
+        tizenTubeSet = true
         when (v) {
             2 -> { tileShape = 0; logoWhite = false; logoNoBg = true; tileAlpha = 0; tileBorder = 0; tileClean = true; tileFrost = false
                 dock = false; showLabels = false; reflect = true; tileSize = 2; tileGap = 48; focusScale = 35; focusFrame = false

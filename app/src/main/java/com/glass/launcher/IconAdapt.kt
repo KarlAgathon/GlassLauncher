@@ -35,12 +35,22 @@ object IconAdapt {
         override fun sizeOf(key: String, value: Bitmap) = value.byteCount
     }
 
+    private val diskWrites = java.util.concurrent.ThreadPoolExecutor(0, 1, 15L,
+        java.util.concurrent.TimeUnit.SECONDS, java.util.concurrent.ArrayBlockingQueue(12),
+        java.util.concurrent.ThreadPoolExecutor.DiscardPolicy())
+    private val diskLock = Any()
+    private var generation = 0
+
     private fun dir(ctx: Context) = File(ctx.cacheDir, "adapted").apply { mkdirs() }
 
     /** forget every adapted picture (mode changed, or "Reset icons") */
     fun clear(ctx: Context) {
-        mem.evictAll()
-        dir(ctx).listFiles()?.forEach { it.delete() }
+        synchronized(diskLock) {
+            generation++
+            diskWrites.queue.clear()
+            mem.evictAll()
+            dir(ctx).listFiles()?.forEach { it.delete() }
+        }
     }
 
     /** the app's logo for a LEAD card, adapted per [mode]; null if the app has no icon at all */
@@ -51,9 +61,7 @@ object IconAdapt {
         mem.get(key)?.let { return it }
         val f = File(dir(ctx), "$key.png")
         if (f.exists()) BitmapFactory.decodeFile(f.absolutePath)?.let { mem.put(key, it); return it }
-        // old versions of this app's picture are no longer needed
-        dir(ctx).listFiles()?.filter { it.name.startsWith("${pkg}_") }?.forEach { it.delete() }
-
+        val revision = synchronized(diskLock) { generation }
         val dr = runCatching { ri.loadIcon(pm) }.getOrNull() ?: return null
         var out = when (mode) {
             ORIGINAL -> render(dr, size)
@@ -61,8 +69,23 @@ object IconAdapt {
         }
         if (mode == MONO) out = mono(out)
         out = Bitmaps.trimAlpha(out)
-        mem.put(key, out)
-        Thread { runCatching { f.outputStream().use { out.compress(Bitmap.CompressFormat.PNG, 95, it) } } }.start()
+        val bitmap = out
+        synchronized(diskLock) { if (revision == generation) mem.put(key, bitmap) }
+        diskWrites.execute {
+            runCatching {
+                val tmp = File.createTempFile(".adapted-", ".part", f.parentFile)
+                try {
+                    check(tmp.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 95, it) })
+                    synchronized(diskLock) {
+                        if (revision == generation && tmp.renameTo(f)) {
+                            f.parentFile?.listFiles()?.filter {
+                                it.name.startsWith("${pkg}_") && !it.name.startsWith("${pkg}_${stamp}_")
+                            }?.forEach { it.delete() }
+                        }
+                    }
+                } finally { tmp.delete() }
+            }
+        }
         return out
     }
 
