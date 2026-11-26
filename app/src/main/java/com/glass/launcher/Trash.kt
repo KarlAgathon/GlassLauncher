@@ -36,15 +36,35 @@ object Trash {
 
     private fun readIndex(dir: File): MutableList<Triple<String, String, Long>> {
         val idx = File(dir, INDEX)
-        if (!idx.isFile) return mutableListOf()
-        return idx.readLines().mapNotNull { l ->
-            val p = l.split('\t')
-            if (p.size >= 3) Triple(p[0], p[1], p[2].toLongOrNull() ?: 0L) else null
+        val content = try { android.util.AtomicFile(idx).openRead().bufferedReader().use { it.readText() } }
+            catch (_: java.io.FileNotFoundException) { return mutableListOf() }
+        if (content.startsWith("[")) {
+            val entries = org.json.JSONArray(content)
+            return (0 until entries.length()).map { i ->
+                val entry = entries.getJSONArray(i)
+                Triple(entry.getString(0), entry.getString(1), entry.getLong(2))
+            }.toMutableList()
+        }
+        return content.lineSequence().mapNotNull { line ->
+            val fields = line.split('\t')
+            if (fields.size >= 3) Triple(fields[0], fields[1], fields[2].toLongOrNull() ?: 0L) else null
         }.toMutableList()
     }
 
     private fun writeIndex(dir: File, items: List<Triple<String, String, Long>>) {
-        File(dir, INDEX).writeText(items.joinToString("\n") { "${it.first}\t${it.second}\t${it.third}" })
+        val index = android.util.AtomicFile(File(dir, INDEX))
+        val stream = index.startWrite()
+        try {
+            val entries = org.json.JSONArray()
+            items.forEach { (name, path, time) ->
+                entries.put(org.json.JSONArray().put(name).put(path).put(time))
+            }
+            stream.write(entries.toString().toByteArray())
+            index.finishWrite(stream)
+        } catch (error: Exception) {
+            index.failWrite(stream)
+            throw error
+        }
     }
 
     @Synchronized
@@ -53,13 +73,13 @@ object Trash {
         if (!dir.isDirectory && !dir.mkdirs()) return false
         runCatching { File(dir, ".nomedia").createNewFile() }
         val now = System.currentTimeMillis()
-        val stored = File(dir, "${now}_${f.name}")
-        val ok = f.renameTo(stored) || (runCatching { f.copyRecursively(stored, false) && f.deleteRecursively() }.getOrDefault(false))
-        if (!ok) return false
-        val idx = readIndex(dir)
-        idx.add(Triple(stored.name, f.absolutePath, now))
-        writeIndex(dir, idx)
-        return true
+        val stored = File(dir, "${now}_${java.util.UUID.randomUUID()}_${f.name}")
+        return runCatching {
+            val idx = readIndex(dir)
+            idx.add(Triple(stored.name, f.absolutePath, now))
+            writeIndex(dir, idx)
+            FileOps.transfer(f, stored, move = true, replace = false)
+        }.getOrDefault(false)
     }
 
     @Synchronized
@@ -68,7 +88,10 @@ object Trash {
         for (r in roots()) {
             val dir = File(r, DIR)
             if (!dir.isDirectory) continue
-            val idx = readIndex(dir)
+            val idx = runCatching { readIndex(dir) }.getOrDefault(emptyList()).filter {
+                it.first.isNotEmpty() && it.first != "." && it.first != ".." &&
+                    !it.first.contains('/') && !it.first.contains('\\')
+            }
             val known = idx.map { it.first }.toSet()
             for ((name, orig, t) in idx) {
                 val f = File(dir, name)
@@ -76,8 +99,8 @@ object Trash {
             }
             // files in the bin without an index line (e.g. index lost): still show them
             dir.listFiles()?.forEach { f ->
-                if (f.name != INDEX && f.name != ".nomedia" && f.name !in known)
-                    out.add(Item(f, File(r, f.name.substringAfter('_')).absolutePath, f.lastModified()))
+                if (f.name !in setOf(INDEX, "$INDEX.new", "$INDEX.bak", ".nomedia") && !f.name.startsWith(".lead-transfer-") && f.name !in known)
+                    out.add(Item(f, File(r, f.name.substringAfter('_').replaceFirst(Regex("^[a-f0-9-]{36}_"), "")).absolutePath, f.lastModified()))
             }
         }
         return out.sortedByDescending { it.deletedAt }
@@ -93,23 +116,24 @@ object Trash {
     @Synchronized
     fun restore(item: Item): Boolean {
         var target = File(item.original)
-        target.parentFile?.mkdirs()
+        val parent = target.parentFile ?: return false
+        if (roots().none { runCatching { FileOps.isInside(parent, it) }.getOrDefault(false) } ||
+            isTrash(parent) || (!parent.isDirectory && !parent.mkdirs())) return false
         if (target.exists()) {
             val base = target.nameWithoutExtension
             val ext = if (target.extension.isEmpty()) "" else "." + target.extension
             var i = 1
             while (target.exists()) { target = File(target.parentFile, "$base ($i)$ext"); i++ }
         }
-        val ok = item.file.renameTo(target) ||
-            (runCatching { item.file.copyRecursively(target, false) && item.file.deleteRecursively() }.getOrDefault(false))
-        if (ok) dropFromIndex(item)
+        val ok = runCatching { FileOps.transfer(item.file, target, move = true, replace = false) }.getOrDefault(false)
+        if (ok) runCatching { dropFromIndex(item) }
         return ok
     }
 
     @Synchronized
     fun purge(item: Item): Boolean {
         val ok = item.file.deleteRecursively()
-        if (ok) dropFromIndex(item)
+        if (ok) runCatching { dropFromIndex(item) }
         return ok
     }
 

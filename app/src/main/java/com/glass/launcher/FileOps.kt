@@ -38,7 +38,7 @@ object FileOps {
 
     /** copies [src] (file or folder) to [dst]; [progress] gets the bytes written so far; false on any error */
     private fun copyTree(src: File, dst: File, progress: (Long) -> Unit, cancel: () -> Boolean): Boolean {
-        if (cancel()) return false
+        if (cancel() || src.canonicalFile != File(src.parentFile?.canonicalFile, src.name)) return false
         if (src.isDirectory) {
             if (!dst.isDirectory && !dst.mkdirs()) return false
             for (c in src.listFiles() ?: return false) if (!copyTree(c, File(dst, c.name), progress, cancel)) return false
@@ -46,18 +46,53 @@ object FileOps {
         }
         return runCatching {
             src.inputStream().use { inp ->
-                dst.outputStream().use { out ->
+                java.io.FileOutputStream(dst).use { out ->
                     val buf = ByteArray(256 * 1024)
                     while (true) {
                         if (cancel()) return false
                         val n = inp.read(buf); if (n < 0) break
                         out.write(buf, 0, n); progress(n.toLong())
                     }
+                    out.fd.sync()
                 }
             }
             dst.setLastModified(src.lastModified())
             dst.length() == src.length()
         }.getOrDefault(false)
+    }
+
+    /** Stage on the destination filesystem. Keep an old destination until commit succeeds. */
+    @Synchronized
+    internal fun transfer(src: File, dst: File, move: Boolean, replace: Boolean,
+                          progress: (Long) -> Unit = {}, cancel: () -> Boolean = { false },
+                          rename: (File, File) -> Boolean = File::renameTo,
+                          sourceRetained: () -> Unit = {}): Boolean {
+        val parent = dst.parentFile ?: return false
+        if (!parent.isDirectory || !src.exists() || src.canonicalFile == dst.canonicalFile ||
+            (src.isDirectory && isInside(dst, src)) || cancel()) return false
+        if (!replace && dst.exists()) return false
+        if (move && !replace && rename(src, dst)) return true
+        val stage = File(parent, ".lead-transfer-" + java.util.UUID.randomUUID()).also {
+            if (!it.mkdir()) return false
+        }
+        val payload = File(stage, "new")
+        val old = File(stage, "previous")
+        try {
+            if (!copyTree(src, payload, progress, cancel) || cancel()) return false
+            if (dst.exists() && (!replace || !rename(dst, old))) return false
+            if (dst.exists() || !rename(payload, dst)) {
+                if (old.exists() && !dst.exists()) rename(old, dst)
+                return false
+            }
+            old.deleteRecursively()
+            if (move && !src.deleteRecursively()) {
+                sourceRetained()
+                return false
+            }
+            return true
+        } finally {
+            if (!old.exists()) stage.deleteRecursively()
+        }
     }
 
     /**
@@ -84,19 +119,17 @@ object FileOps {
                     Clash.REPLACE -> replacing = File(dest, name)
                 }
             }
-            // into a temporary name first; the old file is only replaced when the new one is complete
-            val target = if (replacing != null) File(dest, ".lead_tmp_" + System.nanoTime() + "_" + name) else File(dest, name)
-            val sameVol = volumeOf(src) == volumeOf(dest)
-            val ok = if (move && sameVol) src.renameTo(target)
-                else copyTree(src, target, { n -> bytes += n; progress(i, bytes) }, cancel).also { okCopy ->
-                    if (!okCopy) target.deleteRecursively()
-                    // cross-drive move: original deleted only after the copy is complete and the same size
-                    else if (move && sizeOf(target) == sizeOf(src)) src.deleteRecursively()
-                }
-            if (!ok) { failed.add(src.name); return@forEachIndexed }
-            if (replacing != null) {
-                replacing.deleteRecursively()
-                if (!target.renameTo(File(dest, name))) { failed.add(src.name); return@forEachIndexed }
+            var retained = false
+            val ok = runCatching {
+                transfer(src, File(dest, name), move, replacing != null, { n ->
+                    bytes += n
+                    progress(i, bytes)
+                }, cancel, sourceRetained = { retained = true })
+            }.getOrDefault(false)
+            if (!ok) {
+                failed.add(if (retained) src.name + " · " + T.s("Copied, source could not be removed", "Kopirano, izvor nije uklonjen",
+                    "Kopiert, Quelle konnte nicht entfernt werden", "Скопировано, исходник не удалось удалить") else src.name)
+                return@forEachIndexed
             }
             done++
         }
