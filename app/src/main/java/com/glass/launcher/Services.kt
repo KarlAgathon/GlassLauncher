@@ -49,6 +49,7 @@ class HomeService : AccessibilityService() {
         const val AMAZON_LAUNCHER = "com.amazon.tv.launcher"
         private const val AMAZON_HOME = "com.amazon.tv.launcher.ui.HomeActivity_vNext"
         private const val FIRE_TV_TAG = "LEAD_FIRETV"
+        private const val FIRE_TV_APP_SWITCH_DELAY_MS = 5_000L
         private val fireTvLaunchInProgress = AtomicBoolean()
         val isFireTv = Build.MANUFACTURER.equals("Amazon", ignoreCase = true)
 
@@ -377,8 +378,10 @@ class HomeService : AccessibilityService() {
     @Volatile private var fireTvHomeEvent: FireTvHomeEvent? = null
 
     private fun isCurrent(event: FireTvHomeEvent): Boolean =
-        instance === this && fireTvHomeEvent === event && Prefs(this).homeRedirect &&
-            SystemClock.uptimeMillis() - event.eventTime in 0L..900L
+        instance === this && fireTvHomeEvent === event && Prefs(this).homeRedirect
+
+    private fun canStartFireTvRedirect(event: FireTvHomeEvent): Boolean =
+        isCurrent(event) && SystemClock.uptimeMillis() - event.eventTime in 0L..900L
 
     private fun handleFireTvWindow(event: AccessibilityEvent) {
         if (event.packageName?.toString() != AMAZON_LAUNCHER || event.className?.toString() != AMAZON_HOME) {
@@ -389,22 +392,25 @@ class HomeService : AccessibilityService() {
         if (fireTvHomeEvent?.windowId == event.windowId) return
         val request = FireTvHomeEvent(event.windowId, event.eventTime)
         fireTvHomeEvent = request
-        if (!isCurrent(request) || !fireTvLaunchInProgress.compareAndSet(false, true)) return
+        if (!canStartFireTvRedirect(request) || !fireTvLaunchInProgress.compareAndSet(false, true)) return
 
         Thread({
             try {
-                if (!isCurrent(request)) return@Thread
+                if (!canStartFireTvRedirect(request)) return@Thread
                 if (ShizukuCpu.permitted()) {
-                    if (!isCurrent(request)) return@Thread
+                    if (!canStartFireTvRedirect(request)) return@Thread
                     val result = ShizukuCpu.startFireTvHome("$AMAZON_LAUNCHER/$AMAZON_HOME", packageName)
                     Log.i(FIRE_TV_TAG, "HOME Shizuku response=$result age=${SystemClock.uptimeMillis() - request.eventTime}ms")
                     return@Thread
                 }
 
                 Log.d(FIRE_TV_TAG, "HOME Shizuku unavailable")
-                h.post {
-                    if (!isCurrent(request)) return@post
-                    val active = runCatching { rootInActiveWindow }.getOrNull() ?: return@post
+                // Fire OS queues ordinary app launches for five seconds after HOME. Keep
+                // the fallback here until that window ends so newer UI events can cancel it.
+                val fallbackAt = request.eventTime + FIRE_TV_APP_SWITCH_DELAY_MS
+                h.postAtTime({
+                    if (!isCurrent(request) || SystemClock.uptimeMillis() - fallbackAt > 1_000L) return@postAtTime
+                    val active = runCatching { rootInActiveWindow }.getOrNull() ?: return@postAtTime
                     val matches = try {
                         active.windowId == request.windowId && active.packageName?.toString() == AMAZON_LAUNCHER
                     } finally {
@@ -417,7 +423,7 @@ class HomeService : AccessibilityService() {
                                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED))
                         }.onSuccess { Log.i(FIRE_TV_TAG, "HOME accessibility fallback requested") }
                     }
-                }
+                }, fallbackAt)
             } finally {
                 fireTvLaunchInProgress.set(false)
             }
