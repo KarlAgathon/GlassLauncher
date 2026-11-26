@@ -381,6 +381,7 @@ class HomeService : AccessibilityService() {
             fireTvHomeEvent = null
             return
         }
+        Log.d(FIRE_TV_TAG, "Amazon HOME event window=${event.windowId} redirect=${Prefs(this).homeRedirect}")
         if (fireTvHomeEvent?.windowId == event.windowId) return
         val request = FireTvHomeEvent(event.windowId, event.eventTime)
         fireTvHomeEvent = request
@@ -391,6 +392,7 @@ class HomeService : AccessibilityService() {
                 if (!isCurrent(request)) return@Thread
                 if (ShizukuCpu.permitted()) {
                     val focus = ShizukuCpu.fireTvFocusedWindow()
+                    Log.d(FIRE_TV_TAG, "HOME foreground=$focus current=${isCurrent(request)}")
                     if (focus == "$AMAZON_LAUNCHER/$AMAZON_HOME" && isCurrent(request)) {
                         val result = ShizukuCpu.startFireTvHome(packageName)
                         Log.i(FIRE_TV_TAG, "HOME Shizuku response=$result age=${SystemClock.uptimeMillis() - request.eventTime}ms")
@@ -398,6 +400,7 @@ class HomeService : AccessibilityService() {
                     return@Thread
                 }
 
+                Log.d(FIRE_TV_TAG, "HOME Shizuku unavailable")
                 h.post {
                     if (!isCurrent(request)) return@post
                     val active = runCatching { rootInActiveWindow }.getOrNull() ?: return@post
@@ -406,6 +409,7 @@ class HomeService : AccessibilityService() {
                     } finally {
                         active.recycle()
                     }
+                    Log.d(FIRE_TV_TAG, "HOME fallback active window matches=$matches")
                     if (matches && isCurrent(request)) {
                         runCatching {
                             startActivity(Intent(this, MainActivity::class.java)
