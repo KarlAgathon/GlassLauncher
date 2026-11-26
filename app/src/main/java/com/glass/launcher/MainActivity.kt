@@ -128,7 +128,11 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val backupRecoveryFailed = runCatching { Backup.recover(this) }.isFailure
         prefs = Prefs(this)
+        if (backupRecoveryFailed) handler.post {
+            toast(T.s("Backup recovery could not finish", "Oporavak sigurnosne kopije nije dovršen", "Wiederherstellung konnte nicht abgeschlossen werden", "Восстановление не завершено"))
+        }
         T.init(prefs.lang)
         setContentView(R.layout.activity_main)
 
@@ -157,14 +161,15 @@ class MainActivity : Activity() {
                     // a fresh LEAD: Light look on the LEAD wallpaper, with PRETORIAN IPTV, YouTube, Disney+ and Netflix
                     prefs.applyVisualLook(2)
                     prefs.pinned = DefaultApps.list(this)
-                    // a fresh box: look for updates of LEAD and all apps right after the first start
-                    handler.postDelayed({ firstUpdateCheck() }, 20_000)
+                    prefs.showLabels = false
+                    prefs.nameOnFocus = false
+                    prefs.homeHintSeen = false
                 }
                 g.edit().putBoolean("installSeen", true).apply()
             }
         }
-        // TizenTube is LEAD's YouTube: put it on the home screen once (official YouTube off it, can be added again)
-        if (!prefs.tizenTubeSet) { prefs.pinned = DefaultApps.putTizenTube(prefs.pinned); prefs.tizenTubeSet = true }
+        // Record the legacy migration without changing existing shortcuts.
+        if (!prefs.tizenTubeSet) prefs.tizenTubeSet = true
         if (prefs.visualLook == 2 && !prefs.lightDemandSet) {
             prefs.statusMode = 2; prefs.clockMode = 2; prefs.buttonsMode = 2; prefs.fitScreen = true; prefs.lightDemandSet = true
             prefs.focusScale = 35
@@ -187,6 +192,7 @@ class MainActivity : Activity() {
             if (open && menuOpener == null) menuOpener = currentFocus?.takeIf { it !== grid && !isInGrid(it) }
             grid.descendantFocusability =
                 if (open) ViewGroup.FOCUS_BLOCK_DESCENDANTS else ViewGroup.FOCUS_AFTER_DESCENDANTS
+            if (open) hint.visibility = View.GONE else if (::adapter.isInitialized) updateHomeHint()
             profileBtn.isFocusable = !open
             settingsBtn.isFocusable = !open
             updateBtn.isFocusable = !open
@@ -259,15 +265,11 @@ class MainActivity : Activity() {
         v10Setup()
         applyLook()
         reloadApps()
-        askLocationOnce()
         setupStatusClicks()
         setupAutoHide()
         setupTopExtras()
         if (CrashWatch.tooMany(this)) handler.postDelayed({ safeStart() }, 1500)
         runCatching { Updater.schedule(this) }
-        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), REQ_NOTIF)
-        }
         if (intent?.getBooleanExtra(EXTRA_SHOW_UPDATE, false) == true) handler.postDelayed({ installPendingOrCheck() }, 800)
         if (intent?.getBooleanExtra(EXTRA_SHOW_APP_UPDATES, false) == true) handler.postDelayed({ openAppUpdates() }, 800)
     }
@@ -399,6 +401,9 @@ class MainActivity : Activity() {
         runCatching { unregisterReceiver(packageReceiver) }
         runCatching { (getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager).unregisterNetworkCallback(netCallback) }
         NotifListener.onChange = null
+        appLoad?.cancel(true)
+        appLoadExecutor.shutdownNow()
+        handler.removeCallbacksAndMessages(null)
     }
 
     override fun onNewIntent(intent: Intent?) {
@@ -416,6 +421,7 @@ class MainActivity : Activity() {
             applyWidgets(); nav.select(0)
         }
         lastPos = 0
+        updateHomeHint()
         focusTile(0)
         if (intent?.getBooleanExtra(EXTRA_SHOW_UPDATE, false) == true) handler.postDelayed({ installPendingOrCheck() }, 500)
         if (intent?.getBooleanExtra(EXTRA_SHOW_APP_UPDATES, false) == true) handler.postDelayed({ openAppUpdates() }, 500)
@@ -526,7 +532,8 @@ class MainActivity : Activity() {
             GlassMenu.Item(T.s("▶ Right", "▶ Desno", "▶ Rechts"), R.drawable.lc_plus) { set(x + step, y) },
             GlassMenu.Item(T.s("▲ Up", "▲ Gore", "▲ Hoch"), R.drawable.lc_minus) { set(x, y - step) },
             GlassMenu.Item(T.s("▼ Down", "▼ Dolje", "▼ Runter"), R.drawable.lc_plus) { set(x, y + step) },
-            GlassMenu.Item(T.s("Reset", "Vrati na 0", "Zurücksetzen"), R.drawable.lc_rotate_cw, value = "$x / $y dp") { set(0, 0) },
+            GlassMenu.Item(T.s("Reset icon position to automatic", "Vrati automatski položaj ikone", "Automatische Symbolposition wiederherstellen", "Вернуть автоматическое положение значка"),
+                R.drawable.lc_rotate_cw, value = "$x / $y dp") { set(0, 0) },
         ), T.s("Only this icon moves. Back = done.", "Pomjera se samo ova ikona. Back = gotovo.", "Nur dieses Symbol bewegt sich. Zurück = fertig."))
     }
 
@@ -1033,22 +1040,29 @@ class MainActivity : Activity() {
         }.start()
     }
 
-    private fun askLocationOnce() {
-        // Android only tells apps the Wi-Fi name (SSID) with location permission
-        if (prefs.askedLocation || !prefs.showNetwork) return
-        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) return
-        prefs.askedLocation = true
-        requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), REQ_LOC)
-    }
-
     // ================================================================== apps on the home screen
 
+    private fun updateHomeHint() {
+        val empty = apps.none { !it.isAdd }
+        hint.text = if (empty) T.s("Press OK to add your apps", "Pritisni OK da dodaš aplikacije", "OK drücken, um Apps hinzuzufügen", "Нажмите OK, чтобы добавить приложения")
+            else T.s("Hold OK for options", "Drži OK za opcije", "OK für Optionen gedrückt halten", "Удерживайте OK для опций")
+        hint.visibility = if (openPageIx < 0 && !menu.isOpen && (empty || !prefs.homeHintSeen)) View.VISIBLE else View.GONE
+    }
+
+    private var appLoadGeneration = 0
+    private val appLoadExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
+    private var appLoad: java.util.concurrent.Future<*>? = null
+
     private fun reloadApps() {
-        Thread {
+        val generation = ++appLoadGeneration
+        appLoad?.cancel(true)
+        appLoad = appLoadExecutor.submit {
             val list = AppLoader.pinnedEntries(this, prefs)
             val size = AppLoader.iconSize(this)
             val plus = getDrawable(R.drawable.lc_plus)?.let { IconRender.tinted(it, size, Color.WHITE) }
             handler.post {
+                if (isDestroyed || generation != appLoadGeneration) return@post
+                val previousFocus = apps.getOrNull(focusedPos())?.pkg
                 apps.clear()
                 apps.addAll(list)
                 adapter.clearMirrors()
@@ -1056,13 +1070,16 @@ class MainActivity : Activity() {
                 plusPeek = false
                 if (prefs.showAddTile || list.isEmpty()) apps.add(AppEntry(AppEntry.ADD, T.s("Add", "Dodaj", "Hinzufügen"), plus))
                 layoutGrid()
-                hint.visibility = if (list.isEmpty()) View.VISIBLE else View.GONE
+                updateHomeHint()
                 if (firstLoad || list.isEmpty()) {
                     firstLoad = false
-                    focusTile(0)
+                    if (!menu.isOpen && openPageIx < 0) focusTile(0)
+                } else if (previousFocus != null && !menu.isOpen && openPageIx < 0) {
+                    val position = apps.indexOfFirst { it.pkg == previousFocus }
+                    focusTile(if (position >= 0) position else lastPos)
                 }
             }
-        }.start()
+        }
     }
 
     private fun focusTile(pos: Int) {
@@ -1098,6 +1115,8 @@ class MainActivity : Activity() {
         lastPos = pos
         val e = apps[pos]
         if (e.isAdd) { showAddMenu(); return }
+        prefs.homeHintSeen = true
+        updateHomeHint()
         val items = mutableListOf(
             GlassMenu.Item(T.s("Change position", "Promijeni položaj", "Position ändern", "Изменить положение"), R.drawable.lc_move) { startMove(pos) },
             GlassMenu.Item(T.s("Change size", "Promijeni veličinu", "Größe ändern", "Изменить размер"), R.drawable.lc_columns_3,
@@ -1540,16 +1559,6 @@ class MainActivity : Activity() {
                 "${e.label} ist noch nicht installiert. In Google Play öffnen?",
                 "${e.label} ещё не установлен. Открыть в Google Play?")) { openStore(e.pkg) }
         }
-    }
-
-    /** first start: LEAD update + all apps (TizenTube, PRETORIAN … from GitHub, the rest from Play) */
-    private fun firstUpdateCheck() {
-        maybeCheckUpdate(0)
-        Thread {
-            val l = runCatching { AppUpdates.checkAll(this) }.getOrDefault(emptyList())
-            if (l.isNotEmpty()) runCatching { AppUpdates.notify(this, l) }
-            handler.post { showUpdateChip(animate = l.isNotEmpty()) }
-        }.start()
     }
 
     private fun openStore(pkg: String) {
@@ -2741,8 +2750,15 @@ class MainActivity : Activity() {
                     }.start()
                 }
             },
+            GlassMenu.Item(T.s("Reset Home Layout", "Vrati početni raspored", "Startlayout zurücksetzen", "Сбросить главный экран"), R.drawable.lc_rotate_ccw) {
+                confirm(T.s("Reset Home Layout", "Vrati početni raspored", "Startlayout zurücksetzen", "Сбросить главный экран"),
+                    R.drawable.lc_rotate_ccw, T.s("Restore the four default shortcuts and Home card layout? Your app installations, wallpaper and custom icons are kept.",
+                        "Vratiti četiri zadane prečice i raspored? Aplikacije, pozadina i vlastite ikone ostaju.",
+                        "Vier Standardverknüpfungen und Kartenlayout wiederherstellen? Apps, Hintergrund und eigene Symbole bleiben erhalten.",
+                        "Вернуть четыре стандартных ярлыка и раскладку? Приложения, обои и свои значки сохранятся.")) { resetHomeLayout() }
+            },
             GlassMenu.Item(T.s("Restore from backup", "Vrati iz backupa", "Aus Sicherung wiederherstellen"), R.drawable.lc_rotate_ccw) {
-                pendingPick = { f -> restoreBackup(f) }
+                pendingPick = ::confirmBackupRestore
                 @Suppress("DEPRECATION")
                 startActivityForResult(Intent(this, FileBrowserActivity::class.java)
                     .putExtra(FileBrowserActivity.EXTRA_PICK, "backup")
@@ -2753,19 +2769,60 @@ class MainActivity : Activity() {
             "Nur Einstellungen: Profile, Apps am Startbildschirm, Namen, Symbole, Hintergründe, Einstellungen (kleine Datei). Vollständig: dazu die installierten Apps selbst – auf einer anderen Box werden sie installiert. Anmeldungen in Apps und Passwörter kann keine App sichern."))
     }
 
-    private fun restoreBackup(f: File) {
+    private fun resetHomeLayout() {
+        val pins = prefs.pinned
+        val columns = prefs.v10Cols
+        val position = prefs.gridPosition
+        val addTile = prefs.showAddTile
+        val labels = prefs.showLabels
+        val focusLabel = prefs.nameOnFocus
+        prefs.pinned = DefaultApps.list(this)
+        prefs.v10Cols = 4
+        prefs.gridPosition = 1
+        prefs.showAddTile = false
+        prefs.showLabels = false
+        prefs.nameOnFocus = false
+        reloadApps()
+        V10Undo.show(root, T.s("Home layout reset", "Početni raspored vraćen", "Startlayout zurückgesetzt", "Главный экран сброшен")) {
+            prefs.pinned = pins
+            prefs.v10Cols = columns
+            prefs.gridPosition = position
+            prefs.showAddTile = addTile
+            prefs.showLabels = labels
+            prefs.nameOnFocus = focusLabel
+            reloadApps()
+        }
+    }
+
+    private fun confirmBackupRestore(file: File) {
+        val title = T.s("Restore from backup", "Vrati iz backupa", "Aus Sicherung wiederherstellen", "Восстановить копию")
+        val message = T.s("Replace LEAD settings, layouts, icons and wallpapers? Installed apps stay on this box.",
+            "Zamijeniti LEAD postavke, raspored, ikone i pozadine? Instalirane aplikacije ostaju.",
+            "LEAD-Einstellungen, Layouts, Symbole und Hintergründe ersetzen? Installierte Apps bleiben erhalten.",
+            "Заменить настройки, раскладку, значки и обои LEAD? Установленные приложения сохранятся.")
+        if (file.name == "backup.json" && File(file.parentFile, "apks").isDirectory) {
+            menu.show(title, R.drawable.lc_rotate_ccw, listOf(
+                GlassMenu.Item(T.s("Restore settings", "Vrati postavke", "Einstellungen wiederherstellen", "Восстановить настройки")) { restoreBackup(file, false) },
+                GlassMenu.Item(T.s("Restore and open Android installer for missing apps", "Vrati i otvori instalaciju za aplikacije koje nedostaju",
+                    "Wiederherstellen und Android-Installer für fehlende Apps öffnen", "Восстановить и открыть установщик для недостающих приложений")) { restoreBackup(file, true) },
+                GlassMenu.Item(T.s("Cancel", "Otkaži", "Abbrechen", "Отмена")) { }
+            ), message)
+        } else {
+            confirm(title, R.drawable.lc_rotate_ccw, message) { restoreBackup(file, false) }
+        }
+    }
+
+    private fun restoreBackup(file: File, installApps: Boolean) {
         Thread {
-            val r = runCatching { Backup.restore(this, f) }
-            val missing = if (r.isSuccess) Backup.missingApps(this, f) else emptyList()
+            val result = runCatching { Backup.restore(this, file) }
+            val missing = if (result.isSuccess && installApps)
+                runCatching { Backup.missingApps(this, file) }.getOrDefault(emptyList()) else emptyList()
             handler.post {
-                if (r.isSuccess && missing.isNotEmpty()) {
-                    // full backup: install the apps that are not on this box yet, one after another
-                    toast(T.s("Restored – now installing ", "Vraćeno – sad instaliram ", "Wiederhergestellt – installiere jetzt ") + missing.size +
-                        T.s(" apps", " aplikacija", " Apps"))
-                    AppInstaller.start(this, missing)
-                }
-                if (r.isSuccess) { toast(T.s("Restored", "Vraćeno", "Wiederhergestellt")); recreate() }
-                else toast(T.s("This is not a valid backup", "Ovo nije ispravan backup", "Keine gültige Sicherung"))
+                if (result.isSuccess) {
+                    toast(T.s("Restored", "Vraćeno", "Wiederhergestellt", "Восстановлено"))
+                    if (missing.isNotEmpty()) AppInstaller.start(this, missing)
+                    recreate()
+                } else toast(T.s("Restore failed", "Vraćanje nije uspjelo", "Wiederherstellung fehlgeschlagen", "Не удалось восстановить копию"))
             }
         }.start()
     }
@@ -3189,6 +3246,16 @@ class MainActivity : Activity() {
         }
         val info = (listOf(head) + NetDetails.lines(this)).joinToString("\n")
         menu.show(T.s("Network", "Mreža", "Netzwerk"), if (st.eth) R.drawable.lc_ethernet_port else R.drawable.lc_wifi, listOf(
+            GlassMenu.Item(T.s("Show Wi-Fi network name", "Prikaži naziv Wi-Fi mreže", "WLAN-Namen anzeigen", "Показывать имя сети Wi-Fi"),
+                R.drawable.lc_wifi, checked = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                    confirm(T.s("Show Wi-Fi network name", "Prikaži naziv Wi-Fi mreže", "WLAN-Namen anzeigen", "Показывать имя сети Wi-Fi"),
+                        R.drawable.lc_wifi, T.s("Android requires location permission to show the Wi-Fi name.", "Android traži dozvolu lokacije za prikaz naziva Wi-Fi mreže.",
+                            "Android benötigt die Standortberechtigung, um den WLAN-Namen anzuzeigen.", "Для показа имени сети Wi-Fi Android требует доступ к местоположению.")) {
+                        requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), REQ_LOC)
+                    }
+                }
+            },
             GlassMenu.Item(T.s("Wi-Fi settings", "Wi-Fi postavke", "WLAN-Einstellungen"), R.drawable.lc_wifi) { safeStart(Intent(Settings.ACTION_WIFI_SETTINGS)) },
             GlassMenu.Item(T.s("Network settings", "Mrežne postavke", "Netzwerkeinstellungen"), R.drawable.lc_ethernet_port) {
                 try { startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS)) } catch (e: Exception) { safeStart(Intent(Settings.ACTION_SETTINGS)) }
@@ -3307,6 +3374,16 @@ class MainActivity : Activity() {
         })
         items.add(GlassMenu.Item(T.s("Update notifications", "Obavještenja o ažuriranjima", "Update-Benachrichtigungen"), R.drawable.lc_download,
             checked = updOn, toggle = true) { Updater.setNotifyOn(this, it.checked); updateBell(); updateStatus() })
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            items.add(GlassMenu.Item(T.s("Allow update alerts", "Dozvoli obavijesti o ažuriranjima", "Update-Hinweise erlauben", "Разрешить уведомления об обновлениях"),
+                R.drawable.lc_bell) {
+                confirm(T.s("Allow update alerts", "Dozvoli obavijesti o ažuriranjima", "Update-Hinweise erlauben", "Разрешить уведомления об обновлениях"),
+                    R.drawable.lc_bell, T.s("Allow Android notifications for available updates?", "Dozvoliti Android obavijesti o dostupnim ažuriranjima?",
+                        "Android-Benachrichtigungen für verfügbare Updates erlauben?", "Разрешить уведомления Android о доступных обновлениях?")) {
+                    requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQ_NOTIF)
+                }
+            })
+        }
         items.add(GlassMenu.Item(T.s("Hide empty system notices", "Sakrij prazna sistemska obavještenja", "Leere Systemhinweise ausblenden", "Скрывать пустые системные уведомления"),
             R.drawable.lc_eye, checked = prefs.hideSysNotifs, toggle = true) {
             prefs.hideSysNotifs = it.checked; NotifListener.hideJunk = it.checked; updateStatus()
@@ -3710,13 +3787,7 @@ class MainActivity : Activity() {
         if (g.getBoolean("v10", false)) return
         prefs.fitScreen = false; prefs.reflect = false; prefs.focusScale = 0; prefs.focusFrame = false
         prefs.singleRow = false; prefs.gridPosition = 1; prefs.gridAlign = 1; prefs.gridOffX = 0; prefs.gridOffY = 0
-        prefs.showLabels = true; prefs.nameOnFocus = false; prefs.dock = false
-        prefs.leadWp = 0; prefs.wpMode = 0
-        // a picture of your own is kept aside (not deleted) – v10 uses the living-room wallpaper everywhere
-        wallpaperFile.takeIf { it.exists() }?.renameTo(File(filesDir, "wallpaper_before_v10"))
-        // Media Center and YouTube get their v10 logos once
-        runCatching { IconStore.file(this, DefaultApps.PRETORIAN).delete(); IconStore.file(this, DefaultApps.TIZENTUBE).delete() }
-        runCatching { BuiltinIcons.restore(this, DefaultApps.PRETORIAN); BuiltinIcons.restore(this, DefaultApps.TIZENTUBE) }
+        prefs.dock = false
         g.edit().putBoolean("v10", true).apply()
     }
 
@@ -3821,6 +3892,7 @@ class MainActivity : Activity() {
         pageHost.addView(V10Page.build(this, title, sub, tiles), FrameLayout.LayoutParams(-1, -1))
         pageHost.visibility = View.VISIBLE
         gridArea.visibility = View.INVISIBLE
+        updateHomeHint()
         findViewById<View>(R.id.movieInfo).visibility = View.GONE
         applyWidgets()
         if (!keepFocus) pageHost.post { firstFocusable(pageHost)?.requestFocus() }
@@ -3841,6 +3913,7 @@ class MainActivity : Activity() {
         pageHost.visibility = View.GONE
         pageHost.removeAllViews()
         gridArea.visibility = View.VISIBLE
+        updateHomeHint()
         applyWidgets()
         nav.select(0)
         nav.focus(i.coerceAtLeast(0))
@@ -4001,6 +4074,16 @@ class MainActivity : Activity() {
 
     private fun homeLayoutMenu() {
         menu.show(T.s("Home Layout", "Raspored početnog", "Startlayout", "Главный экран"), R.drawable.lc_columns_3, listOf(
+            GlassMenu.Item(T.s("Show app names", "Nazivi aplikacija", "App-Namen anzeigen", "Показывать названия приложений"),
+                R.drawable.lc_type, checked = prefs.showLabels, toggle = true) {
+                prefs.showLabels = it.checked
+                adapter.notifyItemRangeChanged(0, adapter.itemCount)
+            },
+            GlassMenu.Item(T.s("Show name when focused", "Naziv odabrane aplikacije", "Name bei Auswahl anzeigen", "Показывать название выбранного приложения"),
+                R.drawable.lc_type, checked = prefs.nameOnFocus, toggle = true) {
+                prefs.nameOnFocus = it.checked
+                adapter.notifyItemRangeChanged(0, adapter.itemCount)
+            },
             GlassMenu.Item(T.s("Cards visible at once", "Vidljivih kartica", "Sichtbare Karten", "Видимых карточек"), R.drawable.lc_columns_3, value = "${prefs.v10Cols}") {
                 choose(T.s("Cards visible at once", "Vidljivih kartica", "Sichtbare Karten", "Видимых карточек"), R.drawable.lc_columns_3,
                     (3..6).map { "$it" to it }, prefs.v10Cols) { prefs.v10Cols = it; layoutGrid() }
@@ -4057,6 +4140,10 @@ class MainActivity : Activity() {
 
     private fun remoteMenu() {
         menu.show(T.s("Remote & Navigation", "Daljinski i navigacija", "Fernbedienung & Navigation", "Пульт и навигация"), R.drawable.lc_gamepad, listOf(
+            GlassMenu.Item(T.s("Show Home remote hint", "Prikaži savjet za daljinski", "Fernbedienungshinweis auf Start anzeigen", "Показать подсказку на главном экране"),
+                R.drawable.lc_gamepad, checked = !prefs.homeHintSeen, toggle = true) {
+                prefs.homeHintSeen = !it.checked
+            },
             GlassMenu.Item(T.s("Number keys open apps", "Brojevi otvaraju aplikacije", "Zifferntasten öffnen Apps", "Цифры открывают приложения"), R.drawable.lc_type,
                 checked = prefs.numberKeys, toggle = true) { prefs.numberKeys = it.checked },
             GlassMenu.Item(T.s("Home button", "Home dugme", "Home-Taste", "Кнопка Home"), R.drawable.lc_house) { defaultLauncherMenu() },

@@ -1,3 +1,9 @@
+LEAD Launcher 10.0.7
+- Show app names and focus-only labels independently in Personalize → Home Layout.
+- Home artwork centers by its visible bounds and keeps manual icon offsets.
+- File replacement and backup restore protect existing data with staged writes and rollback.
+- Permission prompts appear when you choose the feature that needs them. Phone Connect limits uploads and closes connections when you leave.
+
 LEAD Launcher 10.0.6
 - Ambient 2.0 brings Minimal, Balanced and Full Dashboard modes to Personalize → Screensaver.
 - The living-room dashboard shows a large clock, current weather and seven forecast days. The last successful forecast is available offline.

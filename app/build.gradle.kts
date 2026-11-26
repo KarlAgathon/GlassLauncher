@@ -13,8 +13,8 @@ android {
         targetSdk = 34
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // raise both numbers for every new version you publish (needed for web updates)
-        versionCode = 82
-        versionName = "10.0.6"
+        versionCode = 83
+        versionName = "10.0.7"
     }
 
     // Private signing key: it is NOT in this repository. GitHub Actions writes it from the secrets

@@ -645,9 +645,16 @@ class FileBrowserActivity : Activity() {
         V10Input.show(root, T.s("New name", "Novo ime", "Neuer Name", "Новое имя"), f.name) { n ->
             val name = n.trim()
             if (name.isBlank() || name == f.name) return@show
+            if (name == "." || name == ".." || name.any { it == '/' || it == '\\' || it.isISOControl() }) {
+                toast(T.s("Enter a file name, without a path", "Unesi naziv fajla bez putanje", "Dateinamen ohne Pfad eingeben", "Введите имя файла без пути"))
+                return@show
+            }
             val t = File(f.parentFile, name)
             if (t.exists()) { toast(T.s("That name already exists", "To ime već postoji", "Der Name existiert schon", "Имя занято")); return@show }
-            if (!f.renameTo(t)) toast(T.s("Can't rename", "Ne mogu preimenovati", "Umbenennen nicht möglich", "Не удалось"))
+            if (!f.renameTo(t)) {
+                toast(T.s("Can't rename", "Ne mogu preimenovati", "Umbenennen nicht möglich", "Не удалось переименовать"))
+                return@show
+            }
             selected.clear(); selected.add(t.absolutePath)
             refreshKeepingFocus()
         }
@@ -743,8 +750,8 @@ class FileBrowserActivity : Activity() {
         }
         val label = Taupe.text(this, "…", 15f)
         panel.addView(label)
-        var cancelled = false
-        val stop = pill(T.s("Cancel", "Otkaži", "Abbrechen", "Отмена"), R.drawable.lc_x) { cancelled = true }
+        val cancelled = java.util.concurrent.atomic.AtomicBoolean()
+        val stop = pill(T.s("Cancel", "Otkaži", "Abbrechen", "Отмена"), R.drawable.lc_x) { cancelled.set(true) }
         panel.addView(stop, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(14f).toInt() })
         root.addView(panel, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
         stop.requestFocus()
@@ -754,8 +761,9 @@ class FileBrowserActivity : Activity() {
             val rep = FileOps.run(files, dest, move, { decide[it.absolutePath] ?: FileOps.Clash.KEEP_BOTH }, { i, bytes ->
                 val now = System.currentTimeMillis()
                 if (now - lastUi > 200) { lastUi = now; handler.post { label.text = "$verb ${i + 1} / ${files.size}  ·  ${Formatter.formatShortFileSize(this, bytes)}" } }
-            }, { cancelled })
+            }, { cancelled.get() || isDestroyed })
             handler.post {
+                if (isDestroyed) return@post
                 root.removeView(panel)
                 after()
                 selecting = false; selected.clear()
@@ -857,11 +865,19 @@ class FileBrowserActivity : Activity() {
     }
 
     private fun emptyBin() {
-        val n = rows.size
+        val snapshot = rows.mapNotNull { it.trash }
+        val n = snapshot.size
         V10Dialog.show(root, T.s("Empty the Recycle Bin?", "Isprazniti kantu?", "Papierkorb leeren?", "Очистить корзину?"),
             T.s("All $n items will be removed permanently.", "Svih $n stavki bit će trajno uklonjeno.", "Alle $n Elemente werden endgültig entfernt.", "Все $n элементов будут удалены."),
             listOf(T.s("Cancel", "Otkaži", "Abbrechen", "Отмена") to {}, T.s("Empty Recycle Bin", "Isprazni kantu", "Papierkorb leeren", "Очистить") to {
-                Thread { Trash.empty(); handler.post { refreshKeepingFocus() } }.start()
+                Thread {
+                    val failed = snapshot.filter { !Trash.purge(it) }.map { it.name }
+                    handler.post {
+                        refreshKeepingFocus()
+                        if (failed.isNotEmpty()) report(FileOps.Report(snapshot.size - failed.size, 0, failed),
+                            T.s("deleted", "obrisano", "gelöscht", "удалено"))
+                    }
+                }.start()
             }), focusIndex = 0)
     }
 

@@ -149,13 +149,13 @@ class FtpFs(c: Conn, password: String, tls: Boolean) : RemoteFs {
     override fun download(path: String, to: File, progress: (Long) -> Unit) {
         val inp = ftp.retrieveFileStream(path) ?: error("download")
         inp.use { to.outputStream().use { o -> copy(it, o, progress) } }
-        ftp.completePendingCommand()
+        check(ftp.completePendingCommand()) { "FTP transfer did not complete" }
     }
 
     override fun upload(from: File, dir: String, progress: (Long) -> Unit) {
         val out = ftp.storeFileStream(dir.trimEnd('/') + "/" + from.name) ?: error("upload")
         out.use { o -> from.inputStream().use { copy(it, o, progress) } }
-        ftp.completePendingCommand()
+        check(ftp.completePendingCommand()) { "FTP transfer did not complete" }
     }
 
     override fun close() { runCatching { ftp.logout() }; runCatching { ftp.disconnect() } }
