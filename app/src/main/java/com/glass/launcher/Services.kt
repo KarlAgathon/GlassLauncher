@@ -359,6 +359,10 @@ class HomeService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (android.os.Build.MANUFACTURER.equals("Amazon", ignoreCase = true)) {
+            android.util.Log.i("LEAD_FIRETV",
+                "EVENT type=${event?.eventType} pkg=${event?.packageName} cls=${event?.className} redirect=${Prefs(this).homeRedirect}")
+        }
         if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val pkg = event.packageName?.toString() ?: return
         if (pkg in IGNORE || pkg.contains("inputmethod") || pkg.endsWith(".ime")) return
@@ -412,6 +416,11 @@ class HomeService : AccessibilityService() {
      * answer after a moment and Home goes to Google TV as usual – that is the safety net.
      */
     override fun onKeyEvent(event: android.view.KeyEvent): Boolean {
+        if (android.os.Build.MANUFACTURER.equals("Amazon", ignoreCase = true) &&
+            event.keyCode == android.view.KeyEvent.KEYCODE_HOME) {
+            android.util.Log.i("LEAD_FIRETV",
+                "HOME KEY action=${event.action} repeat=${event.repeatCount}")
+        }
         if (event.keyCode != android.view.KeyEvent.KEYCODE_HOME) return false
         if (!Prefs(this).homeRedirect) return false
         when (event.action) {
