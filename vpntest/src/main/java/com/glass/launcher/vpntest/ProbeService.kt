@@ -3,7 +3,6 @@ package com.glass.launcher.vpntest
 import android.app.Service
 import android.content.Intent
 import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
 import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
@@ -24,25 +23,35 @@ class ProbeService : Service() {
             if (msg.what != SpeedEngine.MSG_START) return
             val reply = msg.replyTo ?: return
             engine?.stop = true
-            val e = SpeedEngine(null); engine = e
+            val manager = getSystemService(ConnectivityManager::class.java)
+            val network = manager.activeNetwork
+            if (network == null || !SpeedEngine.matchesRoute(manager, network, vpn = true)) {
+                runCatching { reply.send(Message.obtain(null, SpeedEngine.MSG_NO_VPN_ROUTE)) }
+                return
+            }
+            val e = SpeedEngine(manager, network, vpn = true)
+            engine = e
             Thread {
                 fun send(what: Int, arg: Int = 0, b: Bundle? = null) {
                     runCatching { reply.send(Message.obtain(null, what, arg, 0).apply { if (b != null) data = b }) }.onFailure { e.stop = true }
                 }
-                val cm = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
-                val vpn = runCatching { cm.getNetworkCapabilities(cm.activeNetwork)?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true }.getOrDefault(false)
                 send(SpeedEngine.MSG_PHASE, 0)
                 val w = e.where()
                 send(SpeedEngine.MSG_PHASE, 1)
                 val p = e.ping()
                 if (p == null) { send(SpeedEngine.MSG_ERROR); return@Thread }
-                send(SpeedEngine.MSG_PHASE, 2, Bundle().apply { putInt("ping", p); putString("ip", w?.ip); putString("cc", w?.country); putBoolean("vpn", vpn) })
+                send(SpeedEngine.MSG_PHASE, 2, Bundle().apply { putInt("ping", p); putString("ip", w?.ip); putString("cc", w?.country); putBoolean("vpn", true) })
                 val d = e.download { v -> send(SpeedEngine.MSG_SAMPLE, b = Bundle().apply { putFloat("v", v) }) }
                 send(SpeedEngine.MSG_PHASE, 3, Bundle().apply { putDouble("down", d) })
                 val u = e.upload { v -> send(SpeedEngine.MSG_SAMPLE, b = Bundle().apply { putFloat("v", v) }) }
+                if (!e.routeValid() || !d.isFinite() || !u.isFinite() || d <= 0 || u <= 0) {
+                    send(SpeedEngine.MSG_ERROR)
+                    return@Thread
+                }
                 send(SpeedEngine.MSG_RESULT, b = Bundle().apply {
+                    putBoolean(SpeedEngine.VERIFIED_ROUTE, true)
                     putString("ip", w?.ip); putString("cc", w?.country); putInt("ping", p)
-                    putDouble("down", d); putDouble("up", u); putBoolean("vpn", vpn)
+                    putDouble("down", d); putDouble("up", u); putBoolean("vpn", true)
                 })
             }.start()
         }
