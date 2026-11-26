@@ -54,7 +54,7 @@ object ShizukuCpu {
 
     fun startFireTvHome(stockHome: String, packageName: String): String? = fireTvCommand(
         """
-        focus=$(timeout 0.55s dumpsys window windows 2>/dev/null | grep -m 1 mCurrentFocus=)
+        focus=$(timeout 0.55s dumpsys window visible 2>/dev/null | grep -m 1 mCurrentFocus=)
         case "${'$'}focus" in
           *" ${'$'}1}") exec cmd activity start-activity -n "${'$'}2" 2>&1 ;;
           *) printf 'Foreground changed: %s\n' "${'$'}focus" ;;
