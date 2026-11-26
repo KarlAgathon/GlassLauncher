@@ -280,7 +280,8 @@ class MainActivity : Activity() {
         // coming back to the home screen (e.g. after the box woke up): check for a new version every 30 min at most
         handler.postDelayed({ maybeCheckUpdate(30) }, 3000)
         // the helper service (VPN key, Home button) can be switched off by Android – switch it back on by itself
-        if ((prefs.overlayVpn || prefs.overlayClock || prefs.homeRedirect) && !HomeService.isEnabled(this) && hasSecure())
+        if (!HomeService.isFireTv && (prefs.overlayVpn || prefs.overlayClock || prefs.homeRedirect) &&
+            !HomeService.isEnabled(this) && hasSecure())
             HomeService.enableWithSecureSettings(this)
         // newer Android: CPU % only via Shizuku – ask once for its permission when Shizuku runs
         if (prefs.showCpu && !ShizukuCpu.permitted()) handler.postDelayed({ ShizukuCpu.ask() }, 1500)

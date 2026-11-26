@@ -11,6 +11,9 @@ import android.content.Intent
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
+import android.util.Log
+import java.util.concurrent.atomic.AtomicBoolean
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
@@ -43,6 +46,12 @@ class HomeService : AccessibilityService() {
             "com.android.tv.launcher",
             "com.amazon.tv.launcher",
         )
+        const val AMAZON_LAUNCHER = "com.amazon.tv.launcher"
+        private const val AMAZON_HOME = "com.amazon.tv.launcher.ui.HomeActivity_vNext"
+        private const val FIRE_TV_TAG = "LEAD_FIRETV"
+        private val fireTvLaunchInProgress = AtomicBoolean()
+        val isFireTv = Build.MANUFACTURER.equals("Amazon", ignoreCase = true)
+
         private val IGNORE = setOf("com.android.systemui", "android", "com.google.android.tvrecommendations")
 
         @Volatile var instance: HomeService? = null
@@ -156,12 +165,12 @@ class HomeService : AccessibilityService() {
     }
 
     fun watchHome(delays: List<Long> = listOf(500L, 1500L, 3000L, 5000L, 8000L, 15_000L, 30_000L)) {
-        if (!Prefs(this).homeRedirect || !Prefs(this).autoReturn) return
+        if (isFireTv || !Prefs(this).homeRedirect || !Prefs(this).autoReturn) return
         for (d in delays) h.postDelayed({ backFromStock() }, d)
     }
 
     private fun backFromStock() {
-        if (homeVisible) return
+        if (isFireTv || instance !== this || homeVisible || !Prefs(this).homeRedirect || !Prefs(this).autoReturn) return
         val top = runCatching { rootInActiveWindow?.packageName?.toString() }.getOrNull() ?: lastPkg
         if (top !in STOCK) return
         val now = System.currentTimeMillis()
@@ -190,7 +199,8 @@ class HomeService : AccessibilityService() {
         val upd = g.getLong("justUpdated", 0L)
         if (upd > 0 && System.currentTimeMillis() - upd < 3 * 60_000L) {
             g.edit().remove("justUpdated").apply()
-            if (Prefs(this).homeRedirect) h.postDelayed({
+            if (!isFireTv && Prefs(this).homeRedirect) h.postDelayed({
+                if (instance !== this || !Prefs(this).homeRedirect) return@postDelayed
                 runCatching {
                     startActivity(Intent(this, MainActivity::class.java)
                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED))
@@ -358,12 +368,60 @@ class HomeService : AccessibilityService() {
         h.post(tick)
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (android.os.Build.MANUFACTURER.equals("Amazon", ignoreCase = true)) {
-            android.util.Log.i("LEAD_FIRETV",
-                "EVENT type=${event?.eventType} pkg=${event?.packageName} cls=${event?.className} redirect=${Prefs(this).homeRedirect}")
+    private class FireTvHomeEvent(val windowId: Int, val eventTime: Long)
+
+    @Volatile private var fireTvHomeEvent: FireTvHomeEvent? = null
+
+    private fun isCurrent(event: FireTvHomeEvent): Boolean =
+        instance === this && fireTvHomeEvent === event && Prefs(this).homeRedirect &&
+            SystemClock.uptimeMillis() - event.eventTime in 0L..900L
+
+    private fun handleFireTvWindow(event: AccessibilityEvent) {
+        if (event.packageName?.toString() != AMAZON_LAUNCHER || event.className?.toString() != AMAZON_HOME) {
+            fireTvHomeEvent = null
+            return
         }
+        if (fireTvHomeEvent?.windowId == event.windowId) return
+        val request = FireTvHomeEvent(event.windowId, event.eventTime)
+        fireTvHomeEvent = request
+        if (!isCurrent(request) || !fireTvLaunchInProgress.compareAndSet(false, true)) return
+
+        Thread({
+            try {
+                if (!isCurrent(request)) return@Thread
+                if (ShizukuCpu.permitted()) {
+                    val focus = ShizukuCpu.fireTvFocusedWindow()
+                    if (focus == "$AMAZON_LAUNCHER/$AMAZON_HOME" && isCurrent(request)) {
+                        val result = ShizukuCpu.startFireTvHome(packageName)
+                        Log.i(FIRE_TV_TAG, "HOME Shizuku response=$result age=${SystemClock.uptimeMillis() - request.eventTime}ms")
+                    }
+                    return@Thread
+                }
+
+                h.post {
+                    if (!isCurrent(request)) return@post
+                    val active = runCatching { rootInActiveWindow }.getOrNull() ?: return@post
+                    val matches = try {
+                        active.windowId == request.windowId && active.packageName?.toString() == AMAZON_LAUNCHER
+                    } finally {
+                        active.recycle()
+                    }
+                    if (matches && isCurrent(request)) {
+                        runCatching {
+                            startActivity(Intent(this, MainActivity::class.java)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED))
+                        }.onSuccess { Log.i(FIRE_TV_TAG, "HOME accessibility fallback requested") }
+                    }
+                }
+            } finally {
+                fireTvLaunchInProgress.set(false)
+            }
+        }, "LEAD Fire TV HOME").start()
+    }
+
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+        if (isFireTv) handleFireTvWindow(event)
         val pkg = event.packageName?.toString() ?: return
         if (pkg in IGNORE || pkg.contains("inputmethod") || pkg.endsWith(".ime")) return
         // our own windows are handled by the activities themselves (setHome); a late event from
@@ -386,6 +444,7 @@ class HomeService : AccessibilityService() {
         if (pkg != prev && pkg !in STOCK && launchable(pkg)) runCatching { Usage.add(this, pkg) }
         if (pkg in STOCK) {
             setShown(false)
+            if (isFireTv) return
             if (!Prefs(this).homeRedirect) return
             val now = System.currentTimeMillis()
             if (now - last < 800) return
@@ -393,36 +452,6 @@ class HomeService : AccessibilityService() {
             if (now - burstStart > 20_000L) { burstStart = now; burst = 0 }
             if (++burst > 8) return
             last = now
-
-            // Fire TV fast HOME through existing Shizuku integration.
-            if (android.os.Build.MANUFACTURER.equals("Amazon", ignoreCase = true) &&
-                pkg == "com.amazon.tv.launcher") {
-                Thread {
-                    val started = android.os.SystemClock.elapsedRealtime()
-                    val success = runCatching {
-                        ShizukuCpu.run(
-                            "am", "start", "-n",
-                            "$packageName/.MainActivity"
-                        )
-                    }.getOrDefault(false)
-
-                    android.util.Log.i("LEAD_FIRETV",
-                        "SHIZUKU HOME success=$success elapsed=${android.os.SystemClock.elapsedRealtime() - started}ms")
-
-                    if (!success) {
-                        h.post {
-                            if (Prefs(this).homeRedirect &&
-                                rootInActiveWindow?.packageName?.toString() == pkg) {
-                                runCatching {
-                                    startActivity(Intent(this, MainActivity::class.java)
-                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED))
-                                }
-                            }
-                        }
-                    }
-                }.start()
-                return
-            }
 
             runCatching {
                 startActivity(Intent(this, MainActivity::class.java)
@@ -451,11 +480,8 @@ class HomeService : AccessibilityService() {
      * answer after a moment and Home goes to Google TV as usual – that is the safety net.
      */
     override fun onKeyEvent(event: android.view.KeyEvent): Boolean {
-        if (android.os.Build.MANUFACTURER.equals("Amazon", ignoreCase = true) &&
-            event.keyCode == android.view.KeyEvent.KEYCODE_HOME) {
-            android.util.Log.i("LEAD_FIRETV",
-                "HOME KEY action=${event.action} repeat=${event.repeatCount}")
-        }
+        // Fire OS handles HOME itself, including returning from Alexa results to Amazon HOME.
+        if (isFireTv) return false
         if (event.keyCode != android.view.KeyEvent.KEYCODE_HOME) return false
         if (!Prefs(this).homeRedirect) return false
         when (event.action) {
@@ -472,12 +498,17 @@ class HomeService : AccessibilityService() {
         return true
     }
 
-    override fun onInterrupt() {}
+    override fun onInterrupt() {
+        fireTvHomeEvent = null
+    }
 
     override fun onDestroy() {
-        instance = null
+        if (instance === this) instance = null
+        fireTvHomeEvent = null
         runCatching { unregisterReceiver(wakeReceiver) }
-        h.removeCallbacks(tick)
+        h.removeCallbacksAndMessages(null)
+        banner?.let { v -> runCatching { (getSystemService(WINDOW_SERVICE) as WindowManager).removeView(v) } }
+        banner = null
         breathe(false)
         overlay?.let { v -> runCatching { (getSystemService(WINDOW_SERVICE) as WindowManager).removeView(v) } }
         overlay = null
@@ -492,6 +523,10 @@ class BootReceiver : BroadcastReceiver() {
         val a = intent?.action ?: return
         val app = ctx.applicationContext
         if (a == Intent.ACTION_MY_PACKAGE_REPLACED) {
+            if (HomeService.isFireTv) {
+                runCatching { Updater.schedule(app) }
+                return
+            }
             // LEAD was just updated: the helper service brings LEAD back to the front once it reconnects
             app.getSharedPreferences("glass_global", Context.MODE_PRIVATE).edit()
                 .putLong("justUpdated", System.currentTimeMillis()).apply()
@@ -505,13 +540,16 @@ class BootReceiver : BroadcastReceiver() {
         if (a != Intent.ACTION_BOOT_COMPLETED && a != "android.intent.action.QUICKBOOT_POWERON" &&
             a != Intent.ACTION_LOCKED_BOOT_COMPLETED) return
         // after a restart: helper service back on (needs WRITE_SECURE_SETTINGS, given once over ADB)
-        runCatching { if (!HomeService.isEnabled(app)) HomeService.enableWithSecureSettings(app) }
+        if (!HomeService.isFireTv) runCatching {
+            if (!HomeService.isEnabled(app)) HomeService.enableWithSecureSettings(app)
+        }
         Autostart.apply(app)
         runCatching { Updater.schedule(app) }
         val pending = goAsync()
         val h = Handler(Looper.getMainLooper())
         // Google TV always starts its own home screen: open LEAD once right after switching on
-        if (a != Intent.ACTION_LOCKED_BOOT_COMPLETED && Prefs(app).homeRedirect) h.postDelayed({
+        if (!HomeService.isFireTv && a != Intent.ACTION_LOCKED_BOOT_COMPLETED && Prefs(app).homeRedirect) h.postDelayed({
+            if (!Prefs(app).homeRedirect) return@postDelayed
             runCatching {
                 val c: Context = HomeService.instance ?: app
                 c.startActivity(Intent(c, MainActivity::class.java)
